@@ -31,7 +31,13 @@
       "Bash(node -e \"require\\('tsdav'\\); console.log\\('tsdav ok'\\)\")",
       "Bash(node -e \"require\\('node-ical'\\); console.log\\('node-ical ok'\\)\")",
       "Bash(node --require dotenv/config -e ' *)",
-      "Bash(node scripts/test-calendar.mjs)"
+      "Bash(node scripts/test-calendar.mjs)",
+      "Bash(pnpm lint *)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist /FI \"PID eq 24464\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 5 http://localhost:3000/api/health)",
+      "Bash(VERIFY_BUILD=1 pnpm build)"
     ]
   }
 }

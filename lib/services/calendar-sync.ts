@@ -52,9 +52,10 @@ export async function syncCalendar(): Promise<void> {
       return
     }
 
-    // Fetch events: from start of today through 90 days ahead
-    const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const rangeEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 90)
+    // Fetch events: from 30 days ago through 180 days ahead (gives the
+    // calendar view some past context and a useful forward window)
+    const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)
+    const rangeEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 180)
 
     const objects = await client.fetchCalendarObjects({
       calendar: target,

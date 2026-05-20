@@ -1,6 +1,6 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { items, lists, listItems, bins, records, calendarEvents } from '@/lib/db/schema'
+import { items, lists, listItems, bins, records, calendarEvents, pins } from '@/lib/db/schema'
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
 import { getNextBinCollection } from '@/lib/utils/bins'
@@ -96,6 +96,12 @@ export default async function DashboardPage() {
     limit: 8,
   })
 
+  // Pinned cards (newest first)
+  const pinRows = await db.query.pins.findMany({
+    orderBy: [desc(pins.sortOrder), desc(pins.createdAt)],
+    columns: { id: true, title: true, body: true, colour: true },
+  })
+
   return (
     <DashboardClient
       user={session.user}
@@ -107,6 +113,7 @@ export default async function DashboardPage() {
       bins={relevantBins}
       renewals={renewals}
       calendarEvents={calRows}
+      pins={pinRows}
     />
   )
 }

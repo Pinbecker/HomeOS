@@ -232,6 +232,27 @@ export const calendarEvents = sqliteTable('calendar_events', {
 })
 
 // ============================================================
+// PINS — cards the household pins to the home feed
+//   Like sticky notes on a fridge: a quick title + optional body,
+//   colour-coded. May optionally deep-link somewhere in the app.
+// ============================================================
+
+export type PinColour = 'yellow' | 'blue' | 'green' | 'pink' | 'orange' | 'purple'
+
+export const pins = sqliteTable('pins', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  title: text('title').notNull(),
+  body: text('body'),
+  colour: text('colour').$type<PinColour>().notNull().default('yellow'),
+  linkHref: text('link_href'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+})
+
+// ============================================================
 // REMINDERS
 // ============================================================
 

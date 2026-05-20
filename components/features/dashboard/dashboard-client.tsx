@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { daysUntil } from '@/lib/utils/bins'
+import { PinnedBoard } from './pinned-board'
+import type { PinColour } from '@/lib/db/schema'
 
 type ShoppingItem = { id: string; title: string; checked: boolean }
 type Task = {
@@ -33,6 +35,7 @@ type CalEvent = {
   allDay: boolean
   location: string | null
 }
+type Pin = { id: string; title: string; body: string | null; colour: PinColour }
 
 interface Props {
   user: { name: string; email: string }
@@ -44,6 +47,7 @@ interface Props {
   bins: BinWithDate[]
   renewals: Renewal[]
   calendarEvents: CalEvent[]
+  pins: Pin[]
 }
 
 const BIN_DOT: Record<string, string> = {
@@ -87,7 +91,7 @@ function eventDayLabel(startsAt: Date): string {
 }
 
 export function DashboardClient({
-  user, shoppingItems, shoppingListId, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents,
+  user, shoppingItems, shoppingListId, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins,
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -108,6 +112,9 @@ export function DashboardClient({
           {user.name.charAt(0).toUpperCase()}
         </div>
       </header>
+
+      {/* Pinned — fridge corkboard */}
+      <PinnedBoard initialPins={pins} />
 
       {/* Today — only shown when there's something that needs attention */}
       {hasAlerts && (
@@ -231,16 +238,32 @@ export function DashboardClient({
       )}
 
       {/* Calendar — upcoming events */}
-      {calendarEvents.length > 0 && (
-        <section className="mx-4 mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-2">Calendar</p>
+      <section className="mx-4 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Calendar</p>
+          <Link href="/calendar" className="text-[11.5px] font-semibold text-accent">Full calendar</Link>
+        </div>
+        {calendarEvents.length === 0 ? (
+          <Link
+            href="/calendar"
+            className="flex items-center gap-3 bg-surface border border-border rounded-2xl px-4 py-3 active:bg-bg"
+          >
+            <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
+              <div className="w-[7px] h-[7px] rounded-full bg-accent" />
+            </div>
+            <span className="flex-1 text-[13.5px] text-text-2">Nothing in the next two weeks</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3 shrink-0">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
+          </Link>
+        ) : (
           <div className="bg-surface border border-border rounded-2xl overflow-hidden">
             {calendarEvents.map((ev, i) => {
               const dayLabel = eventDayLabel(ev.startsAt)
               const timeLabel = formatEventTime(ev)
               const isToday = dayLabel === 'Today'
               return (
-                <div key={ev.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
+                <Link key={ev.id} href="/calendar" className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}>
                   <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
                     <div className="w-[7px] h-[7px] rounded-full bg-accent" />
                   </div>
@@ -254,12 +277,12 @@ export function DashboardClient({
                     <p className={`text-[11px] font-bold ${isToday ? 'text-accent' : 'text-text-2'}`}>{dayLabel}</p>
                     <p className="text-[11px] text-text-3">{timeLabel}</p>
                   </div>
-                </div>
+                </Link>
               )
             })}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Shopping — always shown */}
       <section className="mx-4 mb-4">
