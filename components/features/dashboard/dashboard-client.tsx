@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { daysUntil } from '@/lib/utils/bins'
+import { relativeDayLabel, eventTimeLabel } from '@/lib/utils/calendar'
 import { PinnedBoard } from './pinned-board'
 import type { PinColour } from '@/lib/db/schema'
 
@@ -73,20 +74,6 @@ function taskDueLabel(due: Date | null): { label: string; urgent: boolean } {
   if (d === 0) return { label: 'Today',   urgent: true }
   if (d === 1) return { label: 'Tomorrow', urgent: false }
   return { label: `${d}d`, urgent: false }
-}
-
-function formatEventTime(ev: CalEvent): string {
-  if (ev.allDay) return 'All day'
-  const start = ev.startsAt.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
-  return start
-}
-
-function eventDayLabel(startsAt: Date): string {
-  const today = new Date()
-  const d = Math.round((new Date(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate()).getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86400000)
-  if (d === 0) return 'Today'
-  if (d === 1) return 'Tomorrow'
-  return startsAt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 export function DashboardClient({
@@ -258,8 +245,8 @@ export function DashboardClient({
         ) : (
           <div className="bg-surface border border-border rounded-2xl overflow-hidden">
             {calendarEvents.map((ev, i) => {
-              const dayLabel = eventDayLabel(ev.startsAt)
-              const timeLabel = formatEventTime(ev)
+              const dayLabel = relativeDayLabel(ev.startsAt, ev.allDay)
+              const timeLabel = eventTimeLabel(ev.startsAt, ev.allDay)
               const isToday = dayLabel === 'Today'
               return (
                 <Link key={ev.id} href="/calendar" className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}>

@@ -1,7 +1,7 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { calendarEvents } from '@/lib/db/schema'
-import { asc } from 'drizzle-orm'
+import { calendarEvents, items } from '@/lib/db/schema'
+import { and, asc, eq, isNull, isNotNull } from 'drizzle-orm'
 import { CalendarView } from './calendar-view'
 
 export default async function CalendarPage() {
@@ -20,7 +20,6 @@ export default async function CalendarPage() {
     },
   })
 
-  // Serialise dates to epoch ms for the client component
   const events = rows.map(e => ({
     id: e.id,
     title: e.title,
@@ -31,5 +30,20 @@ export default async function CalendarPage() {
     description: e.description,
   }))
 
-  return <CalendarView events={events} calendarName={process.env.CALDAV_CALENDAR_NAME ?? 'Family'} />
+  // Tasks with a due date — shown on the calendar (distinct from events)
+  const taskRows = await db.query.items.findMany({
+    where: and(eq(items.type, 'task'), isNull(items.deletedAt), isNotNull(items.dueDate)),
+    orderBy: [asc(items.dueDate)],
+    columns: { id: true, title: true, dueDate: true, listId: true, status: true },
+  })
+
+  const tasks = taskRows.map(t => ({
+    id: t.id,
+    title: t.title,
+    due: t.dueDate!.getTime(),
+    listId: t.listId,
+    completed: t.status === 'completed',
+  }))
+
+  return <CalendarView events={events} tasks={tasks} calendarName={process.env.CALDAV_CALENDAR_NAME ?? 'Family'} />
 }

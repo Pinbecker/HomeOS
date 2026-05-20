@@ -84,8 +84,25 @@ export async function syncCalendar(): Promise<void> {
         // node-ical sets dateOnly on the Date object for all-day events
         const allDay = (ev.start as unknown as { dateOnly?: boolean }).dateOnly === true
 
-        const startAt = new Date(ev.start)
-        const endAt   = ev.end ? new Date(ev.end) : new Date(startAt.getTime() + 3_600_000)
+        let startAt: Date
+        let endAt: Date
+        if (allDay) {
+          // node-ical builds all-day dates at the server's local midnight.
+          // Re-anchor to UTC midnight of the same calendar date so the value
+          // is timezone-independent for every viewer. End stays exclusive.
+          const s = new Date(ev.start)
+          startAt = new Date(Date.UTC(s.getFullYear(), s.getMonth(), s.getDate()))
+          if (ev.end) {
+            const e = new Date(ev.end)
+            endAt = new Date(Date.UTC(e.getFullYear(), e.getMonth(), e.getDate()))
+          } else {
+            endAt = new Date(startAt.getTime() + 86_400_000)
+          }
+          if (endAt <= startAt) endAt = new Date(startAt.getTime() + 86_400_000)
+        } else {
+          startAt = new Date(ev.start)
+          endAt   = ev.end ? new Date(ev.end) : new Date(startAt.getTime() + 3_600_000)
+        }
 
         // Skip if outside our window (can happen with recurring expansions)
         if (startAt > rangeEnd) continue

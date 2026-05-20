@@ -40,7 +40,9 @@
       "Bash(VERIFY_BUILD=1 pnpm build)",
       "Bash(node -e \"const D=require\\('better-sqlite3'\\);const db=new D\\('local-data/db/homeapp.db'\\);const r=db.prepare\\(\\\\\"SELECT id FROM lists WHERE type='shopping' LIMIT 1\\\\\"\\).get\\(\\);process.stdout.write\\(r?r.id:''\\)\")",
       "Bash(curl -s -o /dev/null -w 'shop route -> %{http_code}\\\\n' --max-time 20 http://localhost:3000/household/shopping/__TRACKED_VAR__)",
-      "Bash(curl -s -o /dev/null -w \"shop route -> %{http_code}\\\\n\" --max-time 60 \"http://localhost:3000/household/shopping/01KS2SCJ9JT05YS2V1YPZXY48J\")"
+      "Bash(curl -s -o /dev/null -w \"shop route -> %{http_code}\\\\n\" --max-time 60 \"http://localhost:3000/household/shopping/01KS2SCJ9JT05YS2V1YPZXY48J\")",
+      "Bash(node -e \"const t=require\\('./tsconfig.json'\\); console.log\\(JSON.stringify\\(t.compilerOptions.paths\\)\\)\")",
+      "Bash(curl -s --max-time 90 http://localhost:3000/api/dev-resync)"
     ]
   }
 }
