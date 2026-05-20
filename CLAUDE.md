@@ -2,7 +2,7 @@
 
 ## What this project is
 
-HomeApp ("Hearth") is a **private family life hub** for two users: Dan and Imogen.
+HomeApp ("HomeOS") is a **private family life hub** for two users: Dan and Imogen.
 It is a shared brain for household admin, planning, entertainment, and memories.
 
 It is NOT a generic productivity app. It should feel warm and personal, like a shared home rather than a work tool.

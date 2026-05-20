@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { daysUntil } from '@/lib/utils/bins'
 import { relativeDayLabel, eventTimeLabel } from '@/lib/utils/calendar'
 import { PinnedBoard } from './pinned-board'
+import { UserMenu } from './user-menu'
 import type { PinColour } from '@/lib/db/schema'
 
 type ShoppingItem = { id: string; title: string; checked: boolean }
@@ -94,9 +95,7 @@ export function DashboardClient({
             {greeting(user.name)}
           </h1>
         </div>
-        <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-white text-[13px] font-bold shrink-0 mt-1">
-          {user.name.charAt(0).toUpperCase()}
-        </div>
+        <UserMenu user={user} />
       </header>
 
       {/* Pinned — fridge corkboard */}

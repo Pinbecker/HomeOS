@@ -2,13 +2,17 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Hearth',
+  title: 'HomeOS',
   description: 'Your shared home',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Hearth',
+    title: 'HomeOS',
+  },
+  icons: {
+    icon: '/icons/icon-192.png',
+    apple: '/apple-touch-icon.png',
   },
 }
 
@@ -19,8 +23,8 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#F6F2EE' },
-    { media: '(prefers-color-scheme: dark)',  color: '#121009' },
+    { media: '(prefers-color-scheme: light)', color: '#F2F2F7' },
+    { media: '(prefers-color-scheme: dark)',  color: '#000000' },
   ],
 }
 

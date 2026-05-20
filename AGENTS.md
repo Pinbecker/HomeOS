@@ -4,7 +4,7 @@ This file is for AI coding agents (Codex, Claude, etc.) assisting with this proj
 
 ## What this project is
 
-HomeApp ("Hearth") is a private, self-hosted family life hub. Two users: Dan and Imogen. It is a Next.js app backed by SQLite, deployed via Docker Compose on a personal VM, served via Caddy reverse proxy.
+HomeApp ("HomeOS") is a private, self-hosted family life hub. Two users: Dan and Imogen. It is a Next.js app backed by SQLite, deployed via Docker Compose on a personal VM, served via Caddy reverse proxy.
 
 ---
 

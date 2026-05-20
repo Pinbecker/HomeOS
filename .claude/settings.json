@@ -42,7 +42,11 @@
       "Bash(curl -s -o /dev/null -w 'shop route -> %{http_code}\\\\n' --max-time 20 http://localhost:3000/household/shopping/__TRACKED_VAR__)",
       "Bash(curl -s -o /dev/null -w \"shop route -> %{http_code}\\\\n\" --max-time 60 \"http://localhost:3000/household/shopping/01KS2SCJ9JT05YS2V1YPZXY48J\")",
       "Bash(node -e \"const t=require\\('./tsconfig.json'\\); console.log\\(JSON.stringify\\(t.compilerOptions.paths\\)\\)\")",
-      "Bash(curl -s --max-time 90 http://localhost:3000/api/dev-resync)"
+      "Bash(curl -s --max-time 90 http://localhost:3000/api/dev-resync)",
+      "Bash(node -e \"require\\('@resvg/resvg-js'\\); console.log\\('resvg ok'\\)\")",
+      "Bash(node scripts/gen-icons.mjs)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 30 http://localhost:3000/__TRACKED_VAR__)",
+      "Bash(curl -s --max-time 20 http://localhost:3000/login)"
     ]
   }
 }

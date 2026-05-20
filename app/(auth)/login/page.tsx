@@ -35,9 +35,13 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent mb-4 shadow-lg shadow-accent/25">
-            <span className="text-3xl">🔥</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+              <path d="M3 10.5L12 3l9 7.5" />
+              <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+              <path d="M10 21v-5a2 2 0 0 1 4 0v5" />
+            </svg>
           </div>
-          <h1 className="text-2xl font-extrabold text-text-1 tracking-tight">Hearth</h1>
+          <h1 className="text-2xl font-extrabold text-text-1 tracking-tight">HomeOS</h1>
           <p className="text-sm text-text-2 mt-1">Your shared home</p>
         </div>
 
