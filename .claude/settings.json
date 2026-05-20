@@ -46,7 +46,13 @@
       "Bash(node -e \"require\\('@resvg/resvg-js'\\); console.log\\('resvg ok'\\)\")",
       "Bash(node scripts/gen-icons.mjs)",
       "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 30 http://localhost:3000/__TRACKED_VAR__)",
-      "Bash(curl -s --max-time 20 http://localhost:3000/login)"
+      "Bash(curl -s --max-time 20 http://localhost:3000/login)",
+      "Bash(cd \"C:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\" && sed -i 's/onDelete={\\(\\) => handleDelete\\(item.id\\)}/onDelete={\\(\\) => handleDeleteItem\\(item.id\\)}/g' \"app/\\(app\\)/household/shopping/[shopId]/shop-view.tsx\" && echo \"updated\" && grep -n \"handleDeleteItem\\\\|handleDelete\\(\" \"app/\\(app\\)/household/shopping/[shopId]/shop-view.tsx\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 60 http://localhost:3000/__TRACKED_VAR__)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 60 \"http://localhost:3000/household/tasks/all\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"
     ]
   }
 }

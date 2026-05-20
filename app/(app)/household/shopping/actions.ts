@@ -90,6 +90,13 @@ export async function toggleShoppingItem(id: string) {
   revalidateShopping(item.listId)
 }
 
+export async function deleteShoppingItem(id: string) {
+  await requireSession()
+  const item = await db.query.listItems.findFirst({ where: eq(listItems.id, id) })
+  await db.delete(listItems).where(eq(listItems.id, id))
+  revalidateShopping(item?.listId)
+}
+
 export async function clearChecked(listId: string) {
   await requireSession()
   await db.delete(listItems).where(and(eq(listItems.listId, listId), eq(listItems.checked, true)))

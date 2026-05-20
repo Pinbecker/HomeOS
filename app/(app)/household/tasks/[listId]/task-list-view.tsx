@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { ulid } from 'ulid'
 import { createTask, toggleTask, deleteTask, updateTask } from '../actions'
+import { SwipeRow } from '@/components/ui/swipe-row'
 
 type Task = {
   id: string
@@ -120,6 +121,7 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
     const due = task.dueDate ? formatDue(new Date(task.dueDate)) : null
     return (
       <div key={task.id} className={i > 0 ? 'border-t border-border' : ''}>
+       <SwipeRow onDelete={() => remove(task, section)}>
         <div className="flex items-center gap-3 px-4 py-2.5">
           {editing ? (
             <button onClick={() => remove(task, section)} className="shrink-0 active:opacity-60" aria-label="Delete">
@@ -167,6 +169,7 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
             </span>
           )}
         </div>
+       </SwipeRow>
 
         {/* Inline detail editor */}
         {isExpanded && !editing && (

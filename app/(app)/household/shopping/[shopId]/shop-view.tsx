@@ -3,8 +3,9 @@
 import { useState, useTransition, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { addShoppingItem, toggleShoppingItem, clearChecked, renameShop, deleteShop } from '../actions'
+import { addShoppingItem, toggleShoppingItem, clearChecked, renameShop, deleteShop, deleteShoppingItem } from '../actions'
 import { LIST_COLORS } from '../../tasks/colors'
+import { SwipeRow } from '@/components/ui/swipe-row'
 
 type ListItem = { id: string; title: string; checked: boolean; checkedAt: Date | null }
 type Shop = { id: string; name: string; color: string; items: ListItem[] }
@@ -47,6 +48,11 @@ export function ShopView({ shop }: { shop: Shop }) {
   function handleClearChecked() {
     setItems(prev => prev.filter(i => !i.checked))
     startTransition(() => clearChecked(shop.id))
+  }
+
+  function handleDeleteItem(id: string) {
+    setItems(prev => prev.filter(i => i.id !== id))
+    startTransition(() => deleteShoppingItem(id))
   }
 
   function saveEdit() {
@@ -167,14 +173,15 @@ export function ShopView({ shop }: { shop: Shop }) {
                 <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-2 px-1">To get · {unchecked.length}</p>
                 <div className="bg-surface border border-border rounded-2xl overflow-hidden">
                   {unchecked.map((item, i) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleToggle(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-border' : ''}`}
-                    >
-                      <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
-                      <span className="text-[14.5px] font-medium text-text-1">{item.title}</span>
-                    </button>
+                    <SwipeRow key={item.id} onDelete={() => handleDeleteItem(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
+                      <button
+                        onClick={() => handleToggle(item.id)}
+                        className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
+                      >
+                        <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
+                        <span className="text-[14.5px] font-medium text-text-1">{item.title}</span>
+                      </button>
+                    </SwipeRow>
                   ))}
                 </div>
               </div>
@@ -185,18 +192,19 @@ export function ShopView({ shop }: { shop: Shop }) {
                 <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-2 px-1">Got it · {checked.length}</p>
                 <div className="bg-surface border border-border rounded-2xl overflow-hidden">
                   {checked.map((item, i) => (
-                    <button
-                      key={item.id}
-                      onClick={() => handleToggle(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-border' : ''}`}
-                    >
-                      <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
-                        <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
-                          <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </div>
-                      <span className="text-[14.5px] font-medium text-text-3 line-through">{item.title}</span>
-                    </button>
+                    <SwipeRow key={item.id} onDelete={() => handleDeleteItem(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
+                      <button
+                        onClick={() => handleToggle(item.id)}
+                        className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
+                      >
+                        <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
+                          <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
+                            <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
+                        <span className="text-[14.5px] font-medium text-text-3 line-through">{item.title}</span>
+                      </button>
+                    </SwipeRow>
                   ))}
                 </div>
               </div>

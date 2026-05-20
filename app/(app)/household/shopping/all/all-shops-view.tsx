@@ -2,7 +2,8 @@
 
 import { useState, useTransition, useRef } from 'react'
 import Link from 'next/link'
-import { addShoppingItem, toggleShoppingItem, clearAllChecked } from '../actions'
+import { addShoppingItem, toggleShoppingItem, clearAllChecked, deleteShoppingItem } from '../actions'
+import { SwipeRow } from '@/components/ui/swipe-row'
 
 type Item = { id: string; title: string; checked: boolean; shopId: string }
 type Shop = { id: string; name: string; color: string; items: Item[] }
@@ -39,6 +40,11 @@ export function AllShopsView({ shops }: { shops: Shop[] }) {
   function handleClearAll() {
     setItems(prev => prev.filter(i => !i.checked))
     startTransition(() => clearAllChecked())
+  }
+
+  function handleDelete(id: string) {
+    setItems(prev => prev.filter(i => i.id !== id))
+    startTransition(() => deleteShoppingItem(id))
   }
 
   return (
@@ -115,14 +121,15 @@ export function AllShopsView({ shops }: { shops: Shop[] }) {
             </div>
             <div className="bg-surface border border-border rounded-2xl overflow-hidden">
               {shopUnchecked.map((item, i) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleToggle(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-border' : ''}`}
-                >
-                  <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
-                  <span className="text-[14.5px] font-medium text-text-1">{item.title}</span>
-                </button>
+                <SwipeRow key={item.id} onDelete={() => handleDelete(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
+                  <button
+                    onClick={() => handleToggle(item.id)}
+                    className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
+                  >
+                    <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
+                    <span className="text-[14.5px] font-medium text-text-1">{item.title}</span>
+                  </button>
+                </SwipeRow>
               ))}
             </div>
           </div>
@@ -143,21 +150,22 @@ export function AllShopsView({ shops }: { shops: Shop[] }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-2 px-1">Got it · {checked.length}</p>
           <div className="bg-surface border border-border rounded-2xl overflow-hidden">
             {checked.map((item, i) => (
-              <button
-                key={item.id}
-                onClick={() => handleToggle(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-border' : ''}`}
-              >
-                <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
-                  <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
-                    <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <span className="flex-1 text-[14.5px] font-medium text-text-3 line-through">{item.title}</span>
-                <span className="text-[11px] font-medium shrink-0" style={{ color: shopMeta.get(item.shopId)?.color }}>
-                  {shopMeta.get(item.shopId)?.name}
-                </span>
-              </button>
+              <SwipeRow key={item.id} onDelete={() => handleDelete(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
+                <button
+                  onClick={() => handleToggle(item.id)}
+                  className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
+                >
+                  <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
+                      <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                  <span className="flex-1 text-[14.5px] font-medium text-text-3 line-through">{item.title}</span>
+                  <span className="text-[11px] font-medium shrink-0" style={{ color: shopMeta.get(item.shopId)?.color }}>
+                    {shopMeta.get(item.shopId)?.name}
+                  </span>
+                </button>
+              </SwipeRow>
             ))}
           </div>
         </div>

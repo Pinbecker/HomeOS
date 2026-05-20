@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { ulid } from 'ulid'
 import { createHousePlan, toggleHousePlan, deleteHousePlan } from './actions'
+import { SwipeRow } from '@/components/ui/swipe-row'
 
 type Plan = { id: string; title: string; status: string }
 
@@ -47,38 +48,31 @@ export function HousePlansView({ initialActive, initialDone }: { initialActive: 
 
   function renderRow(plan: Plan, i: number, section: 'active' | 'done') {
     return (
-      <div key={plan.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
-        {section === 'active' ? (
-          <button
-            onClick={() => complete(plan)}
-            className="w-[22px] h-[22px] rounded-full border-2 border-border shrink-0 active:scale-90 transition-transform"
-            aria-label="Mark done"
-          />
-        ) : (
-          <button
-            onClick={() => uncomplete(plan)}
-            className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
-            style={{ background: color }}
-            aria-label="Mark undone"
-          >
-            <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-              <path d="M4 10.5l4 4 8-9" />
-            </svg>
-          </button>
-        )}
-        <p className={`flex-1 text-[16px] ${section === 'done' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
-          {plan.title}
-        </p>
-        <button
-          onClick={() => remove(plan, section)}
-          className="text-text-3 active:opacity-60 px-1 shrink-0"
-          aria-label="Delete"
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-4 h-4">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      </div>
+      <SwipeRow key={plan.id} onDelete={() => remove(plan, section)} className={i > 0 ? 'border-t border-border' : ''}>
+        <div className="flex items-center gap-3 px-4 py-3">
+          {section === 'active' ? (
+            <button
+              onClick={() => complete(plan)}
+              className="w-[22px] h-[22px] rounded-full border-2 border-border shrink-0 active:scale-90 transition-transform"
+              aria-label="Mark done"
+            />
+          ) : (
+            <button
+              onClick={() => uncomplete(plan)}
+              className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: color }}
+              aria-label="Mark undone"
+            >
+              <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                <path d="M4 10.5l4 4 8-9" />
+              </svg>
+            </button>
+          )}
+          <p className={`flex-1 text-[16px] ${section === 'done' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
+            {plan.title}
+          </p>
+        </div>
+      </SwipeRow>
     )
   }
 

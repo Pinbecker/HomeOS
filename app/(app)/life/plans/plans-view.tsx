@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { ulid } from 'ulid'
 import { createTripIdea, updateTripIdea, toggleTripIdea, deleteTripIdea } from './actions'
+import { SwipeRow } from '@/components/ui/swipe-row'
 
 type TripIdea = {
   id: string
@@ -62,6 +63,7 @@ export function PlansView({ initialItems }: { initialItems: TripIdea[] }) {
     const notes = editingNotes[item.id] ?? item.body ?? ''
     return (
       <div key={item.id} className={i > 0 ? 'border-t border-border' : ''}>
+       <SwipeRow onDelete={() => remove(item, section)}>
         <div className="flex items-center gap-3 px-4 py-3">
           {section === 'active' ? (
             <button
@@ -91,16 +93,8 @@ export function PlansView({ initialItems }: { initialItems: TripIdea[] }) {
               <p className="text-[12.5px] text-text-2 truncate mt-0.5">{item.body}</p>
             )}
           </button>
-          <button
-            onClick={() => remove(item, section)}
-            className="text-text-3 active:opacity-60 px-1 shrink-0"
-            aria-label="Delete"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-4 h-4">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
         </div>
+       </SwipeRow>
 
         {isExpanded && (
           <div className="px-4 pb-3 pl-[49px]">
