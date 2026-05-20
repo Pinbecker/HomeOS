@@ -5,10 +5,11 @@ export default async function HouseholdPage() {
   await requireSession()
 
   const sections = [
-    { href: '/household/shopping', label: 'Shopping', icon: '🛒', desc: 'Shared grocery list' },
-    { href: '/household/tasks',    label: 'Tasks',    icon: '✓',  desc: 'Things to get done' },
-    { href: '/household/bins',     label: 'Bins',     icon: '♻️', desc: 'Collection schedule' },
-    { href: '/household/meals',    label: 'Meals',    icon: '🍽',  desc: 'Meal ideas & planner' },
+    { href: '/household/shopping', label: 'Shopping',    icon: '🛒', desc: 'Shared grocery list' },
+    { href: '/household/tasks',    label: 'Tasks',       icon: '✓',  desc: 'Things to get done' },
+    { href: '/household/plans',    label: 'House Plans', icon: '🏗️', desc: 'Projects & improvements' },
+    { href: '/household/bins',     label: 'Bins',        icon: '♻️', desc: 'Collection schedule' },
+    { href: '/household/meals',    label: 'Meals',       icon: '🍽',  desc: 'Meal ideas & planner' },
   ]
 
   return (

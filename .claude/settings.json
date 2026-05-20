@@ -21,7 +21,17 @@
       "Bash(npx tsc *)",
       "Bash(npx tsx -e ' *)",
       "Bash(npx tsx *)",
-      "Bash(pnpm build *)"
+      "Bash(pnpm build *)",
+      "Bash(node -e \"const Database = require\\('better-sqlite3'\\); const db = new Database\\('local-data/db/homeapp.db'\\); const rows = db.prepare\\(\\\\\"SELECT id, title, fields FROM records WHERE category='identity'\\\\\"\\).all\\(\\); console.log\\(JSON.stringify\\(rows, null, 2\\)\\);\")",
+      "Bash(node -e \"const Database = require\\('better-sqlite3'\\); const db = new Database\\('local-data/db/homeapp.db'\\); db.prepare\\(\\\\\"UPDATE records SET title='Daniel David Coakes' WHERE id='01KS2X0JJENACPQX57EGY1H71V'\\\\\"\\).run\\(\\); db.prepare\\(\\\\\"UPDATE records SET title='Imogen Sophie Rose Coakes' WHERE id='01KS2X0JJF7KSET1CV5J12H8AZ'\\\\\"\\).run\\(\\); console.log\\('Done'\\);\")",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\\\\app\\\\\\(app\\)\\\\life\\\\admin\")",
+      "Bash(Out-Null)",
+      "Bash(pnpm tsc *)",
+      "Bash(node -e \"const Database = require\\('better-sqlite3'\\); const db = new Database\\('local-data/db/homeapp.db'\\); const tables = db.prepare\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table'\\\\\"\\).all\\(\\); console.log\\(tables.map\\(t => t.name\\).join\\(', '\\)\\)\")",
+      "Bash(node -e \"require\\('tsdav'\\); console.log\\('tsdav ok'\\)\")",
+      "Bash(node -e \"require\\('node-ical'\\); console.log\\('node-ical ok'\\)\")",
+      "Bash(node --require dotenv/config -e ' *)",
+      "Bash(node scripts/test-calendar.mjs)"
     ]
   }
 }

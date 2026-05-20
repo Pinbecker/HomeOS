@@ -83,6 +83,7 @@ export type ItemType =
   | 'memory'
   | 'document'
   | 'idea'
+  | 'trip_idea'
 
 export type ItemStatus = 'active' | 'completed' | 'archived' | 'snoozed'
 export type ItemPriority = 'low' | 'medium' | 'high'
@@ -120,7 +121,7 @@ export const items = sqliteTable('items', {
 // LISTS (shopping, packing, etc.)
 // ============================================================
 
-export type ListType = 'shopping' | 'packing' | 'watchlist' | 'places' | 'tasks' | 'custom'
+export type ListType = 'shopping' | 'packing' | 'watchlist' | 'places' | 'tasks' | 'house_plans' | 'custom'
 
 export const lists = sqliteTable('lists', {
   id: text('id').primaryKey(),

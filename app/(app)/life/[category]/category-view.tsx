@@ -49,11 +49,11 @@ export function CategoryView({ meta, initialRecords }: { meta: CategoryMeta; ini
     <div className="flex flex-col max-w-lg mx-auto">
       {/* Nav bar */}
       <div className="px-3 pt-3 pb-1 flex items-center justify-between">
-        <Link href="/life" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
+        <Link href="/life/admin" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M10 3L5 8l5 5" />
           </svg>
-          <span className="text-[16px]">Life</span>
+          <span className="text-[16px]">Records</span>
         </Link>
         <button onClick={() => setEditing('new')} className="text-accent text-[16px] font-medium active:opacity-60 px-1">
           Add
@@ -153,6 +153,7 @@ function RecordEditor({
   const [fields, setFields] = useState<Field[]>(record.fields.length ? record.fields : [{ label: '', value: '' }])
   const [renewalLabel, setRenewalLabel] = useState(record.renewalLabel ?? meta.renewalLabel ?? '')
   const [renewalDate, setRenewalDate] = useState<string>(record.renewalDate ? toInputDate(record.renewalDate) : '')
+  const [showRenewal, setShowRenewal] = useState(!!record.renewalDate)
   const [notes, setNotes] = useState(record.notes ?? '')
   const [saving, setSaving] = useState(false)
 
@@ -256,28 +257,48 @@ function RecordEditor({
         </div>
 
         {/* Renewal */}
-        <div>
-          <p className="px-1 mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-text-2">Renewal / due date</p>
-          <div className="bg-surface rounded-2xl overflow-hidden">
-            <input
-              value={renewalLabel}
-              onChange={e => setRenewalLabel(e.target.value)}
-              placeholder="Label (e.g. Renews, MOT due)"
-              className="w-full px-4 py-3 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none"
-            />
-            <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+        {showRenewal ? (
+          <div>
+            <div className="px-1 mb-1.5 flex items-center justify-between">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-text-2">Renewal / due date</p>
+              <button
+                onClick={() => { setShowRenewal(false); setRenewalDate(''); setRenewalLabel('') }}
+                className="text-[12px] text-red active:opacity-60"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="bg-surface rounded-2xl overflow-hidden">
               <input
-                type="date"
-                value={renewalDate}
-                onChange={e => setRenewalDate(e.target.value)}
-                className="bg-transparent text-[15px] text-text-1 outline-none"
+                value={renewalLabel}
+                onChange={e => setRenewalLabel(e.target.value)}
+                placeholder="Label (e.g. Renews, MOT due)"
+                className="w-full px-4 py-3 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none"
               />
-              {renewalDate && (
-                <button onClick={() => setRenewalDate('')} className="text-[13px] text-red active:opacity-60">Clear</button>
-              )}
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+                <input
+                  type="date"
+                  value={renewalDate}
+                  onChange={e => setRenewalDate(e.target.value)}
+                  className="bg-transparent text-[15px] text-text-1 outline-none"
+                />
+                {renewalDate && (
+                  <button onClick={() => setRenewalDate('')} className="text-[13px] text-red active:opacity-60">Clear date</button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <button
+            onClick={() => setShowRenewal(true)}
+            className="px-1 flex items-center gap-1.5 text-accent text-[14px] font-medium active:opacity-60"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-4 h-4">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+            Add renewal date
+          </button>
+        )}
 
         {/* Notes */}
         <div>

@@ -1,6 +1,6 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { items, lists, listItems, bins, records } from '@/lib/db/schema'
+import { items, lists, listItems, bins, records, calendarEvents } from '@/lib/db/schema'
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
 import { getNextBinCollection } from '@/lib/utils/bins'
@@ -83,6 +83,19 @@ export default async function DashboardPage() {
     date: r.renewalDate!,
   }))
 
+  // Upcoming calendar events (next 14 days)
+  const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const calRows = await db.query.calendarEvents.findMany({
+    where: and(
+      gte(calendarEvents.startsAt, startOfToday),
+      lte(calendarEvents.startsAt, calWindow)
+    ),
+    orderBy: [asc(calendarEvents.startsAt)],
+    columns: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, location: true },
+    limit: 8,
+  })
+
   return (
     <DashboardClient
       user={session.user}
@@ -93,6 +106,7 @@ export default async function DashboardPage() {
       inboxPreview={inboxPreview}
       bins={relevantBins}
       renewals={renewals}
+      calendarEvents={calRows}
     />
   )
 }

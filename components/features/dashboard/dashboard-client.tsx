@@ -25,6 +25,14 @@ type Renewal = {
   label: string | null
   date: Date
 }
+type CalEvent = {
+  id: string
+  title: string
+  startsAt: Date
+  endsAt: Date | null
+  allDay: boolean
+  location: string | null
+}
 
 interface Props {
   user: { name: string; email: string }
@@ -35,6 +43,7 @@ interface Props {
   inboxPreview: InboxPreview[]
   bins: BinWithDate[]
   renewals: Renewal[]
+  calendarEvents: CalEvent[]
 }
 
 const BIN_DOT: Record<string, string> = {
@@ -63,8 +72,22 @@ function taskDueLabel(due: Date | null): { label: string; urgent: boolean } {
   return { label: `${d}d`, urgent: false }
 }
 
+function formatEventTime(ev: CalEvent): string {
+  if (ev.allDay) return 'All day'
+  const start = ev.startsAt.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  return start
+}
+
+function eventDayLabel(startsAt: Date): string {
+  const today = new Date()
+  const d = Math.round((new Date(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate()).getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86400000)
+  if (d === 0) return 'Today'
+  if (d === 1) return 'Tomorrow'
+  return startsAt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
 export function DashboardClient({
-  user, shoppingItems, shoppingListId, dueTasks, inboxCount, inboxPreview, bins, renewals,
+  user, shoppingItems, shoppingListId, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents,
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -201,6 +224,37 @@ export function DashboardClient({
                     {days < 0 ? 'Overdue' : days === 0 ? 'Today' : `${days}d`}
                   </span>
                 </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Calendar — upcoming events */}
+      {calendarEvents.length > 0 && (
+        <section className="mx-4 mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-2">Calendar</p>
+          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            {calendarEvents.map((ev, i) => {
+              const dayLabel = eventDayLabel(ev.startsAt)
+              const timeLabel = formatEventTime(ev)
+              const isToday = dayLabel === 'Today'
+              return (
+                <div key={ev.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
+                  <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
+                    <div className="w-[7px] h-[7px] rounded-full bg-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13.5px] font-semibold text-text-1 truncate">{ev.title}</p>
+                    {ev.location && (
+                      <p className="text-[11.5px] text-text-2 truncate">{ev.location}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-[11px] font-bold ${isToday ? 'text-accent' : 'text-text-2'}`}>{dayLabel}</p>
+                    <p className="text-[11px] text-text-3">{timeLabel}</p>
+                  </div>
+                </div>
               )
             })}
           </div>

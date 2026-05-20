@@ -22,6 +22,7 @@ export default async function TasksPage() {
     if (t.listId) counts[t.listId] = (counts[t.listId] ?? 0) + 1
   }
 
+  const taskListIds = new Set(taskLists.map(l => l.id))
   const listsWithCounts = taskLists.map(l => ({
     id: l.id,
     name: l.name,
@@ -29,5 +30,7 @@ export default async function TasksPage() {
     count: counts[l.id] ?? 0,
   }))
 
-  return <TasksOverview lists={listsWithCounts} totalActive={activeTasks.length} />
+  const totalActive = activeTasks.filter(t => t.listId && taskListIds.has(t.listId)).length
+
+  return <TasksOverview lists={listsWithCounts} totalActive={totalActive} />
 }

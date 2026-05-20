@@ -1,47 +1,49 @@
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth/session'
-import { db } from '@/lib/db'
-import { records } from '@/lib/db/schema'
-import { CATEGORIES } from './categories'
 
 export default async function LifePage() {
   await requireSession()
 
-  const all = await db.query.records.findMany({ columns: { category: true } })
-  const counts: Record<string, number> = {}
-  for (const r of all) counts[r.category] = (counts[r.category] ?? 0) + 1
+  const sections = [
+    {
+      href: '/life/admin',
+      label: 'Records & Admin',
+      icon: '📋',
+      color: '#5856D6',
+      desc: 'Documents, insurance, utilities & accounts',
+    },
+    {
+      href: '/life/plans',
+      label: 'Plans & Trips',
+      icon: '✈️',
+      color: '#007AFF',
+      desc: 'Holiday ideas, day trips & adventures',
+    },
+  ]
 
   return (
     <div className="flex flex-col max-w-lg mx-auto">
-      <header className="px-5 pt-5 pb-3">
-        <h1 className="text-[28px] font-bold text-text-1 tracking-tight">Life</h1>
-        <p className="text-[13px] text-text-2 mt-0.5">Everything important, in its place</p>
+      <header className="px-5 pt-5 pb-4">
+        <h1 className="text-[22px] font-extrabold text-text-1 tracking-tight">Life</h1>
       </header>
-
-      <div className="mx-4 bg-surface rounded-2xl overflow-hidden">
-        {CATEGORIES.map((c, i) => (
-          <Link
-            key={c.key}
-            href={`/life/${c.key}`}
-            className={`flex items-center gap-3.5 px-4 py-3 active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''}`}
+      <div className="mx-4 flex flex-col gap-[5px]">
+        {sections.map(s => (
+          <Link key={s.href} href={s.href}
+            className="bg-surface border border-border rounded-2xl px-4 py-4 flex items-center gap-4 active:opacity-70 transition-opacity"
           >
-            <div className="w-9 h-9 rounded-[9px] flex items-center justify-center text-[18px] shrink-0" style={{ background: `${c.color}1F` }}>
-              {c.icon}
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0" style={{ background: `${s.color}1F` }}>
+              {s.icon}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[16px] font-medium text-text-1">{c.label}</p>
-              <p className="text-[12.5px] text-text-2 truncate">{c.desc}</p>
+            <div className="flex-1">
+              <p className="text-[15px] font-semibold text-text-1">{s.label}</p>
+              <p className="text-[12px] text-text-2">{s.desc}</p>
             </div>
-            {counts[c.key] ? (
-              <span className="text-[15px] text-text-2">{counts[c.key]}</span>
-            ) : null}
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3 shrink-0">
               <path d="M6 4l4 4-4 4" />
             </svg>
           </Link>
         ))}
       </div>
-
       <div className="h-4" />
     </div>
   )
