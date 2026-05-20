@@ -8,17 +8,17 @@ import { getNextBinCollection } from '@/lib/utils/bins'
 export default async function DashboardPage() {
   const session = await requireSession()
 
-  // Fetch active shopping items (first list of type 'shopping')
-  const shoppingList = await db.query.lists.findFirst({
-    where: and(eq(lists.type, 'shopping'), isNull(lists.archived)),
+  // Fetch active shopping items across all shops (preview)
+  const shoppingLists = await db.query.lists.findMany({
+    where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
     with: {
       items: {
         where: eq(listItems.checked, false),
         orderBy: [asc(listItems.sortOrder), asc(listItems.createdAt)],
-        limit: 6,
       },
     },
   })
+  const shoppingItems = shoppingLists.flatMap(l => l.items).slice(0, 6)
 
   // Fetch tasks due today or overdue
   const now = new Date()
@@ -105,8 +105,7 @@ export default async function DashboardPage() {
   return (
     <DashboardClient
       user={session.user}
-      shoppingItems={shoppingList?.items ?? []}
-      shoppingListId={shoppingList?.id}
+      shoppingItems={shoppingItems}
       dueTasks={dueTasks}
       inboxCount={inboxCount}
       inboxPreview={inboxPreview}

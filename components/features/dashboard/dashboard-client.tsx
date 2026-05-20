@@ -40,7 +40,6 @@ type Pin = { id: string; title: string; body: string | null; colour: PinColour }
 interface Props {
   user: { name: string; email: string }
   shoppingItems: ShoppingItem[]
-  shoppingListId?: string
   dueTasks: Task[]
   inboxCount: number
   inboxPreview: InboxPreview[]
@@ -91,7 +90,7 @@ function eventDayLabel(startsAt: Date): string {
 }
 
 export function DashboardClient({
-  user, shoppingItems, shoppingListId, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins,
+  user, shoppingItems, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins,
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })

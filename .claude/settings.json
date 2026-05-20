@@ -37,7 +37,10 @@
       "Bash(netstat -ano)",
       "Bash(tasklist /FI \"PID eq 24464\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 5 http://localhost:3000/api/health)",
-      "Bash(VERIFY_BUILD=1 pnpm build)"
+      "Bash(VERIFY_BUILD=1 pnpm build)",
+      "Bash(node -e \"const D=require\\('better-sqlite3'\\);const db=new D\\('local-data/db/homeapp.db'\\);const r=db.prepare\\(\\\\\"SELECT id FROM lists WHERE type='shopping' LIMIT 1\\\\\"\\).get\\(\\);process.stdout.write\\(r?r.id:''\\)\")",
+      "Bash(curl -s -o /dev/null -w 'shop route -> %{http_code}\\\\n' --max-time 20 http://localhost:3000/household/shopping/__TRACKED_VAR__)",
+      "Bash(curl -s -o /dev/null -w \"shop route -> %{http_code}\\\\n\" --max-time 60 \"http://localhost:3000/household/shopping/01KS2SCJ9JT05YS2V1YPZXY48J\")"
     ]
   }
 }

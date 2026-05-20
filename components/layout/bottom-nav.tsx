@@ -7,6 +7,7 @@ const NavIcon = ({ children }: { children: React.ReactNode }) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
+    stroke="currentColor"
     strokeWidth={1.75}
     strokeLinecap="round"
     strokeLinejoin="round"
@@ -74,7 +75,7 @@ export function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-nav-bg backdrop-blur-2xl border-t border-border safe-bottom">
+    <nav className="fixed bottom-0 inset-x-0 z-40 bg-nav-bg backdrop-blur-2xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+10px)]">
       <div className="flex items-start pt-2 pb-1 px-1">
 
         {/* Home */}
