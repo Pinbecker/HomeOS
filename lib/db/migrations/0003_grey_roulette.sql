@@ -1,0 +1,1 @@
+ALTER TABLE `items` ADD `list_id` text REFERENCES lists(id);

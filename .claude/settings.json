@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 20 pnpm dev)",
+      "Bash(python -c \"import sys,json; pkg=json.load\\(sys.stdin\\); print\\(list\\(pkg.get\\('exports', {}\\).keys\\(\\)\\)[:30]\\)\")",
+      "Bash(pnpm add *)",
+      "Bash(pnpm db:generate)",
+      "Bash(pnpm db:migrate)",
+      "Bash(pnpm rebuild *)",
+      "Bash(node -e \"require\\('node:child_process'\\).execSync\\('node --version', {stdio: 'inherit'}\\)\")",
+      "Bash(npx node-gyp *)",
+      "Bash(ls \"c:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\" | grep -i npmrc; cat \"c:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\\\\.npmrc\" 2>/dev/null; cat \"c:\\\\Users\\\\danco\\\\.npmrc\" 2>/dev/null)",
+      "Read(//c/Users/danco/**)",
+      "Bash(pnpm config *)",
+      "Bash(node -e \"require\\('better-sqlite3'\\)\")",
+      "Bash(node -e \"const db = require\\('better-sqlite3'\\)\\('./test.db'\\); console.log\\('SQLite version:', db.prepare\\('SELECT sqlite_version\\(\\)'\\).get\\(\\)\\); db.close\\(\\); require\\('fs'\\).unlinkSync\\('./test.db'\\)\")",
+      "Bash(python -c \"import sys,json; pkg=json.load\\(sys.stdin\\); print\\('install:', pkg.get\\('scripts', {}\\).get\\('install'\\)\\); print\\('build:', pkg.get\\('scripts', {}\\).get\\('build'\\)\\)\")",
+      "Bash(npx prebuild-install *)",
+      "Bash(pnpm db:seed)",
+      "Bash(node -e ' *)",
+      "Bash(npx tsc *)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(npx tsx *)",
+      "Bash(pnpm build *)"
+    ]
+  }
+}

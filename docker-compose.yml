@@ -1,0 +1,76 @@
+# ============================================================
+# HomeApp — Production Docker Compose
+# Usage: docker compose up -d
+# ============================================================
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME}
+    container_name: homeapp
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - db_data:/data/db
+      - file_data:/data/files
+    expose:
+      - "3000"
+    depends_on:
+      - caddy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: homeapp_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+
+  backup:
+    image: alpine:3.19
+    container_name: homeapp_backup
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - db_data:/data/db:ro
+      - file_data:/data/files:ro
+      - backup_data:/data/backups
+      - ./scripts/backup.sh:/scripts/backup.sh:ro
+    entrypoint: >
+      sh -c "
+        apk add --no-cache sqlite rsync &&
+        chmod +x /scripts/backup.sh &&
+        echo '0 * * * * /scripts/backup.sh >> /var/log/backup.log 2>&1' | crontab - &&
+        crond -f -l 6
+      "
+
+volumes:
+  db_data:
+    driver: local
+  file_data:
+    driver: local
+  backup_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  caddy_logs:
+    driver: local

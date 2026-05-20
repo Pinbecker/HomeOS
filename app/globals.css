@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DESIGN TOKENS — iOS system palette
+   ============================================================ */
+
+:root {
+  /* Backgrounds */
+  --bg:         #F2F2F7;   /* iOS grouped background */
+  --surface:    #FFFFFF;   /* cards / list cells */
+  --surface-2:  #E5E5EA;   /* pressed / secondary fill */
+
+  /* Borders / separators */
+  --border:     #C6C6C8;   /* iOS separator */
+
+  /* Text — iOS label colours */
+  --text-1:     #000000;                  /* label */
+  --text-2:     rgba(60,60,67,0.60);      /* secondary label */
+  --text-3:     rgba(60,60,67,0.30);      /* tertiary / placeholder */
+
+  /* Accent — iOS system blue */
+  --accent:         #007AFF;
+  --accent-bg:      rgba(0,122,255,0.10);
+  --accent-border:  rgba(0,122,255,0.20);
+
+  /* Green — completion, positive (iOS green) */
+  --sage:       #34C759;
+  --sage-bg:    rgba(52,199,89,0.12);
+
+  /* Orange — warnings, bins (iOS orange) */
+  --amber:        #FF9500;
+  --amber-bg:     rgba(255,149,0,0.12);
+  --amber-border: rgba(255,149,0,0.22);
+
+  /* Red — urgent (iOS red) */
+  --red:      #FF3B30;
+  --red-bg:   rgba(255,59,48,0.10);
+
+  /* Surfaces */
+  --nav-bg:   rgba(249,249,249,0.94);   /* iOS tab/nav bar with blur */
+  --film-bg:  #1C1C1E;
+}
+
+.dark {
+  --bg:        #000000;
+  --surface:   #1C1C1E;
+  --surface-2: #2C2C2E;
+
+  --border:    #38383A;
+
+  --text-1:    #FFFFFF;
+  --text-2:    rgba(235,235,245,0.60);
+  --text-3:    rgba(235,235,245,0.30);
+
+  --accent:        #0A84FF;
+  --accent-bg:     rgba(10,132,255,0.16);
+  --accent-border: rgba(10,132,255,0.28);
+
+  --sage:      #30D158;
+  --sage-bg:   rgba(48,209,88,0.16);
+
+  --amber:        #FF9F0A;
+  --amber-bg:     rgba(255,159,10,0.14);
+  --amber-border: rgba(255,159,10,0.26);
+
+  --red:      #FF453A;
+  --red-bg:   rgba(255,69,58,0.16);
+
+  --nav-bg:   rgba(28,28,30,0.94);
+  --film-bg:  #0E0C08;
+}
+
+/* ============================================================
+   TAILWIND THEME EXTENSION
+   ============================================================ */
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+
+  --color-bg:       var(--bg);
+  --color-surface:  var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border:   var(--border);
+
+  --color-text-1:   var(--text-1);
+  --color-text-2:   var(--text-2);
+  --color-text-3:   var(--text-3);
+
+  --color-accent:        var(--accent);
+  --color-accent-bg:     var(--accent-bg);
+  --color-accent-border: var(--accent-border);
+
+  --color-sage:    var(--sage);
+  --color-sage-bg: var(--sage-bg);
+
+  --color-amber:        var(--amber);
+  --color-amber-bg:     var(--amber-bg);
+  --color-amber-border: var(--amber-border);
+
+  --color-red:    var(--red);
+  --color-red-bg: var(--red-bg);
+
+  --color-nav-bg:  var(--nav-bg);
+  --color-film-bg: var(--film-bg);
+
+  /* iOS corner radii */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+}
+
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-1);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  overscroll-behavior: none;
+  letter-spacing: -0.01em;   /* iOS SF tracking */
+}
+
+/* Safe area insets for iPhone notch / home indicator */
+.safe-top    { padding-top:    env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Scrollbar hide */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

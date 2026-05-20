@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hearth — Concept 1: Clean</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #E8EAED;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6B7280;
+    margin-bottom: 8px;
+  }
+  .page-header h2 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 6px;
+  }
+  .page-header p {
+    font-size: 15px;
+    color: #6B7280;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  /* Color palette */
+  .palette {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 48px;
+    flex-wrap: wrap;
+  }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .swatch-color {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .swatch-label {
+    font-size: 10px;
+    color: #6B7280;
+    font-weight: 500;
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  /* Screens layout */
+  .screens {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .screen-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .screen-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6B7280;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* Phone frame */
+  .phone {
+    width: 375px;
+    height: 812px;
+    background: #FFFFFF;
+    border-radius: 50px;
+    box-shadow:
+      0 0 0 12px #1A1A1A,
+      0 0 0 14px #2D2D2D,
+      0 30px 80px rgba(0,0,0,0.35);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Notch */
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 130px;
+    height: 30px;
+    background: #1A1A1A;
+    border-radius: 0 0 20px 20px;
+    z-index: 100;
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px;
+    padding: 14px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .status-time {
+    font-size: 15px;
+    font-weight: 600;
+    color: #111827;
+  }
+  .status-icons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #111827;
+    font-size: 13px;
+  }
+
+  /* Scrollable content */
+  .screen-content {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .screen-content::-webkit-scrollbar { display: none; }
+
+  /* App header */
+  .app-header {
+    padding: 16px 20px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .app-header-left h1 {
+    font-size: 13px;
+    color: #6B7280;
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+  .app-header-left h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #111827;
+  }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #3B82F6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  /* Bin banner */
+  .bin-banner {
+    margin: 0 20px 14px;
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .bin-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .bin-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E40AF;
+    margin-bottom: 1px;
+  }
+  .bin-text span {
+    font-size: 12px;
+    color: #3B82F6;
+  }
+
+  /* Section */
+  .section {
+    padding: 0 20px;
+    margin-bottom: 20px;
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9CA3AF;
+  }
+  .section-link {
+    font-size: 13px;
+    color: #3B82F6;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  /* Today card */
+  .today-card {
+    background: #F9FAFB;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .event-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #F3F4F6;
+  }
+  .event-item:last-child { border-bottom: none; }
+  .event-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .event-dot.blue { background: #3B82F6; }
+  .event-dot.purple { background: #8B5CF6; }
+  .event-dot.green { background: #10B981; }
+  .event-info strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 2px;
+  }
+  .event-info span {
+    font-size: 12px;
+    color: #6B7280;
+  }
+  .event-time {
+    margin-left: auto;
+    font-size: 12px;
+    color: #9CA3AF;
+    flex-shrink: 0;
+  }
+
+  /* Shopping items */
+  .shopping-list {
+    background: #F9FAFB;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .shop-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #F3F4F6;
+  }
+  .shop-item:last-child { border-bottom: none; }
+  .checkbox {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #D1D5DB;
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .checkbox.checked {
+    background: #3B82F6;
+    border-color: #3B82F6;
+    color: white;
+    font-size: 11px;
+  }
+  .shop-item span {
+    font-size: 14px;
+    color: #111827;
+  }
+  .shop-item span.done {
+    text-decoration: line-through;
+    color: #9CA3AF;
+  }
+  .shop-more {
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #6B7280;
+    border-top: 1px solid #F3F4F6;
+  }
+
+  /* Tonight card */
+  .tonight-card {
+    background: #111827;
+    border-radius: 14px;
+    overflow: hidden;
+    padding: 14px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .film-poster {
+    width: 52px;
+    height: 78px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1D4ED8, #7C3AED);
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-end;
+    padding: 4px;
+  }
+  .film-poster-label {
+    font-size: 7px;
+    color: rgba(255,255,255,0.7);
+    font-weight: 600;
+  }
+  .film-info { flex: 1; }
+  .film-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #F59E0B;
+    margin-bottom: 4px;
+  }
+  .film-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #FFFFFF;
+    margin-bottom: 3px;
+    line-height: 1.2;
+  }
+  .film-meta {
+    font-size: 12px;
+    color: #9CA3AF;
+    margin-bottom: 8px;
+  }
+  .film-badge {
+    display: inline-block;
+    background: #1F2937;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: #D1D5DB;
+    margin-right: 4px;
+  }
+  .film-badge.library {
+    background: rgba(16,185,129,0.15);
+    border-color: rgba(16,185,129,0.3);
+    color: #6EE7B7;
+  }
+  .film-shuffle {
+    font-size: 11px;
+    color: #6B7280;
+    margin-top: 8px;
+  }
+
+  /* Tasks */
+  .task-list {
+    background: #F9FAFB;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #F3F4F6;
+  }
+  .task-item:last-child { border-bottom: none; }
+  .task-circle {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #D1D5DB;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .task-text { flex: 1; }
+  .task-text strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: #111827;
+    margin-bottom: 2px;
+  }
+  .task-text span {
+    font-size: 12px;
+    color: #9CA3AF;
+  }
+  .task-due {
+    font-size: 11px;
+    color: #EF4444;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .task-due.soon {
+    color: #F59E0B;
+  }
+
+  /* Inbox */
+  .inbox-banner {
+    margin: 0 20px 16px;
+    background: #FFF7ED;
+    border: 1px solid #FED7AA;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .inbox-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .inbox-badge {
+    background: #F97316;
+    color: white;
+    border-radius: 999px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .inbox-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #92400E;
+  }
+  .inbox-text span {
+    font-size: 12px;
+    color: #B45309;
+  }
+  .inbox-arrow {
+    color: #F97316;
+    font-size: 16px;
+  }
+
+  /* Bottom navigation */
+  .bottom-nav {
+    height: 83px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid #F3F4F6;
+    display: flex;
+    align-items: flex-start;
+    padding-top: 10px;
+    flex-shrink: 0;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .nav-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+  .nav-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: #9CA3AF;
+  }
+  .nav-item.active .nav-label { color: #3B82F6; }
+  .nav-item.active .nav-icon { filter: none; }
+
+  .nav-capture {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .nav-capture-btn {
+    width: 44px;
+    height: 44px;
+    background: #3B82F6;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 24px;
+    font-weight: 300;
+    box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+    margin-top: -14px;
+  }
+  .nav-capture .nav-label { color: #3B82F6; }
+
+  /* --- SECOND SCREEN: Shopping --- */
+  .shopping-screen-header {
+    padding: 16px 20px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .screen-back {
+    font-size: 13px;
+    color: #3B82F6;
+    font-weight: 500;
+  }
+  .shopping-screen-header h1 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #111827;
+  }
+  .shop-add-btn {
+    font-size: 13px;
+    color: #3B82F6;
+    font-weight: 600;
+  }
+
+  .list-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 0 20px 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .list-tabs::-webkit-scrollbar { display: none; }
+  .list-tab {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    background: #F3F4F6;
+    color: #6B7280;
+  }
+  .list-tab.active {
+    background: #3B82F6;
+    color: white;
+  }
+
+  .full-list {
+    padding: 0 20px;
+  }
+  .list-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9CA3AF;
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+  .list-section-title:first-child { margin-top: 0; }
+  .list-card {
+    background: #F9FAFB;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 14px;
+    border-bottom: 1px solid #F3F4F6;
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row span { font-size: 15px; color: #111827; flex: 1; }
+  .list-row span.done { text-decoration: line-through; color: #9CA3AF; }
+  .quick-add-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 20px 0;
+    background: #F9FAFB;
+    border: 1.5px solid #E5E7EB;
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .quick-add-bar input-mock {
+    flex: 1;
+    font-size: 14px;
+    color: #9CA3AF;
+    display: block;
+  }
+  .quick-add-icon {
+    color: #3B82F6;
+    font-size: 20px;
+  }
+
+  /* Design notes */
+  .design-notes {
+    margin-top: 40px;
+    max-width: 780px;
+    margin-left: auto;
+    margin-right: auto;
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  }
+  .design-notes h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 16px;
+  }
+  .notes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 600px) {
+    .notes-grid { grid-template-columns: 1fr; }
+  }
+  .note-item h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 6px;
+  }
+  .note-item p {
+    font-size: 13px;
+    color: #6B7280;
+    line-height: 1.5;
+  }
+
+  .concept-tag {
+    display: inline-block;
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Hearth · Design Concept 1 of 3</h1>
+  <h2>Clean</h2>
+  <p>iOS-native feel. White, uncluttered, familiar. Feels like a high-quality Apple app.</p>
+</div>
+
+<!-- Colour palette -->
+<div class="palette">
+  <div class="swatch">
+    <div class="swatch-color" style="background:#FFFFFF; border:1px solid #E5E7EB;"></div>
+    <div class="swatch-label">#FFFFFF<br>Background</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#F9FAFB;"></div>
+    <div class="swatch-label">#F9FAFB<br>Card fill</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#3B82F6;"></div>
+    <div class="swatch-label">#3B82F6<br>Primary blue</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#111827;"></div>
+    <div class="swatch-label">#111827<br>Text</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#6B7280;"></div>
+    <div class="swatch-label">#6B7280<br>Secondary</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#EF4444;"></div>
+    <div class="swatch-label">#EF4444<br>Urgent</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#10B981;"></div>
+    <div class="swatch-label">#10B981<br>Success</div>
+  </div>
+  <div class="swatch">
+    <div class="swatch-color" style="background:#F59E0B;"></div>
+    <div class="swatch-label">#F59E0B<br>Warning</div>
+  </div>
+</div>
+
+<div class="screens">
+
+  <!-- SCREEN 1: Dashboard -->
+  <div class="screen-wrapper">
+    <div class="screen-label">Home — Dashboard</div>
+    <div class="phone">
+      <div class="notch"></div>
+
+      <!-- Status bar -->
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons">
+          <span>▲▲▲</span>
+          <span>WiFi</span>
+          <span>🔋</span>
+        </div>
+      </div>
+
+      <div class="screen-content">
+
+        <!-- App header -->
+        <div class="app-header">
+          <div class="app-header-left">
+            <h1>Tuesday, 20 May</h1>
+            <h2>Good morning, Dan</h2>
+          </div>
+          <div class="avatar">D</div>
+        </div>
+
+        <!-- Bin banner -->
+        <div class="bin-banner">
+          <div class="bin-icon">♻️</div>
+          <div class="bin-text">
+            <strong>Recycling tomorrow</strong>
+            <span>Put out the blue bin tonight</span>
+          </div>
+        </div>
+
+        <!-- Today -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Today</span>
+            <a class="section-link">Calendar</a>
+          </div>
+          <div class="today-card">
+            <div class="event-item">
+              <div class="event-dot blue"></div>
+              <div class="event-info">
+                <strong>Doctor's appointment</strong>
+                <span>Dr Patel · GP Surgery</span>
+              </div>
+              <span class="event-time">10:30am</span>
+            </div>
+            <div class="event-item">
+              <div class="event-dot purple"></div>
+              <div class="event-info">
+                <strong>Imogen — yoga class</strong>
+                <span>Back around 8pm</span>
+              </div>
+              <span class="event-time">6:30pm</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tonight -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Tonight</span>
+            <a class="section-link">All films</a>
+          </div>
+          <div class="tonight-card">
+            <div class="film-poster">
+              <span class="film-poster-label">BR2049</span>
+            </div>
+            <div class="film-info">
+              <div class="film-eyebrow">Suggested for tonight</div>
+              <div class="film-title">Blade Runner 2049</div>
+              <div class="film-meta">2017 · Sci-Fi · 2h 44m</div>
+              <div>
+                <span class="film-badge library">✓ In your library</span>
+              </div>
+              <div class="film-shuffle">🔀 Pick something else</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shopping -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Shopping</span>
+            <a class="section-link">See all</a>
+          </div>
+          <div class="shopping-list">
+            <div class="shop-item">
+              <div class="checkbox"></div>
+              <span>Milk</span>
+            </div>
+            <div class="shop-item">
+              <div class="checkbox"></div>
+              <span>Eggs</span>
+            </div>
+            <div class="shop-item">
+              <div class="checkbox checked">✓</div>
+              <span class="done">Coffee</span>
+            </div>
+            <div class="shop-more">+ 4 more items</div>
+          </div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="section">
+          <div class="section-header">
+            <span class="section-title">Due soon</span>
+            <a class="section-link">All tasks</a>
+          </div>
+          <div class="task-list">
+            <div class="task-item">
+              <div class="task-circle"></div>
+              <div class="task-text">
+                <strong>Book car service</strong>
+                <span>Household · Dan</span>
+              </div>
+              <span class="task-due">Today</span>
+            </div>
+            <div class="task-item">
+              <div class="task-circle"></div>
+              <div class="task-text">
+                <strong>Renew car insurance</strong>
+                <span>Admin</span>
+              </div>
+              <span class="task-due soon">3 days</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inbox -->
+        <div class="inbox-banner">
+          <div class="inbox-left">
+            <div class="inbox-badge">3</div>
+            <div class="inbox-text">
+              <strong>Inbox needs review</strong>
+              <span>"sort the boiler" and 2 more…</span>
+            </div>
+          </div>
+          <span class="inbox-arrow">›</span>
+        </div>
+
+        <!-- Spacer for nav -->
+        <div style="height: 20px;"></div>
+
+      </div><!-- end screen-content -->
+
+      <!-- Bottom nav -->
+      <div class="bottom-nav">
+        <div class="nav-item active">
+          <span class="nav-icon">🏠</span>
+          <span class="nav-label">Home</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🛒</span>
+          <span class="nav-label">Household</span>
+        </div>
+        <div class="nav-capture">
+          <div class="nav-capture-btn">+</div>
+          <span class="nav-label">Capture</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🎬</span>
+          <span class="nav-label">Watch</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">◦◦◦</span>
+          <span class="nav-label">Life</span>
+        </div>
+      </div>
+
+    </div><!-- end phone -->
+  </div>
+
+  <!-- SCREEN 2: Shopping list -->
+  <div class="screen-wrapper">
+    <div class="screen-label">Household — Shopping</div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons">
+          <span>▲▲▲</span><span>WiFi</span><span>🔋</span>
+        </div>
+      </div>
+
+      <div class="screen-content">
+        <div class="shopping-screen-header">
+          <span class="screen-back">‹ Home</span>
+          <h1>Shopping</h1>
+          <span class="shop-add-btn">Edit</span>
+        </div>
+
+        <!-- List tabs -->
+        <div class="list-tabs">
+          <div class="list-tab active">Groceries</div>
+          <div class="list-tab">Lidl</div>
+          <div class="list-tab">Amazon</div>
+          <div class="list-tab">DIY</div>
+          <div class="list-tab">+ New list</div>
+        </div>
+
+        <div class="full-list">
+          <div class="list-section-title">To get</div>
+          <div class="list-card">
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Milk</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Eggs</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Bread</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Wine (red)</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Chicken thighs</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox"></div>
+              <span>Washing powder</span>
+            </div>
+          </div>
+
+          <div class="list-section-title">Got it</div>
+          <div class="list-card">
+            <div class="list-row">
+              <div class="checkbox checked">✓</div>
+              <span class="done">Coffee</span>
+            </div>
+            <div class="list-row">
+              <div class="checkbox checked">✓</div>
+              <span class="done">Bananas</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="quick-add-bar">
+          <span class="quick-add-icon">🔍</span>
+          <input-mock>Add item…</input-mock>
+        </div>
+
+      </div>
+
+      <div class="bottom-nav">
+        <div class="nav-item">
+          <span class="nav-icon">🏠</span>
+          <span class="nav-label">Home</span>
+        </div>
+        <div class="nav-item active">
+          <span class="nav-icon">🛒</span>
+          <span class="nav-label">Household</span>
+        </div>
+        <div class="nav-capture">
+          <div class="nav-capture-btn">+</div>
+          <span class="nav-label">Capture</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">🎬</span>
+          <span class="nav-label">Watch</span>
+        </div>
+        <div class="nav-item">
+          <span class="nav-icon">◦◦◦</span>
+          <span class="nav-label">Life</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end screens -->
+
+<!-- Design notes -->
+<div class="design-notes">
+  <div class="concept-tag">Concept 1 — Clean</div>
+  <h3>Design notes</h3>
+  <div class="notes-grid">
+    <div class="note-item">
+      <h4>Feel</h4>
+      <p>Familiar and frictionless. Looks like a polished Apple app. Anyone who uses an iPhone will feel immediately comfortable. No learning curve.</p>
+    </div>
+    <div class="note-item">
+      <h4>Typography</h4>
+      <p>System font (-apple-system / San Francisco). Matches iOS exactly. Clean hierarchy using weight and size, not colour.</p>
+    </div>
+    <div class="note-item">
+      <h4>Colour</h4>
+      <p>White base with iOS blue as the only accent. Coloured dots for calendar events. Sparse use of colour means it doesn't compete with content.</p>
+    </div>
+    <div class="note-item">
+      <h4>For Imogen</h4>
+      <p>Highest familiarity. Looks like Apple Notes and Reminders, which she already uses. Lowest risk of "this feels like a work app".</p>
+    </div>
+    <div class="note-item">
+      <h4>Trade-offs</h4>
+      <p>Can feel cold or corporate if not carefully warmed up with content and copy. The fun layer (films, ideas) needs more visual weight to balance the utility sections.</p>
+    </div>
+    <div class="note-item">
+      <h4>Works best for</h4>
+      <p>Task-heavy usage, shopping lists, quick scanning. Excellent readability in daylight. The "safe" choice.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

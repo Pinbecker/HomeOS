@@ -1,0 +1,38 @@
+# ============================================================
+# HomeApp — Development Docker Compose override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# For local dev, it's usually easier to just run: pnpm dev
+# This file is for testing the containerised setup locally.
+# ============================================================
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: deps  # Stop at deps stage for faster rebuilds
+    command: pnpm dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      # Mount source for hot reload
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      # Local data dirs (not volumes, so you can inspect them)
+      - ./local-data/db:/data/db
+      - ./local-data/files:/data/files
+    ports:
+      - "3000:3000"
+
+  # No Caddy in dev — access app directly on port 3000
+  caddy:
+    profiles:
+      - "disabled"
+
+  # No backup container in dev
+  backup:
+    profiles:
+      - "disabled"

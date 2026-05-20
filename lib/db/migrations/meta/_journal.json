@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1779282037743,
+      "tag": "0000_jazzy_sir_ram",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779283823093,
+      "tag": "0001_youthful_senator_kelly",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779283923156,
+      "tag": "0002_tough_the_call",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779285223405,
+      "tag": "0003_grey_roulette",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1779287481286,
+      "tag": "0004_burly_bucky",
+      "breakpoints": true
+    }
+  ]
+}
