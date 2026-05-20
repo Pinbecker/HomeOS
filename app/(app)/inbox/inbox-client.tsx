@@ -14,10 +14,9 @@ type InboxItem = {
 
 interface Props {
   items: InboxItem[]
-  userId: string
 }
 
-export function InboxClient({ items: initialItems, userId }: Props) {
+export function InboxClient({ items: initialItems }: Props) {
   const [items, setItems] = useState(initialItems)
   const [text, setText] = useState('')
   const [isPending, startTransition] = useTransition()

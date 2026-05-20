@@ -5,7 +5,7 @@
 
 # Stage 1: Install dependencies
 FROM node:20-alpine AS deps
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml* ./
@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 
 # Stage 2: Build the application
 FROM node:20-alpine AS builder
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -44,6 +44,8 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/lib/db/migrations ./lib/db/migrations
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.js ./scripts/start.js
 
 # Create data directories (these will be overridden by Docker volumes in prod)
 RUN mkdir -p /data/db /data/files && chown -R nextjs:nodejs /data
@@ -55,5 +57,4 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 # Run DB migrations then start the server
-# migrations script is copied from /app/scripts/ in the build stage
-CMD ["node", "server.js"]
+CMD ["node", "scripts/start.js"]

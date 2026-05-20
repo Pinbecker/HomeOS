@@ -19,7 +19,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     // Only allow login for existing accounts — no public registration
-    disableSignUp: false,
+    disableSignUp: true,
   },
 
   session: {

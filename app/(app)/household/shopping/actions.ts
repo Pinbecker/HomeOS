@@ -8,7 +8,7 @@ import { ulid } from 'ulid'
 import { revalidatePath } from 'next/cache'
 
 export async function addShoppingItem(listId: string, title: string) {
-  const session = await requireSession()
+  await requireSession()
   const id = ulid()
   const now = new Date()
 

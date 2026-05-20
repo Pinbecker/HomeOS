@@ -20,8 +20,6 @@ services:
       - file_data:/data/files
     expose:
       - "3000"
-    depends_on:
-      - caddy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
@@ -56,7 +54,6 @@ services:
     entrypoint: >
       sh -c "
         apk add --no-cache sqlite rsync &&
-        chmod +x /scripts/backup.sh &&
         echo '0 * * * * /scripts/backup.sh >> /var/log/backup.log 2>&1' | crontab - &&
         crond -f -l 6
       "

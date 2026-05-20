@@ -5,7 +5,7 @@ import { eq, and, isNull, desc } from 'drizzle-orm'
 import { InboxClient } from './inbox-client'
 
 export default async function InboxPage() {
-  const session = await requireSession()
+  await requireSession()
 
   const inboxItems = await db.query.items.findMany({
     where: and(
@@ -17,5 +17,5 @@ export default async function InboxPage() {
     with: { createdBy: { columns: { name: true } } },
   })
 
-  return <InboxClient items={inboxItems} userId={session.user.id} />
+  return <InboxClient items={inboxItems} />
 }
