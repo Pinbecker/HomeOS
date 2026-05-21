@@ -78,43 +78,57 @@ export function CategoryView({ meta, initialRecords }: { meta: CategoryMeta; ini
         </div>
       ) : (
         <div className="mx-4 flex flex-col gap-3">
-          {list.map(rec => (
-            <Link
-              key={rec.id}
-              href={`/life/admin/${rec.id}`}
-              className="bg-surface rounded-2xl p-4 text-left"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[16px] font-semibold text-text-1">{rec.title}</p>
-                  {rec.subtitle && <p className="text-[13px] text-text-2 mt-0.5">{rec.subtitle}</p>}
-                </div>
-                <div className="flex items-start gap-2 shrink-0">
-                  {rec.renewalDate && (() => {
-                    const r = formatRenewal(rec.renewalDate)
-                    return (
-                      <span className={`text-[11.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${r.soon ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>
-                        {rec.renewalLabel ?? 'Due'} · {r.text}
-                      </span>
-                    )
-                  })()}
-                </div>
-              </div>
-
-              {rec.fields.filter(f => f.value).length > 0 && (
-                <div className="mt-3 flex flex-col gap-1.5">
-                  {rec.fields.filter(f => f.value).map((f, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-3">
-                      <span className="text-[13px] text-text-2 shrink-0">{f.label}</span>
-                      <span className="text-[14px] text-text-1 text-right break-all">{f.value}</span>
+          {list.map(rec => {
+            const shownFields = rec.fields.filter(f => f.value)
+            return (
+              <Link
+                key={rec.id}
+                href={`/life/admin/${rec.id}`}
+                className="relative flex bg-surface border border-border rounded-2xl overflow-hidden active:bg-surface-2 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+              >
+                <span className="w-[3px] shrink-0" style={{ background: meta.color }} aria-hidden />
+                <div className="flex-1 min-w-0 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[16px] font-semibold text-text-1 truncate">{rec.title}</p>
+                      {rec.subtitle && <p className="text-[13px] text-text-2 mt-0.5 truncate">{rec.subtitle}</p>}
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {rec.renewalDate && (() => {
+                        const r = formatRenewal(rec.renewalDate)
+                        return (
+                          <span className={`text-[11.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${r.soon ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>
+                            {rec.renewalLabel ?? 'Due'} · {r.text}
+                          </span>
+                        )
+                      })()}
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3 shrink-0">
+                        <path d="M6 4l4 4-4 4" />
+                      </svg>
+                    </div>
+                  </div>
 
-              {rec.notes && <p className="text-[13px] text-text-2 mt-3 whitespace-pre-wrap">{rec.notes}</p>}
-            </Link>
-          ))}
+                  {shownFields.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {shownFields.slice(0, 4).map((f, i) => (
+                        <span key={i} className="text-[11.5px] font-medium px-2 py-1 rounded-lg bg-surface-2 max-w-full truncate">
+                          <span className="text-text-3">{f.label}: </span>
+                          <span className="text-text-1">{f.value}</span>
+                        </span>
+                      ))}
+                      {shownFields.length > 4 && (
+                        <span className="text-[11.5px] font-semibold px-2 py-1 rounded-lg bg-surface-2 text-text-3">
+                          +{shownFields.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {rec.notes && <p className="text-[13px] text-text-2 mt-3 whitespace-pre-wrap line-clamp-2">{rec.notes}</p>}
+                </div>
+              </Link>
+            )
+          })}
         </div>
       )}
 

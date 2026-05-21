@@ -17,7 +17,7 @@ export default async function DashboardPage() {
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
 
   // These queries are independent — run in parallel
-  const [shoppingLists, dueTasks, inboxCount, inboxPreview, binsList, renewalRows, reminderRows, calRows, pinRows] =
+  const [shoppingLists, dueTasks, inboxCount, inboxPreview, binsList, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -68,10 +68,35 @@ export default async function DashboardPage() {
         limit: 8,
       }),
       db.query.pins.findMany({
+        where: isNotNull(pins.linkHref),
         orderBy: [desc(pins.sortOrder), desc(pins.createdAt)],
-        columns: { id: true, title: true, body: true, colour: true, linkHref: true },
+        columns: { id: true, title: true, body: true, colour: true, linkHref: true, createdAt: true },
+      }),
+      db.query.items.findMany({
+        where: and(eq(items.type, 'note'), eq(items.pinned, true), eq(items.status, 'active'), isNull(items.deletedAt)),
+        orderBy: [desc(items.pinnedAt)],
+        columns: { id: true, title: true, body: true, pinnedAt: true, updatedAt: true },
       }),
     ])
+
+  const boardPins = [
+    ...pinnedNoteRows.map(note => ({
+      kind: 'note' as const,
+      id: note.id,
+      title: note.title,
+      body: note.body,
+      ts: (note.pinnedAt ?? note.updatedAt).getTime(),
+    })),
+    ...pinRows.map(pin => ({
+      kind: 'fact' as const,
+      id: pin.id,
+      title: pin.title,
+      body: pin.body,
+      colour: pin.colour,
+      linkHref: pin.linkHref ?? null,
+      ts: pin.createdAt.getTime(),
+    })),
+  ].sort((a, b) => b.ts - a.ts)
 
   const shoppingItems = shoppingLists.flatMap(l => l.items).slice(0, 6)
 
@@ -121,7 +146,7 @@ export default async function DashboardPage() {
       bins={relevantBins}
       renewals={renewals}
       calendarEvents={calRows}
-      pins={pinRows}
+      pins={boardPins}
     />
   )
 }

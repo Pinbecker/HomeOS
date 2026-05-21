@@ -110,6 +110,10 @@ export const items = sqliteTable('items', {
   // Type-specific fields stored as JSON
   metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
 
+  // Pinned to the Home feed (used by notes; pins live alongside record key-fact pins)
+  pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+  pinnedAt: integer('pinned_at', { mode: 'timestamp' }),
+
   // Soft delete
   deletedAt: integer('deleted_at', { mode: 'timestamp' }),
 

@@ -3,9 +3,8 @@
 import Link from 'next/link'
 import { daysUntil } from '@/lib/utils/bins'
 import { relativeDayLabel, eventTimeLabel } from '@/lib/utils/calendar'
-import { PinnedBoard } from './pinned-board'
+import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
-import type { PinColour } from '@/lib/db/schema'
 
 type ShoppingItem = { id: string; title: string; checked: boolean }
 type Task = {
@@ -37,7 +36,7 @@ type CalEvent = {
   allDay: boolean
   location: string | null
 }
-type Pin = { id: string; title: string; body: string | null; colour: PinColour; linkHref: string | null }
+type Pin = BoardPin
 
 interface Props {
   user: { name: string; email: string }

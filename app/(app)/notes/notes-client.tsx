@@ -2,16 +2,25 @@
 
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { SwipeRow } from '@/components/ui/swipe-row'
-import { createNote, updateNote, deleteNote } from './actions'
+import { createNote, updateNote, deleteNote, setNotePinned } from './actions'
 import { formatDistanceToNow } from '@/lib/utils/time'
 
 type Note = {
   id: string
   title: string
   body: string | null
+  pinned: boolean
   createdAt: Date
   updatedAt: Date
   createdBy: { name: string }
+}
+
+function PinGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 text-[#34C759] shrink-0" aria-label="Pinned">
+      <path d="M9 4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.6l1.4 3.5a2 2 0 0 1 .15.76V11a1 1 0 0 1-1 1h-3v6.5a1 1 0 0 1-2 0V12H7.5a1 1 0 0 1-1-1V9.86a2 2 0 0 1 .14-.76L8 5.6V4z" />
+    </svg>
+  )
 }
 
 function NoteModal({
@@ -112,6 +121,7 @@ export function NotesClient({ notes: initialNotes }: { notes: Note[] }) {
         id: tempId,
         title,
         body: body || null,
+        pinned: false,
         createdAt: now,
         updatedAt: now,
         createdBy: { name: '' },
@@ -131,6 +141,11 @@ export function NotesClient({ notes: initialNotes }: { notes: Note[] }) {
   function handleDelete(id: string) {
     setNotes(prev => prev.filter(n => n.id !== id))
     startTransition(() => deleteNote(id))
+  }
+
+  function handlePin(id: string, pinned: boolean) {
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, pinned } : n))
+    startTransition(() => setNotePinned(id, pinned))
   }
 
   return (
@@ -160,15 +175,20 @@ export function NotesClient({ notes: initialNotes }: { notes: Note[] }) {
             {notes.map((note, idx) => (
               <SwipeRow
                 key={note.id}
-                onDelete={() => handleDelete(note.id)}
-                deleteLabel="Delete"
+                actions={[
+                  { key: 'pin', label: note.pinned ? 'Unpin' : 'Pin', onClick: () => handlePin(note.id, !note.pinned), bg: '#34C759' },
+                  { key: 'delete', label: 'Delete', onClick: () => handleDelete(note.id), className: 'bg-red', closeOnClick: false },
+                ]}
                 className={idx > 0 ? 'border-t border-border' : ''}
               >
                 <button
                   onClick={() => openEdit(note)}
                   className="w-full text-left px-4 py-3.5 active:bg-surface-2 transition-colors"
                 >
-                  <p className="text-[14px] font-semibold text-text-1 leading-snug truncate">{note.title}</p>
+                  <div className="flex items-center gap-1.5">
+                    {note.pinned && <PinGlyph />}
+                    <p className="text-[14px] font-semibold text-text-1 leading-snug truncate">{note.title}</p>
+                  </div>
                   {note.body ? (
                     <p className="text-[12px] text-text-2 mt-0.5 line-clamp-2 leading-snug">{note.body}</p>
                   ) : null}
