@@ -309,7 +309,7 @@ export function EntityProfile({
                   <SwipeRow
                     key={`${fact.label}-${index}`}
                     className={showBorder ? 'border-t border-border' : ''}
-                    actions={[{ key: 'pin', label: 'Pin', onClick: () => pinFact(fact), className: 'bg-[#34C759]' }]}
+                    actions={[{ key: 'pin', label: 'Pin', onClick: () => pinFact(fact), bg: '#34C759' }]}
                   >
                     {row}
                   </SwipeRow>

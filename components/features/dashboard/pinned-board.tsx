@@ -4,7 +4,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ulid } from 'ulid'
 import type { PinColour } from '@/lib/db/schema'
-import { createPin, updatePin, deletePin } from '@/app/(app)/pins/actions'
+import {
+  createPin,
+  updatePin,
+  deletePin,
+  getPinnableRecords,
+  type PinnableCategory,
+  type PinnableRecord,
+  type PinnableFact,
+} from '@/app/(app)/pins/actions'
 
 type Pin = { id: string; title: string; body: string | null; colour: PinColour; linkHref: string | null }
 
@@ -18,9 +26,18 @@ const PIN_COLOURS: Record<PinColour, { tint: string; bar: string }> = {
 }
 const COLOUR_KEYS = Object.keys(PIN_COLOURS) as PinColour[]
 
+function Chevron() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  )
+}
+
 export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
   const [pins, setPins] = useState<Pin[]>(initialPins)
   const [editing, setEditing] = useState<Pin | 'new' | null>(null)
+  const [picking, setPicking] = useState(false)
 
   function handleSaved(saved: Pin, isNew: boolean) {
     setPins(prev => (isNew ? [saved, ...prev] : prev.map(p => (p.id === saved.id ? saved : p))))
@@ -30,13 +47,16 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
     setPins(prev => prev.filter(p => p.id !== id))
     setEditing(null)
   }
+  function handlePinnedFact(pin: Pin) {
+    setPins(prev => [pin, ...prev])
+  }
 
   return (
     <section className="mx-4 mb-4">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Pinned</p>
         {pins.length > 0 && (
-          <button onClick={() => setEditing('new')} className="text-[11.5px] font-semibold text-accent active:opacity-60">
+          <button onClick={() => setPicking(true)} className="text-[11.5px] font-semibold text-accent active:opacity-60">
             Add pin
           </button>
         )}
@@ -44,7 +64,7 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
 
       {pins.length === 0 ? (
         <button
-          onClick={() => setEditing('new')}
+          onClick={() => setPicking(true)}
           className="w-full flex items-center gap-3 bg-surface border border-dashed border-border rounded-2xl px-4 py-3.5 active:bg-surface-2"
         >
           <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center shrink-0">
@@ -52,7 +72,7 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
               <path d="M8 3.5v9M3.5 8h9" />
             </svg>
           </div>
-          <span className="text-[13.5px] font-medium text-text-2">Pin a note to your home screen</span>
+          <span className="text-[13.5px] font-medium text-text-2">Pin a note or a key fact to Home</span>
         </button>
       ) : (
         <div className="grid grid-cols-2 gap-2.5">
@@ -86,7 +106,7 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
           })}
           {/* Add tile */}
           <button
-            onClick={() => setEditing('new')}
+            onClick={() => setPicking(true)}
             className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border min-h-[72px] active:bg-surface-2"
           >
             <div className="w-7 h-7 rounded-full bg-accent/15 flex items-center justify-center">
@@ -99,6 +119,14 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
         </div>
       )}
 
+      {picking && (
+        <PinPicker
+          onClose={() => setPicking(false)}
+          onChooseNote={() => { setPicking(false); setEditing('new') }}
+          onPinned={handlePinnedFact}
+        />
+      )}
+
       {editing && (
         <PinEditor
           pin={editing === 'new' ? null : editing}
@@ -108,6 +136,204 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
         />
       )}
     </section>
+  )
+}
+
+type PickerStep = 'choose' | 'categories' | 'records' | 'facts'
+
+function PinPicker({
+  onClose, onChooseNote, onPinned,
+}: {
+  onClose: () => void
+  onChooseNote: () => void
+  onPinned: (pin: Pin) => void
+}) {
+  const [step, setStep] = useState<PickerStep>('choose')
+  const [data, setData] = useState<PinnableCategory[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [category, setCategory] = useState<PinnableCategory | null>(null)
+  const [record, setRecord] = useState<PinnableRecord | null>(null)
+  const [pinnedKeys, setPinnedKeys] = useState<Set<string>>(new Set())
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  async function openKeyFacts() {
+    setStep('categories')
+    if (!data) {
+      setLoading(true)
+      try {
+        setData(await getPinnableRecords())
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+
+  function back() {
+    if (step === 'facts') { setStep('records'); setRecord(null) }
+    else if (step === 'records') { setStep('categories'); setCategory(null) }
+    else if (step === 'categories') { setStep('choose') }
+  }
+
+  async function pinFact(rec: PinnableRecord, fact: PinnableFact) {
+    const key = `${rec.id}:${fact.label}:${fact.value}`
+    if (pinnedKeys.has(key) || busyKey) return
+    setBusyKey(key)
+    const input = {
+      title: rec.title,
+      body: `${fact.label.trim() || 'Detail'}: ${fact.value.trim()}`,
+      colour: 'green' as PinColour,
+      linkHref: rec.href,
+    }
+    try {
+      const res = await createPin(input)
+      onPinned({ id: res?.id ?? ulid(), title: input.title, body: input.body, colour: 'green', linkHref: input.linkHref })
+      setPinnedKeys(prev => new Set(prev).add(key))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const crumb =
+    step === 'choose' ? null
+    : step === 'categories' ? 'Key fact'
+    : step === 'records' ? `Key fact › ${category?.label ?? ''}`
+    : `Key fact › ${category?.label ?? ''} › ${record?.title ?? ''}`
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center"
+      style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="w-full max-w-lg bg-surface rounded-t-3xl pb-[calc(env(safe-area-inset-bottom)+12px)] flex flex-col" style={{ maxHeight: '85vh' }}>
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-9 h-1 bg-border rounded-full" />
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
+          {step === 'choose' ? (
+            <button onClick={onClose} className="text-[15px] text-text-2 active:opacity-60 w-16 text-left">Cancel</button>
+          ) : (
+            <button onClick={back} className="flex items-center gap-0.5 text-[15px] text-accent active:opacity-60 w-16 text-left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M10 3L5 8l5 5" /></svg>
+              Back
+            </button>
+          )}
+          <p className="text-[15px] font-bold text-text-1 flex items-center gap-1.5">
+            <span>📌</span> Pin to Home
+          </p>
+          <button onClick={onClose} className="text-[15px] font-semibold text-accent active:opacity-60 w-16 text-right">Done</button>
+        </div>
+
+        {crumb && (
+          <p className="px-5 pt-2.5 text-[12px] font-semibold text-text-3 truncate shrink-0">{crumb}</p>
+        )}
+
+        <div className="overflow-y-auto px-4 py-4 flex flex-col gap-2.5">
+          {step === 'choose' && (
+            <>
+              <p className="px-1 text-[13px] text-text-2">What would you like to pin?</p>
+              <button
+                onClick={onChooseNote}
+                className="flex items-center gap-3.5 bg-surface-2 rounded-2xl px-4 py-3.5 active:opacity-70 text-left"
+              >
+                <div className="w-11 h-11 rounded-[13px] flex items-center justify-center text-[22px] shrink-0" style={{ background: 'rgba(255,204,0,0.18)' }}>📝</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[16px] font-semibold text-text-1">A note</p>
+                  <p className="text-[12.5px] text-text-2">A quick reminder or scrap of info</p>
+                </div>
+                <span className="text-text-3"><Chevron /></span>
+              </button>
+              <button
+                onClick={openKeyFacts}
+                className="flex items-center gap-3.5 bg-surface-2 rounded-2xl px-4 py-3.5 active:opacity-70 text-left"
+              >
+                <div className="w-11 h-11 rounded-[13px] flex items-center justify-center text-[22px] shrink-0" style={{ background: 'rgba(52,199,89,0.18)' }}>🗂️</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[16px] font-semibold text-text-1">A key fact</p>
+                  <p className="text-[12.5px] text-text-2">Pin a detail from one of your records</p>
+                </div>
+                <span className="text-text-3"><Chevron /></span>
+              </button>
+            </>
+          )}
+
+          {step === 'categories' && (
+            loading ? (
+              <p className="px-1 py-6 text-center text-[14px] text-text-2">Loading your records…</p>
+            ) : !data || data.length === 0 ? (
+              <div className="px-1 py-6 text-center">
+                <p className="text-[15px] font-semibold text-text-1">No facts to pin yet</p>
+                <p className="text-[13px] text-text-2 mt-1">Add some key facts to a record first.</p>
+              </div>
+            ) : (
+              data.map(cat => (
+                <button
+                  key={cat.key}
+                  onClick={() => { setCategory(cat); setStep('records') }}
+                  className="flex items-center gap-3.5 bg-surface-2 rounded-2xl px-4 py-3 active:opacity-70 text-left"
+                >
+                  <div className="w-10 h-10 rounded-[12px] flex items-center justify-center text-[20px] shrink-0" style={{ background: `${cat.color}1F` }}>{cat.icon}</div>
+                  <p className="flex-1 text-[15.5px] font-semibold text-text-1 truncate">{cat.label}</p>
+                  <span className="text-[12px] font-bold text-text-2">{cat.records.length}</span>
+                  <span className="text-text-3"><Chevron /></span>
+                </button>
+              ))
+            )
+          )}
+
+          {step === 'records' && category && (
+            category.records.map(rec => (
+              <button
+                key={rec.id}
+                onClick={() => { setRecord(rec); setStep('facts') }}
+                className="flex items-center gap-3.5 bg-surface-2 rounded-2xl px-4 py-3 active:opacity-70 text-left"
+              >
+                <div className="w-10 h-10 rounded-[12px] flex items-center justify-center text-[20px] shrink-0" style={{ background: `${category.color}1F` }}>{category.icon}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15.5px] font-semibold text-text-1 truncate">{rec.title}</p>
+                  <p className="text-[12px] text-text-2">{rec.facts.length} {rec.facts.length === 1 ? 'fact' : 'facts'}</p>
+                </div>
+                <span className="text-text-3"><Chevron /></span>
+              </button>
+            ))
+          )}
+
+          {step === 'facts' && record && (
+            <>
+              <p className="px-1 text-[13px] text-text-2">Tap a fact to pin it.</p>
+              {record.facts.map((fact, i) => {
+                const key = `${record.id}:${fact.label}:${fact.value}`
+                const pinned = pinnedKeys.has(key)
+                return (
+                  <button
+                    key={i}
+                    onClick={() => pinFact(record, fact)}
+                    disabled={pinned}
+                    className="flex items-center gap-3 bg-surface-2 rounded-2xl px-4 py-3 active:opacity-70 text-left disabled:active:opacity-100"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12.5px] text-text-2 truncate">{fact.label || 'Detail'}</p>
+                      <p className="text-[15px] font-semibold text-text-1 break-words">{fact.value}</p>
+                    </div>
+                    {pinned ? (
+                      <span className="flex items-center gap-1 text-[13px] font-bold text-[#34C759] shrink-0">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3.5 8.5l3 3 6-7" /></svg>
+                        Pinned
+                      </span>
+                    ) : (
+                      <span className="text-[13px] font-bold text-white rounded-full px-3 py-1.5 shrink-0" style={{ background: '#34C759' }}>
+                        {busyKey === key ? '…' : 'Pin'}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -146,7 +372,7 @@ function PinEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col max-w-lg mx-auto">
+    <div className="fixed inset-0 z-[60] bg-bg flex flex-col max-w-lg mx-auto">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border safe-top">
         <button onClick={onClose} className="text-accent text-[16px] active:opacity-60">Cancel</button>
         <span className="text-[16px] font-semibold text-text-1">{isNew ? 'New Pin' : 'Edit Pin'}</span>

@@ -11,6 +11,7 @@ export type SwipeAction = {
   label: string
   onClick: () => void
   className?: string      // background colour class, e.g. 'bg-red', 'bg-accent'
+  bg?: string             // explicit background colour (wins over className)
   closeOnClick?: boolean  // snap shut after firing (default true)
 }
 
@@ -142,8 +143,8 @@ export function SwipeRow({
           <button
             key={action.key}
             onClick={() => fire(action)}
-            className={`${action.className ?? 'bg-red'} text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80`}
-            style={{ width: ACTION_W }}
+            className={`${action.bg ? '' : action.className ?? 'bg-red'} text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80`}
+            style={{ width: ACTION_W, ...(action.bg ? { background: action.bg } : {}) }}
             aria-label={action.label}
             tabIndex={offset < -10 ? 0 : -1}
           >
