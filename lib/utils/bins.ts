@@ -1,36 +1,70 @@
-import type { bins } from '@/lib/db/schema'
-import type { InferSelectModel } from 'drizzle-orm'
+export type StaticBinSchedule = {
+  id: string
+  name: string
+  colour: string
+  firstCollectionDate: string
+  intervalWeeks: number
+}
 
-type Bin = InferSelectModel<typeof bins>
+export const STATIC_BIN_SCHEDULES: StaticBinSchedule[] = [
+  {
+    id: 'black-bin',
+    name: 'Black bin',
+    colour: 'black',
+    firstCollectionDate: '2026-05-27',
+    intervalWeeks: 3,
+  },
+  {
+    id: 'recycling-food',
+    name: 'Recycling containers and food bin',
+    colour: 'blue',
+    firstCollectionDate: '2026-05-27',
+    intervalWeeks: 1,
+  },
+  {
+    id: 'green-bin',
+    name: 'Green bin',
+    colour: 'green',
+    firstCollectionDate: '2026-06-02',
+    intervalWeeks: 2,
+  },
+  {
+    id: 'hygiene-nappy',
+    name: 'Hygiene and nappy waste bag',
+    colour: 'pink',
+    firstCollectionDate: '2026-06-03',
+    intervalWeeks: 2,
+  },
+]
 
-// Computes the next collection date.
-// `anchorDate` is the LAST known collection (yyyy-mm-dd); collections
-// then repeat every `intervalWeeks` weeks on the same weekday.
-export function getNextBinCollection(bin: Bin): Date {
+function dateFromIsoDate(value: string): Date {
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+function todayAtMidnight(): Date {
   const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const interval = (bin.intervalWeeks && bin.intervalWeeks > 0 ? bin.intervalWeeks : 1) * 7
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
 
-  // Fallback if no anchor: next occurrence of collectionDay from today
-  if (!bin.anchorDate) {
-    const daysUntilNext = (bin.collectionDay - today.getDay() + 7) % 7
-    const candidate = new Date(today)
-    candidate.setDate(today.getDate() + daysUntilNext)
-    return candidate
+function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number): Date {
+  const today = todayAtMidnight()
+  const next = dateFromIsoDate(firstCollectionDate)
+  const intervalDays = intervalWeeks * 7
+
+  while (next < today) {
+    next.setDate(next.getDate() + intervalDays)
   }
 
-  const [y, m, d] = bin.anchorDate.split('-').map(Number)
-  const next = new Date(y, m - 1, d)
-  // Step forward from the last collection by the interval until we're >= today
-  do {
-    next.setDate(next.getDate() + interval)
-  } while (next < today)
   return next
 }
 
+export function getNextStaticBinCollection(bin: StaticBinSchedule): Date {
+  return getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks)
+}
+
 export function daysUntil(date: Date): number {
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const today = todayAtMidnight()
   return Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 

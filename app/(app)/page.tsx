@@ -1,9 +1,9 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { items, lists, listItems, bins, records, calendarEvents, pins, reminders } from '@/lib/db/schema'
+import { items, lists, listItems, records, calendarEvents, pins, reminders } from '@/lib/db/schema'
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc, inArray } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
-import { daysUntil, getNextBinCollection } from '@/lib/utils/bins'
+import { STATIC_BIN_SCHEDULES, daysUntil, getNextStaticBinCollection } from '@/lib/utils/bins'
 
 const RECORD_ENTITY_TYPE = 'record'
 
@@ -17,7 +17,7 @@ export default async function DashboardPage() {
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
 
   // These queries are independent — run in parallel
-  const [shoppingLists, dueTasks, inboxCount, inboxPreview, binsList, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows] =
+  const [shoppingLists, dueTasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -46,7 +46,6 @@ export default async function DashboardPage() {
         limit: 2,
         columns: { title: true, id: true },
       }),
-      db.query.bins.findMany({ where: eq(bins.active, true) }),
       db.query.records.findMany({
         where: and(isNotNull(records.renewalDate), lte(records.renewalDate, renewalWindow)),
         orderBy: [asc(records.renewalDate)],
@@ -109,9 +108,9 @@ export default async function DashboardPage() {
     : []
   const reminderRecordMap = new Map(reminderRecords.map(r => [r.id, r.title]))
 
-  const nextBins = binsList.map(bin => ({
+  const nextBins = STATIC_BIN_SCHEDULES.map(bin => ({
     ...bin,
-    nextCollection: getNextBinCollection(bin),
+    nextCollection: getNextStaticBinCollection(bin),
   })).sort((a, b) => a.nextCollection.getTime() - b.nextCollection.getTime())
 
   const relevantBins = nextBins.filter(b => daysUntil(b.nextCollection) === 1)

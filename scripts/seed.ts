@@ -54,14 +54,6 @@ async function main() {
   ])
   console.log(`✓ Task lists (Home, Errands)`)
 
-  const anchor = '2025-01-06'
-  await db.insert(schema.bins).values([
-    { id: ulid(), householdId, name: 'General Waste', colour: 'grey',  collectionDay: 1, frequency: 'weekly',          active: true, createdAt: now },
-    { id: ulid(), householdId, name: 'Recycling',     colour: 'blue',  collectionDay: 1, frequency: 'fortnightly_odd',  anchorDate: anchor, active: true, createdAt: now },
-    { id: ulid(), householdId, name: 'Garden Waste',  colour: 'green', collectionDay: 1, frequency: 'fortnightly_even', anchorDate: anchor, active: true, createdAt: now },
-  ])
-  console.log(`✓ 3 bins`)
-
   console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ Done! Add this to your .env:

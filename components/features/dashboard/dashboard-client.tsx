@@ -117,7 +117,7 @@ export function DashboardClient({
                 <div key={bin.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
                   <div className="w-[18px] h-[18px] rounded-full shrink-0 border-2 border-white/20" style={{ background: dot }} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[13.5px] font-semibold text-text-1">{bin.name} bin</p>
+                    <p className="text-[13.5px] font-semibold text-text-1">{bin.name}</p>
                     <p className="text-[11.5px] text-text-2">
                       {days === 0 ? 'Put out today' : 'Put out tonight before bed'}
                     </p>
