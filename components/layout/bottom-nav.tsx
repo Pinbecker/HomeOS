@@ -72,13 +72,14 @@ const rightTabs: Tab[] = [
   },
 ]
 
-// Angles use standard math trig convention (ccw from positive-x, so 270° = straight up in screen).
-// Spread: 215° → 325° gives a clean upper semicircle with clear separation at R=120.
+// Angles: standard math trig (270° = straight up in screen).
+// Spread 205°→335° at R=145 gives 81px centre-to-centre between adjacent items —
+// enough clearance for 48px circles and their labels at the varying heights.
 const radialItems: RadialItem[] = [
   {
     href: '/watch',
     label: 'Watch',
-    angle: 215,
+    angle: 205,
     bg: '#FF3B30',
     icon: (
       <RadialIcon>
@@ -90,7 +91,7 @@ const radialItems: RadialItem[] = [
   {
     href: '/household',
     label: 'Household',
-    angle: 243,
+    angle: 238,
     bg: '#34C759',
     icon: (
       <RadialIcon>
@@ -114,7 +115,7 @@ const radialItems: RadialItem[] = [
   {
     href: '/calendar',
     label: 'Calendar',
-    angle: 297,
+    angle: 302,
     bg: '#FF9500',
     icon: (
       <RadialIcon>
@@ -128,7 +129,7 @@ const radialItems: RadialItem[] = [
   {
     href: '/life/plans',
     label: 'Plans',
-    angle: 325,
+    angle: 335,
     bg: '#5856D6',
     icon: (
       <RadialIcon>
@@ -140,7 +141,7 @@ const radialItems: RadialItem[] = [
 
 // Open stagger: center item (Inbox) first, outer items last
 const OPEN_DELAYS = [50, 25, 0, 25, 50]
-const RADIUS = 120
+const RADIUS = 145
 
 function radialPos(angleDeg: number, r: number) {
   const rad = (angleDeg * Math.PI) / 180
