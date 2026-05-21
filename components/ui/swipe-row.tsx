@@ -4,7 +4,6 @@ import { useRef, useState, type ReactNode, type PointerEvent, type MouseEvent } 
 
 const ACTION_W = 84       // revealed delete-button width
 const OPEN_AT = 42        // drag past this -> snap open
-const FULL_AT = 150       // drag past this -> delete on release
 const MAX_DRAG = 240      // clamp
 
 export function SwipeRow({
@@ -83,12 +82,7 @@ export function SwipeRow({
     axis.current = null
 
     const o = offsetRef.current
-    if (o <= -FULL_AT) {
-      const w = wrapRef.current?.offsetWidth ?? 400
-      setAnimating(true)
-      setOff(-w)
-      window.setTimeout(onDelete, 180)
-    } else if (o <= -OPEN_AT) {
+    if (o <= -OPEN_AT) {
       snapTo(-ACTION_W, true)
     } else {
       snapTo(0, false)
