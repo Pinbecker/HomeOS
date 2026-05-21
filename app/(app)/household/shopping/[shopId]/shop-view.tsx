@@ -3,14 +3,15 @@
 import { useState, useTransition, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { addShoppingItem, toggleShoppingItem, clearChecked, renameShop, deleteShop, deleteShoppingItem } from '../actions'
+import { addShoppingItem, toggleShoppingItem, clearChecked, renameShop, deleteShop, deleteShoppingItem, moveShoppingItem } from '../actions'
 import { LIST_COLORS } from '../../tasks/colors'
 import { SwipeRow } from '@/components/ui/swipe-row'
 
 type ListItem = { id: string; title: string; checked: boolean; checkedAt: Date | null }
 type Shop = { id: string; name: string; color: string; isGeneral: boolean; items: ListItem[] }
+type OtherShop = { id: string; name: string; color: string }
 
-export function ShopView({ shop }: { shop: Shop }) {
+export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherShop[] }) {
   const router = useRouter()
   const [items, setItems] = useState(shop.items)
   const [text, setText] = useState('')
@@ -20,6 +21,7 @@ export function ShopView({ shop }: { shop: Shop }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(shop.name)
   const [color, setColor] = useState(shop.color)
+  const [movingItemId, setMovingItemId] = useState<string | null>(null)
 
   const unchecked = items.filter(i => !i.checked)
   const checked   = items.filter(i => i.checked)
@@ -53,6 +55,12 @@ export function ShopView({ shop }: { shop: Shop }) {
   function handleDeleteItem(id: string) {
     setItems(prev => prev.filter(i => i.id !== id))
     startTransition(() => deleteShoppingItem(id))
+  }
+
+  function handleMove(itemId: string, targetListId: string) {
+    setMovingItemId(null)
+    setItems(prev => prev.filter(i => i.id !== itemId))
+    startTransition(() => moveShoppingItem(itemId, targetListId))
   }
 
   function saveEdit() {
@@ -176,13 +184,26 @@ export function ShopView({ shop }: { shop: Shop }) {
                 <div className="bg-surface border border-border rounded-2xl overflow-hidden">
                   {unchecked.map((item, i) => (
                     <SwipeRow key={item.id} onDelete={() => handleDeleteItem(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
-                      <button
-                        onClick={() => handleToggle(item.id)}
-                        className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
-                      >
-                        <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
-                        <span className="text-[14.5px] font-medium text-text-1">{item.title}</span>
-                      </button>
+                      <div className="flex items-center">
+                        <button
+                          onClick={() => handleToggle(item.id)}
+                          className="flex-1 flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left min-w-0"
+                        >
+                          <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
+                          <span className="text-[14.5px] font-medium text-text-1 truncate">{item.title}</span>
+                        </button>
+                        {otherShops.length > 0 && (
+                          <button
+                            onClick={() => setMovingItemId(item.id)}
+                            className="shrink-0 px-3 py-[13px] text-text-3 active:text-text-1"
+                            aria-label="Move to another list"
+                          >
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                              <path d="M4 10h12M10 4l6 6-6 6" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </SwipeRow>
                   ))}
                 </div>
@@ -195,17 +216,30 @@ export function ShopView({ shop }: { shop: Shop }) {
                 <div className="bg-surface border border-border rounded-2xl overflow-hidden">
                   {checked.map((item, i) => (
                     <SwipeRow key={item.id} onDelete={() => handleDeleteItem(item.id)} className={i > 0 ? 'border-t border-border' : ''}>
-                      <button
-                        onClick={() => handleToggle(item.id)}
-                        className="w-full flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left"
-                      >
-                        <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
-                          <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
-                            <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
-                        <span className="text-[14.5px] font-medium text-text-3 line-through">{item.title}</span>
-                      </button>
+                      <div className="flex items-center">
+                        <button
+                          onClick={() => handleToggle(item.id)}
+                          className="flex-1 flex items-center gap-3 px-4 py-[13px] active:bg-surface-2 transition-colors text-left min-w-0"
+                        >
+                          <div className="w-5 h-5 rounded-[6px] bg-sage flex items-center justify-center shrink-0">
+                            <svg viewBox="0 0 10 10" fill="none" className="w-[10px] h-[10px]">
+                              <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                          <span className="text-[14.5px] font-medium text-text-3 line-through truncate">{item.title}</span>
+                        </button>
+                        {otherShops.length > 0 && (
+                          <button
+                            onClick={() => setMovingItemId(item.id)}
+                            className="shrink-0 px-3 py-[13px] text-text-3 active:text-text-1"
+                            aria-label="Move to another list"
+                          >
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                              <path d="M4 10h12M10 4l6 6-6 6" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </SwipeRow>
                   ))}
                 </div>
@@ -216,6 +250,37 @@ export function ShopView({ shop }: { shop: Shop }) {
       )}
 
       <div className="h-4" />
+
+      {/* Move to list — bottom sheet */}
+      {movingItemId && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setMovingItemId(null)}
+        >
+          <div
+            className="bg-surface rounded-t-2xl pb-8 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <p className="text-[13px] font-semibold text-text-3 px-5 pt-2 pb-1">Move to</p>
+            <div className="flex flex-col">
+              {otherShops.map((s, i) => (
+                <button
+                  key={s.id}
+                  onClick={() => handleMove(movingItemId, s.id)}
+                  className={`flex items-center gap-3 px-5 py-4 active:bg-surface-2 transition-colors text-left ${i > 0 ? 'border-t border-border' : ''}`}
+                >
+                  <div className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: s.color }} />
+                  <span className="text-[16px] font-medium text-text-1">{s.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

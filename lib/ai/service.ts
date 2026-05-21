@@ -98,6 +98,23 @@ async function findList(action: AiAction, type: 'tasks' | 'shopping') {
   if (action.listName) {
     const named = rows.find(row => row.name.toLowerCase() === action.listName!.toLowerCase())
     if (named) return named
+
+    if (type === 'shopping') {
+      const id = ulid()
+      const now = new Date()
+      await db.insert(lists).values({
+        id,
+        householdId: HOUSEHOLD_ID,
+        name: action.listName.trim(),
+        type: 'shopping',
+        color: '#34C759',
+        archived: false,
+        sortOrder: Date.now(),
+        createdAt: now,
+        updatedAt: now,
+      })
+      return await db.query.lists.findFirst({ where: eq(lists.id, id) }) ?? null
+    }
   }
 
   return rows[0] ?? null

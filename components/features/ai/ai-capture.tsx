@@ -27,9 +27,12 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
+  const [processing, setProcessing] = useState(false)
   const [isPending, startTransition] = useTransition()
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  const isWorking = isPending || processing
 
   function handleResult(result: AiCaptureResult) {
     setMessage(result.plan.clarificationQuestion || result.plan.response)
@@ -39,7 +42,7 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   function submitText(e?: React.FormEvent) {
     e?.preventDefault()
     const value = text.trim()
-    if (!value || isPending) return
+    if (!value || isWorking) return
     setText('')
     setError(null)
     setMessage(null)
@@ -84,16 +87,22 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
         stream.getTracks().forEach(track => track.stop())
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
         if (!blob.size) return
+        setProcessing(true)
         const formData = new FormData()
         formData.set('audio', blob, 'capture.webm')
-
-        const response = await fetch('/api/ai/voice', { method: 'POST', body: formData })
-        const payload = await response.json()
-        if (!response.ok) {
-          setError(payload.error || 'I could not save that voice note just now.')
-          return
+        try {
+          const response = await fetch('/api/ai/voice', { method: 'POST', body: formData })
+          const payload = await response.json()
+          if (!response.ok) {
+            setError(payload.error || 'I could not save that voice note just now.')
+            return
+          }
+          handleResult(payload)
+        } catch {
+          setError('I could not save that voice note just now.')
+        } finally {
+          setProcessing(false)
         }
-        handleResult(payload)
       }
 
       recorder.start()
@@ -116,9 +125,10 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
           <button
             type="button"
             onClick={recording ? stopRecording : startRecording}
+            disabled={isWorking && !recording}
             className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
               recording ? 'bg-red text-white' : 'bg-accent text-white'
-            }`}
+            } disabled:opacity-40`}
             aria-label={recording ? 'Stop recording' : 'Record voice note'}
           >
             {recording ? (
@@ -135,17 +145,18 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
           <input
             value={text}
             onChange={event => setText(event.target.value)}
-            placeholder={recording ? 'Listening...' : placeholder ?? 'Say or type anything to remember'}
-            className="min-w-0 flex-1 h-11 bg-surface-2 rounded-xl px-3 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none"
+            disabled={isWorking || recording}
+            placeholder={recording ? 'Listening...' : isWorking ? 'Thinking...' : placeholder ?? 'Say or type anything to remember'}
+            className="min-w-0 flex-1 h-11 bg-surface-2 rounded-xl px-3 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none disabled:opacity-60"
           />
 
           <button
             type="submit"
-            disabled={!text.trim() || isPending}
+            disabled={!text.trim() || isWorking}
             className="w-11 h-11 rounded-xl bg-accent text-white flex items-center justify-center disabled:opacity-40 shrink-0"
             aria-label="Capture"
           >
-            {isPending ? (
+            {isWorking ? (
               <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             ) : (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -156,10 +167,29 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
           </button>
         </div>
 
-        {(message || error || recording) && (
-          <p className={`mt-2 px-1 text-[12px] leading-snug ${error ? 'text-red' : 'text-text-2'}`}>
-            {error ?? (recording ? 'Speak naturally. I’ll keep the useful bits even if the thought is unfinished.' : message)}
-          </p>
+        {(isWorking || message || error || recording) && (
+          <div className="mt-2 px-1 flex items-center gap-2">
+            {isWorking && !error && (
+              <span className="flex gap-[3px] items-center shrink-0">
+                {[0, 1, 2].map(i => (
+                  <span
+                    key={i}
+                    className="w-[5px] h-[5px] rounded-full bg-text-3 animate-bounce"
+                    style={{ animationDelay: `${i * 0.12}s`, animationDuration: '0.8s' }}
+                  />
+                ))}
+              </span>
+            )}
+            <p className={`text-[12px] leading-snug ${error ? 'text-red' : 'text-text-2'}`}>
+              {error ?? (
+                recording
+                  ? "Speak naturally — I'll keep the useful bits even if the thought is unfinished."
+                  : isWorking
+                    ? 'Thinking…'
+                    : message
+              )}
+            </p>
+          </div>
         )}
       </form>
     </section>

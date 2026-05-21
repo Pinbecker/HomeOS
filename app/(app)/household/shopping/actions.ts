@@ -106,6 +106,17 @@ export async function clearChecked(listId: string) {
   revalidateShopping(listId)
 }
 
+export async function moveShoppingItem(itemId: string, newListId: string) {
+  await requireSession()
+  const item = await db.query.listItems.findFirst({ where: eq(listItems.id, itemId) })
+  if (!item) return
+  await db.update(listItems)
+    .set({ listId: newListId })
+    .where(eq(listItems.id, itemId))
+  revalidateShopping(item.listId)
+  revalidateShopping(newListId)
+}
+
 export async function clearAllChecked() {
   await requireSession()
   const shops = await db.query.lists.findMany({
