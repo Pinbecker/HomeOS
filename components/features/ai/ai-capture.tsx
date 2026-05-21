@@ -23,6 +23,39 @@ type Props = {
   onInboxItem?: (item: { id: string; title: string }) => void
 }
 
+const RECORDING_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4;codecs=mp4a.40.2',
+  'audio/mp4',
+]
+
+const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
+  'audio/flac': 'flac',
+  'audio/m4a': 'm4a',
+  'audio/mp4': 'mp4',
+  'audio/mpeg': 'mp3',
+  'audio/mpga': 'mpga',
+  'audio/ogg': 'ogg',
+  'audio/wave': 'wav',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/x-flac': 'flac',
+  'audio/x-m4a': 'm4a',
+  'audio/x-wav': 'wav',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+}
+
+function getSupportedRecordingMimeType() {
+  return RECORDING_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type))
+}
+
+function extensionForAudioType(type: string) {
+  const mimeType = type.split(';')[0]?.trim().toLowerCase()
+  return mimeType ? AUDIO_EXTENSION_BY_MIME[mimeType] : null
+}
+
 export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   const router = useRouter()
   const [text, setText] = useState('')
@@ -76,10 +109,15 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
       setError('Voice capture is not available in this browser.')
       return
     }
+    if (typeof MediaRecorder === 'undefined') {
+      setError('Voice capture is not available in this browser.')
+      return
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
+      const mimeType = getSupportedRecordingMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       chunksRef.current = []
       recorderRef.current = recorder
 
@@ -88,11 +126,12 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
       }
       recorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop())
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        const blobType = recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: blobType })
         if (!blob.size) return
         setProcessing(true)
         const formData = new FormData()
-        formData.set('audio', blob, 'capture.webm')
+        formData.set('audio', blob, `capture.${extensionForAudioType(blob.type) ?? 'webm'}`)
         try {
           const response = await fetch('/api/ai/voice', { method: 'POST', body: formData })
           const payload = await response.json()

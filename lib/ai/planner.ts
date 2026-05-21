@@ -9,6 +9,74 @@ import type { AiPlanningContext } from './context'
 const TRIAGE_MODEL = process.env.AI_TRIAGE_MODEL || 'gpt-5.4-mini'
 const TRANSCRIBE_MODEL = process.env.AI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe'
 
+const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
+  'audio/flac': 'flac',
+  'audio/m4a': 'm4a',
+  'audio/mp4': 'mp4',
+  'audio/mpeg': 'mp3',
+  'audio/mpga': 'mpga',
+  'audio/ogg': 'ogg',
+  'audio/wave': 'wav',
+  'audio/wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/x-flac': 'flac',
+  'audio/x-m4a': 'm4a',
+  'audio/x-wav': 'wav',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+}
+
+const OPENAI_AUDIO_EXTENSIONS = new Set(['flac', 'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'ogg', 'wav', 'webm'])
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  mp3: 'audio/mpeg',
+  mp4: 'audio/mp4',
+  mpga: 'audio/mpga',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+}
+
+function normaliseMimeType(type: string) {
+  return type.split(';')[0]?.trim().toLowerCase() ?? ''
+}
+
+function extensionFromFileName(fileName: string) {
+  return fileName.split('.').pop()?.trim().toLowerCase() ?? ''
+}
+
+async function detectAudioExtension(file: File) {
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+  const text = String.fromCharCode(...header)
+
+  if (header[0] === 0x1a && header[1] === 0x45 && header[2] === 0xdf && header[3] === 0xa3) return 'webm'
+  if (text.startsWith('fLaC')) return 'flac'
+  if (text.startsWith('ID3')) return 'mp3'
+  if (text.startsWith('OggS')) return 'ogg'
+  if (text.startsWith('RIFF') && text.slice(8, 12) === 'WAVE') return 'wav'
+  if (text.slice(4, 8) === 'ftyp') return 'mp4'
+  if (header[0] === 0xff && (header[1] & 0xe0) === 0xe0) return 'mp3'
+
+  return null
+}
+
+async function normaliseAudioFile(file: File) {
+  const mimeType = normaliseMimeType(file.type)
+  const mimeExtension = AUDIO_EXTENSION_BY_MIME[mimeType]
+  const detectedExtension = await detectAudioExtension(file)
+  const fileExtension = extensionFromFileName(file.name)
+  const extension = detectedExtension ?? mimeExtension ?? (OPENAI_AUDIO_EXTENSIONS.has(fileExtension) ? fileExtension : 'webm')
+  const name = file.name && extensionFromFileName(file.name) === extension ? file.name : `capture.${extension}`
+  const type = detectedExtension ? MIME_BY_EXTENSION[detectedExtension] : mimeType
+
+  if (name === file.name && type === file.type) return file
+
+  const data = await file.arrayBuffer()
+  return new File([data], name, { type: type || file.type || 'audio/webm' })
+}
+
 type PlanInput = {
   rawInput: string
   context: AiPlanningContext
@@ -243,9 +311,10 @@ export async function transcribeAudio(file: File): Promise<{ text: string; confi
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured')
 
+  const audioFile = await normaliseAudioFile(file)
   const formData = new FormData()
   formData.set('model', TRANSCRIBE_MODEL)
-  formData.set('file', file)
+  formData.set('file', audioFile)
   formData.set('response_format', 'json')
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
