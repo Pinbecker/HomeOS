@@ -13,6 +13,7 @@ export type PinInput = {
   title: string
   body?: string | null
   colour?: PinColour
+  linkHref?: string | null
 }
 
 export async function createPin(input: PinInput) {
@@ -26,6 +27,7 @@ export async function createPin(input: PinInput) {
     title: input.title.trim(),
     body: input.body?.trim() || null,
     colour: input.colour ?? 'yellow',
+    linkHref: input.linkHref?.trim() || null,
     sortOrder: Date.now(),
     createdAt: now,
     updatedAt: now,

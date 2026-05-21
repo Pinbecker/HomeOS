@@ -69,7 +69,7 @@ export default async function DashboardPage() {
       }),
       db.query.pins.findMany({
         orderBy: [desc(pins.sortOrder), desc(pins.createdAt)],
-        columns: { id: true, title: true, body: true, colour: true },
+        columns: { id: true, title: true, body: true, colour: true, linkHref: true },
       }),
     ])
 

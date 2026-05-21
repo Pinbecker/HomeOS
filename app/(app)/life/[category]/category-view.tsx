@@ -242,10 +242,12 @@ function RecordEditor({
                   placeholder="Value"
                   className="flex-1 py-3 text-[15px] text-text-1 bg-transparent outline-none"
                 />
-                <button onClick={() => removeField(i)} className="text-text-3 active:opacity-60 px-1" aria-label="Remove field">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-4 h-4">
-                    <path d="M4 8h8" />
-                  </svg>
+                <button onClick={() => removeField(i)} className="px-1 active:opacity-60 shrink-0" aria-label="Remove field">
+                  <span className="w-[22px] h-[22px] bg-red rounded-full flex items-center justify-center">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.6} strokeLinecap="round" className="w-3.5 h-3.5">
+                      <path d="M4 8h8" />
+                    </svg>
+                  </span>
                 </button>
               </div>
             ))}

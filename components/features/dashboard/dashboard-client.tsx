@@ -37,7 +37,7 @@ type CalEvent = {
   allDay: boolean
   location: string | null
 }
-type Pin = { id: string; title: string; body: string | null; colour: PinColour }
+type Pin = { id: string; title: string; body: string | null; colour: PinColour; linkHref: string | null }
 
 interface Props {
   user: { name: string; email: string }

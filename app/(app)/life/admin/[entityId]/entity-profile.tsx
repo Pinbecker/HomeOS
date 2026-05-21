@@ -4,6 +4,8 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { EntityProfileData, HouseholdEntity } from '@/lib/entities/records'
+import { SwipeRow } from '@/components/ui/swipe-row'
+import { createPin } from '@/app/(app)/pins/actions'
 import {
   addEntityReminder,
   addLinkedTask,
@@ -124,6 +126,21 @@ export function EntityProfile({
   const [openPanel, setOpenPanel] = useState<null | 'task' | 'reminder' | 'document' | 'related'>(null)
   const [fields, setFields] = useState<Field[]>(profile.facts.length ? profile.facts : [{ label: '', value: '' }])
   const [pending, startTransition] = useTransition()
+  const [pinnedFlash, setPinnedFlash] = useState<string | null>(null)
+
+  function pinFact(fact: Field) {
+    if (!fact.value.trim()) return
+    startTransition(async () => {
+      await createPin({
+        title: entity.title,
+        body: `${fact.label.trim() || 'Detail'}: ${fact.value.trim()}`,
+        colour: 'green',
+        linkHref: entity.href,
+      })
+      setPinnedFlash(fact.label.trim() || 'Detail')
+      setTimeout(() => setPinnedFlash(null), 2200)
+    })
+  }
 
   const relatedIds = useMemo(() => new Set(profile.relatedEntities.map(related => related.id)), [profile.relatedEntities])
   const availableRelated = relatedOptions.filter(option => !relatedIds.has(option.id))
@@ -202,8 +219,12 @@ export function EntityProfile({
                       placeholder="Value"
                       className="flex-1 py-3 bg-transparent outline-none text-[15px] text-text-1"
                     />
-                    <button type="button" onClick={() => setFields(prev => prev.filter((_, i) => i !== index))} className="text-text-3 px-1 active:opacity-60">
-                      -
+                    <button type="button" onClick={() => setFields(prev => prev.filter((_, i) => i !== index))} className="px-1 active:opacity-60 shrink-0" aria-label="Remove fact">
+                      <span className="w-[22px] h-[22px] bg-red rounded-full flex items-center justify-center">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.6} strokeLinecap="round" className="w-3.5 h-3.5">
+                          <path d="M4 8h8" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 ))}
@@ -260,28 +281,49 @@ export function EntityProfile({
 
       <Section title="Key facts">
         {profile.facts.length > 0 || entity.renewalDate ? (
-          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-            {entity.renewalDate && (
-              <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-bg">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-8 h-8 rounded-[10px] bg-amber/15 flex items-center justify-center text-amber shrink-0">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                      <rect x="3" y="3.5" width="10" height="9.5" rx="2" />
-                      <path d="M5.5 2.5v2M10.5 2.5v2M3 6.5h10" />
-                    </svg>
+          <>
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+              {entity.renewalDate && (
+                <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-bg">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-[10px] bg-amber/15 flex items-center justify-center text-amber shrink-0">
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                        <rect x="3" y="3.5" width="10" height="9.5" rx="2" />
+                        <path d="M5.5 2.5v2M10.5 2.5v2M3 6.5h10" />
+                      </svg>
+                    </div>
+                    <p className="text-[13.5px] font-semibold text-amber truncate">{entity.renewalLabel || 'Due date'}</p>
                   </div>
-                  <p className="text-[13.5px] font-semibold text-amber truncate">{entity.renewalLabel || 'Due date'}</p>
+                  <p className="text-[14.5px] font-bold text-text-1 text-right shrink-0">{formatDateWithYear(entity.renewalDate)}</p>
                 </div>
-                <p className="text-[14.5px] font-bold text-text-1 text-right shrink-0">{formatDateWithYear(entity.renewalDate)}</p>
-              </div>
+              )}
+              {profile.facts.map((fact, index) => {
+                const showBorder = index > 0 || !!entity.renewalDate
+                const row = (
+                  <div className="flex items-baseline justify-between gap-4 px-4 py-3">
+                    <p className="text-[13.5px] text-text-2 shrink-0">{fact.label || 'Detail'}</p>
+                    <p className="text-[14.5px] font-medium text-text-1 text-right break-words">{fact.value || 'Not set'}</p>
+                  </div>
+                )
+                return fact.value ? (
+                  <SwipeRow
+                    key={`${fact.label}-${index}`}
+                    className={showBorder ? 'border-t border-border' : ''}
+                    actions={[{ key: 'pin', label: 'Pin', onClick: () => pinFact(fact), className: 'bg-[#34C759]' }]}
+                  >
+                    {row}
+                  </SwipeRow>
+                ) : (
+                  <div key={`${fact.label}-${index}`} className={showBorder ? 'border-t border-border' : ''}>
+                    {row}
+                  </div>
+                )
+              })}
+            </div>
+            {profile.facts.some(fact => fact.value) && (
+              <p className="px-1 mt-2 text-[12px] text-text-3">Swipe a fact to pin it to your Home screen.</p>
             )}
-            {profile.facts.map((fact, index) => (
-              <div key={`${fact.label}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 || entity.renewalDate ? 'border-t border-border' : ''}`}>
-                <p className="text-[13.5px] text-text-2 shrink-0">{fact.label || 'Detail'}</p>
-                <p className="text-[14.5px] font-medium text-text-1 text-right break-words">{fact.value || 'Not set'}</p>
-              </div>
-            ))}
-          </div>
+          </>
         ) : (
           <div className="bg-surface border border-border rounded-2xl">
             <EmptyRow icon="+" title="No key facts yet" subtitle="Add the small details worth finding later." />
@@ -423,6 +465,15 @@ export function EntityProfile({
           )}
         </div>
       </Section>
+
+      {pinnedFlash && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-24 z-[60] flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#34C759] text-white shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M3.5 8.5l3 3 6-7" />
+          </svg>
+          <span className="text-[14px] font-semibold">Pinned to Home</span>
+        </div>
+      )}
     </div>
   )
 }

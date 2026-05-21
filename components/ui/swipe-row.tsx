@@ -4,20 +4,30 @@ import { useRef, useState, type ReactNode, type PointerEvent, type MouseEvent } 
 
 const ACTION_W = 84       // width of a single revealed action button
 const OPEN_AT = 42        // drag past this -> snap open
-const MAX_DRAG = 280      // clamp
+const MAX_DRAG = 320      // clamp
+
+export type SwipeAction = {
+  key: string
+  label: string
+  onClick: () => void
+  className?: string      // background colour class, e.g. 'bg-red', 'bg-accent'
+  closeOnClick?: boolean  // snap shut after firing (default true)
+}
 
 export function SwipeRow({
   children,
   onDelete,
   onEdit,
+  actions,
   className = '',
   wrapClassName = '',
   deleteLabel = 'Delete',
   editLabel = 'Edit',
 }: {
   children: ReactNode
-  onDelete: () => void
+  onDelete?: () => void
   onEdit?: () => void
+  actions?: SwipeAction[]
   className?: string
   wrapClassName?: string
   deleteLabel?: string
@@ -27,7 +37,11 @@ export function SwipeRow({
   const [offset, setOffset] = useState(0)
   const [animating, setAnimating] = useState(false)
 
-  const actionW = onEdit ? ACTION_W * 2 : ACTION_W
+  const actionList: SwipeAction[] = actions ?? [
+    ...(onEdit ? [{ key: 'edit', label: editLabel, onClick: onEdit, className: 'bg-accent' }] : []),
+    ...(onDelete ? [{ key: 'delete', label: deleteLabel, onClick: onDelete, className: 'bg-red', closeOnClick: false }] : []),
+  ]
+  const actionW = ACTION_W * actionList.length
 
   const offsetRef = useRef(0)
   const openRef = useRef(false)
@@ -50,6 +64,11 @@ export function SwipeRow({
 
   function close() {
     snapTo(0, false)
+  }
+
+  function fire(action: SwipeAction) {
+    if (action.closeOnClick !== false) close()
+    action.onClick()
   }
 
   function down(e: PointerEvent) {
@@ -111,30 +130,26 @@ export function SwipeRow({
     }
   }
 
+  if (actionList.length === 0) {
+    return <div className={`relative ${wrapClassName}`}>{children}</div>
+  }
+
   return (
     <div ref={wrapRef} className={`relative overflow-hidden ${wrapClassName}`}>
       {/* Actions behind */}
       <div className="absolute inset-y-0 right-0 flex" style={{ width: actionW }}>
-        {onEdit && (
+        {actionList.map(action => (
           <button
-            onClick={() => { close(); onEdit() }}
-            className="bg-accent text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80"
+            key={action.key}
+            onClick={() => fire(action)}
+            className={`${action.className ?? 'bg-red'} text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80`}
             style={{ width: ACTION_W }}
-            aria-label={editLabel}
+            aria-label={action.label}
             tabIndex={offset < -10 ? 0 : -1}
           >
-            {editLabel}
+            {action.label}
           </button>
-        )}
-        <button
-          onClick={onDelete}
-          className="bg-red text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80"
-          style={{ width: ACTION_W }}
-          aria-label={deleteLabel}
-          tabIndex={offset < -10 ? 0 : -1}
-        >
-          {deleteLabel}
-        </button>
+        ))}
       </div>
 
       {/* Foreground */}

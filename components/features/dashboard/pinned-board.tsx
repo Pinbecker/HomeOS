@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { ulid } from 'ulid'
 import type { PinColour } from '@/lib/db/schema'
 import { createPin, updatePin, deletePin } from '@/app/(app)/pins/actions'
 
-type Pin = { id: string; title: string; body: string | null; colour: PinColour }
+type Pin = { id: string; title: string; body: string | null; colour: PinColour; linkHref: string | null }
 
 const PIN_COLOURS: Record<PinColour, { tint: string; bar: string }> = {
   yellow: { tint: 'rgba(255,204,0,0.16)',  bar: '#F5B800' },
@@ -61,13 +62,20 @@ export function PinnedBoard({ initialPins }: { initialPins: Pin[] }) {
               <button
                 key={pin.id}
                 onClick={() => setEditing(pin)}
-                className="text-left rounded-2xl p-3.5 active:scale-[0.98] transition-transform border border-border/50"
+                className="relative text-left rounded-2xl p-3.5 active:scale-[0.98] transition-transform border border-border/50"
                 style={{ background: c.tint }}
               >
+                {pin.linkHref && (
+                  <span className="absolute top-2.5 right-2.5 text-text-3" aria-hidden>
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                      <path d="M6.5 9.5l3-3M7 4.5l.8-.8a2.5 2.5 0 0 1 3.5 3.5l-.8.8M9 11.5l-.8.8a2.5 2.5 0 0 1-3.5-3.5l.8-.8" />
+                    </svg>
+                  </span>
+                )}
                 <div className="flex items-start gap-2">
                   <div className="w-1 self-stretch rounded-full shrink-0 mt-0.5" style={{ background: c.bar, minHeight: 18 }} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[14px] font-bold text-text-1 leading-snug break-words">{pin.title}</p>
+                    <p className="text-[14px] font-bold text-text-1 leading-snug break-words pr-4">{pin.title}</p>
                     {pin.body && (
                       <p className="text-[12px] text-text-2 mt-1 leading-snug whitespace-pre-wrap line-clamp-4 break-words">{pin.body}</p>
                     )}
@@ -124,10 +132,10 @@ function PinEditor({
     if (isNew) {
       const optimisticId = ulid()
       const res = await createPin(input)
-      onSaved({ id: res?.id ?? optimisticId, ...input }, true)
+      onSaved({ id: res?.id ?? optimisticId, ...input, linkHref: null }, true)
     } else {
       await updatePin(pin.id, input)
-      onSaved({ id: pin.id, ...input }, false)
+      onSaved({ id: pin.id, ...input, linkHref: pin.linkHref }, false)
     }
   }
 
@@ -148,6 +156,22 @@ function PinEditor({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+        {pin?.linkHref && (
+          <Link
+            href={pin.linkHref}
+            className="flex items-center justify-between gap-2 bg-surface rounded-2xl px-4 py-3 active:bg-surface-2"
+          >
+            <span className="flex items-center gap-2 text-[15px] font-semibold text-accent">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M6.5 9.5l3-3M7 4.5l.8-.8a2.5 2.5 0 0 1 3.5 3.5l-.8.8M9 11.5l-.8.8a2.5 2.5 0 0 1-3.5-3.5l.8-.8" />
+              </svg>
+              Open linked record
+            </span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
+          </Link>
+        )}
         <div className="bg-surface rounded-2xl overflow-hidden">
           <input
             autoFocus={isNew}
