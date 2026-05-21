@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
 
 export type RecordInput = {
-  category: RecordCategory
+  category: string
   title: string
   subtitle?: string | null
   fields: RecordField[]
@@ -32,7 +32,7 @@ export async function createRecord(input: RecordInput) {
   await db.insert(records).values({
     id,
     householdId: HOUSEHOLD_ID,
-    category: input.category,
+    category: input.category as RecordCategory,
     title: input.title.trim(),
     subtitle: input.subtitle?.trim() || null,
     fields: cleanFields(input.fields),

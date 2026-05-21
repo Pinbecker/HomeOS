@@ -49,7 +49,21 @@
       "Bash(curl -s --max-time 20 http://localhost:3000/login)",
       "Bash(cd \"C:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\" && sed -i 's/onDelete={\\(\\) => handleDelete\\(item.id\\)}/onDelete={\\(\\) => handleDeleteItem\\(item.id\\)}/g' \"app/\\(app\\)/household/shopping/[shopId]/shop-view.tsx\" && echo \"updated\" && grep -n \"handleDeleteItem\\\\|handleDelete\\(\" \"app/\\(app\\)/household/shopping/[shopId]/shop-view.tsx\")",
       "Bash(curl -s -o /dev/null -w '%{http_code}' --max-time 60 http://localhost:3000/__TRACKED_VAR__)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 60 \"http://localhost:3000/household/tasks/all\")"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 60 \"http://localhost:3000/household/tasks/all\")",
+      "Bash(npx next *)",
+      "Bash(ls local-data *)",
+      "Bash(ls .env*)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).devDependencies['@eslint/eslintrc'] || 'not in devDeps'\\)\")",
+      "Bash(curl -s -o /dev/null http://localhost:3137/life/admin)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" -L http://localhost:3137/life/admin)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" -L http://localhost:3137/life)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" -L http://localhost:3137/household/shopping/all)",
+      "Bash(curl -s -L http://localhost:3137/life/admin)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3137/life/admin)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(curl -s -o /dev/null -w \"3137=%{http_code}\\\\n\" http://localhost:3137/)",
+      "Bash(curl -s -o /dev/null -w \"3142=%{http_code}\\\\n\" http://localhost:3142/)"
     ],
     "additionalDirectories": [
       "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"

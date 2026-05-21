@@ -1,7 +1,7 @@
 import type { RecordCategory } from '@/lib/db/schema'
 
 export type CategoryMeta = {
-  key: RecordCategory
+  key: string
   label: string
   icon: string
   color: string

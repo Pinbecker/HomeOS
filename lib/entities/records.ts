@@ -11,11 +11,14 @@ import {
   type RecordField,
 } from '@/lib/db/schema'
 import {
-  CATEGORIES,
-  CATEGORY_MAP,
   ENTITY_GROUPS,
   ENTITY_KIND_LABELS,
+  type CategoryMeta,
 } from './record-taxonomy'
+import { getCategories, getCategoryMap } from './category-settings'
+
+type CategoryMap = Record<string, CategoryMeta>
+
 
 const RECORD_ENTITY_TYPE = 'record'
 const ITEM_ENTITY_TYPE = 'item'
@@ -70,11 +73,12 @@ export type RecordsOverviewData = {
   groups: EntityGroup[]
   attention: AttentionItem[]
   reminders: RecordsReminderItem[]
-  lenses: Array<{
-    key: RecordCategory
+  categories: Array<{
+    key: string
     label: string
     icon: string
     color: string
+    desc: string
     href: string
     count: number
   }>
@@ -144,8 +148,8 @@ export function renewalAttention(entity: HouseholdEntity): AttentionItem | null 
   return null
 }
 
-export function toHouseholdEntity(row: RecordRow): HouseholdEntity {
-  const meta = CATEGORY_MAP[row.category]
+export function toHouseholdEntity(row: RecordRow, categoryMap: CategoryMap): HouseholdEntity {
+  const meta = categoryMap[row.category]
   const fields = row.fields ?? []
   const searchText = [
     row.title,
@@ -175,11 +179,15 @@ export function toHouseholdEntity(row: RecordRow): HouseholdEntity {
 }
 
 export async function getRecordsOverviewData(): Promise<RecordsOverviewData> {
-  const rows = await db.query.records.findMany({
-    orderBy: [asc(records.sortOrder), asc(records.createdAt)],
-  })
+  const [rows, categoryMap, categoryList] = await Promise.all([
+    db.query.records.findMany({
+      orderBy: [asc(records.sortOrder), asc(records.createdAt)],
+    }),
+    getCategoryMap(),
+    getCategories(),
+  ])
 
-  const entities = rows.map(toHouseholdEntity)
+  const entities = rows.map(row => toHouseholdEntity(row, categoryMap))
   const renewalAttentionItems = entities
     .map(renewalAttention)
     .filter((item): item is AttentionItem => item != null)
@@ -246,14 +254,15 @@ export async function getRecordsOverviewData(): Promise<RecordsOverviewData> {
     }))
     .filter(group => group.entities.length > 0)
 
-  const lenses = CATEGORIES.map(category => ({
+  const categories = categoryList.map(category => ({
     key: category.key,
     label: category.label,
     icon: category.icon,
     color: category.color,
+    desc: category.desc,
     href: `/life/${category.key}`,
     count: entities.filter(entity => entity.category === category.key).length,
-  })).filter(lens => lens.count > 0)
+  }))
 
   const documentCount = await db.$count(files)
   const renewalCount = entities.filter(entity => entity.renewalDate != null).length
@@ -265,7 +274,7 @@ export async function getRecordsOverviewData(): Promise<RecordsOverviewData> {
     groups,
     attention,
     reminders: reminderItems,
-    lenses,
+    categories,
     viewCards: [
       {
         title: 'Reminders & due dates',
@@ -300,13 +309,16 @@ export async function getRecordsOverviewData(): Promise<RecordsOverviewData> {
 }
 
 export async function getRelatedEntityOptions(excludeId: string): Promise<RelatedEntityOption[]> {
-  const rows = await db.query.records.findMany({
-    where: undefined,
-    orderBy: [asc(records.sortOrder), asc(records.createdAt)],
-  })
+  const [rows, categoryMap] = await Promise.all([
+    db.query.records.findMany({
+      where: undefined,
+      orderBy: [asc(records.sortOrder), asc(records.createdAt)],
+    }),
+    getCategoryMap(),
+  ])
 
   return rows
-    .map(toHouseholdEntity)
+    .map(row => toHouseholdEntity(row, categoryMap))
     .filter(entity => entity.id !== excludeId)
     .map(entity => ({
       id: entity.id,
@@ -334,7 +346,8 @@ export async function getEntityProfileData(id: string): Promise<EntityProfileDat
   const row = await db.query.records.findFirst({ where: eq(records.id, id) })
   if (!row) return null
 
-  const entity = toHouseholdEntity(row)
+  const categoryMap = await getCategoryMap()
+  const entity = toHouseholdEntity(row, categoryMap)
 
   const [links, attachedFiles, linkedReminders] = await Promise.all([
     db.query.entityLinks.findMany({
@@ -404,7 +417,7 @@ export async function getEntityProfileData(id: string): Promise<EntityProfileDat
       mimeType: file.mimeType,
       sizeBytes: file.sizeBytes,
     })),
-    relatedEntities: relatedRows.map(toHouseholdEntity),
+    relatedEntities: relatedRows.map(row => toHouseholdEntity(row, categoryMap)),
     emptyHooks: [
       { title: 'Tasks', subtitle: 'Link reminders and jobs to this household thing', icon: '✓' },
       { title: 'Documents', subtitle: 'Attach warranties, policies and PDFs here', icon: '□' },

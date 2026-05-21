@@ -2,24 +2,32 @@
 
 import { useRef, useState, type ReactNode, type PointerEvent, type MouseEvent } from 'react'
 
-const ACTION_W = 84       // revealed delete-button width
+const ACTION_W = 84       // width of a single revealed action button
 const OPEN_AT = 42        // drag past this -> snap open
-const MAX_DRAG = 240      // clamp
+const MAX_DRAG = 280      // clamp
 
 export function SwipeRow({
   children,
   onDelete,
+  onEdit,
   className = '',
+  wrapClassName = '',
   deleteLabel = 'Delete',
+  editLabel = 'Edit',
 }: {
   children: ReactNode
   onDelete: () => void
+  onEdit?: () => void
   className?: string
+  wrapClassName?: string
   deleteLabel?: string
+  editLabel?: string
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [offset, setOffset] = useState(0)
   const [animating, setAnimating] = useState(false)
+
+  const actionW = onEdit ? ACTION_W * 2 : ACTION_W
 
   const offsetRef = useRef(0)
   const openRef = useRef(false)
@@ -68,7 +76,7 @@ export function SwipeRow({
     if (axis.current !== 'h') return
 
     swiped.current = true
-    const base = openRef.current ? -ACTION_W : 0
+    const base = openRef.current ? -actionW : 0
     let next = base + dx
     if (next > 0) next = 0
     if (next < -MAX_DRAG) next = -MAX_DRAG
@@ -83,7 +91,7 @@ export function SwipeRow({
 
     const o = offsetRef.current
     if (o <= -OPEN_AT) {
-      snapTo(-ACTION_W, true)
+      snapTo(-actionW, true)
     } else {
       snapTo(0, false)
     }
@@ -104,12 +112,24 @@ export function SwipeRow({
   }
 
   return (
-    <div ref={wrapRef} className="relative overflow-hidden">
-      {/* Delete action behind */}
-      <div className="absolute inset-y-0 right-0 flex" style={{ width: ACTION_W }}>
+    <div ref={wrapRef} className={`relative overflow-hidden ${wrapClassName}`}>
+      {/* Actions behind */}
+      <div className="absolute inset-y-0 right-0 flex" style={{ width: actionW }}>
+        {onEdit && (
+          <button
+            onClick={() => { close(); onEdit() }}
+            className="bg-accent text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80"
+            style={{ width: ACTION_W }}
+            aria-label={editLabel}
+            tabIndex={offset < -10 ? 0 : -1}
+          >
+            {editLabel}
+          </button>
+        )}
         <button
           onClick={onDelete}
-          className="flex-1 bg-red text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80"
+          className="bg-red text-white text-[14px] font-semibold flex items-center justify-center active:opacity-80"
+          style={{ width: ACTION_W }}
           aria-label={deleteLabel}
           tabIndex={offset < -10 ? 0 : -1}
         >
