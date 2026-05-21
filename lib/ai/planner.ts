@@ -84,6 +84,12 @@ type PlanInput = {
   sourceHint?: string
 }
 
+export type AiPlanningResult = {
+  plan: AiPlan
+  model: string
+  rawModelOutput: string | null
+}
+
 function systemPrompt() {
   return `
 You are HomeApp's conversational household triage layer.
@@ -107,6 +113,10 @@ Action rules:
 - For task requests with no explicit list, set listName to null and let the app use its default task list.
 - For "assign it to Dan/Imogen" or "for Dan/Imogen", set assigneeName. Do not ask which person when the name is clear.
 - If the user asks for a task about insurance, MOT, boiler, renewals, or life admin, that is still a task; do not turn it into a record update unless they ask to save/update facts.
+- If a task is about a known record, set recordId on the create_task action so the app can link it after creation.
+- For reminders, set reminderDate only when the user gives a date or time. If no date/time is given, use needs_clarification and ask when to remind them.
+- For explicit "clear/list is done" shopping requests, use clear_shopping_list with the named shopping list in listName.
+- For link_entities, only use real IDs from context. Never invent placeholder IDs.
 - Use capture_to_inbox for fragments, ideas, reminders without dates, vague concerns, recommendations, and soft intent.
 - Use needs_clarification only when the intent is genuinely unclear and inbox capture would lose meaning.
 - Do not use needs_clarification merely to ask which task list a clear task belongs in.
@@ -258,9 +268,15 @@ function normalisePlan(plan: AiPlan, rawInput: string, context?: AiPlanningConte
   return next
 }
 
-export async function planAiCapture(input: PlanInput): Promise<AiPlan> {
+export async function planAiCapture(input: PlanInput): Promise<AiPlanningResult> {
   const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) return fallbackPlan(input.rawInput)
+  if (!apiKey) {
+    return {
+      plan: fallbackPlan(input.rawInput),
+      model: 'fallback',
+      rawModelOutput: null,
+    }
+  }
 
   const userPayload = {
     sourceHint: input.sourceHint ?? 'capture',
@@ -304,7 +320,11 @@ export async function planAiCapture(input: PlanInput): Promise<AiPlan> {
 
   const parsedJson = JSON.parse(outputText)
   const parsedPlan = aiPlanSchema.parse(parsedJson)
-  return normalisePlan(parsedPlan, input.rawInput, input.context)
+  return {
+    plan: normalisePlan(parsedPlan, input.rawInput, input.context),
+    model: TRIAGE_MODEL,
+    rawModelOutput: outputText,
+  }
 }
 
 export async function transcribeAudio(file: File): Promise<{ text: string; confidence: number | null }> {

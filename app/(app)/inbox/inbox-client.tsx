@@ -17,6 +17,8 @@ type InboxItem = {
       conversationId?: string
       result?: string
       response?: string
+      finalResponse?: string
+      plannedResponse?: string
       originalWording?: string
       planningConfidence?: string
       entityResolutionConfidence?: string
@@ -75,7 +77,7 @@ export function InboxClient({ items: initialItems }: Props) {
 
     if (payload.appliedActions?.length > 0 && payload.plan.result === 'apply_actions') {
       setItems(prev => prev.filter(prevItem => prevItem.id !== item.id))
-      setPanelMessage(payload.plan.response)
+      setPanelMessage(payload.finalResponse || payload.plan.response)
       setTriageItem(null)
       return
     }
@@ -86,6 +88,7 @@ export function InboxClient({ items: initialItems }: Props) {
       conversationId: payload.conversationId,
       result: payload.plan.result,
       response: payload.plan.response,
+      finalResponse: payload.finalResponse,
       originalWording: payload.plan.originalWording,
       planningConfidence: payload.plan.planningConfidence,
       entityResolutionConfidence: payload.plan.entityResolutionConfidence,
@@ -97,7 +100,7 @@ export function InboxClient({ items: initialItems }: Props) {
     const updated = { ...item, metadata: { ai } }
     setTriageItem(updated)
     setItems(prev => prev.map(prevItem => prevItem.id === item.id ? updated : prevItem))
-    setPanelMessage(payload.plan.clarificationQuestion || payload.plan.response)
+    setPanelMessage(payload.plan.clarificationQuestion || payload.finalResponse || payload.plan.response)
   }
 
   function sendReply(e: React.FormEvent) {
@@ -120,7 +123,7 @@ export function InboxClient({ items: initialItems }: Props) {
       setPanelError(payload.error || 'I could not confirm that just now.')
       return
     }
-    setPanelMessage('Done. I’ve saved that now.')
+    setPanelMessage(payload.finalResponse || 'Done. I’ve saved that now.')
   }
 
   return (

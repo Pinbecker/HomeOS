@@ -361,6 +361,19 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
         <p className="text-[18px] text-text-2 mt-2">The important bits of home, connected.</p>
       </header>
 
+      <section className="mx-4 mb-4">
+        <Link href="/life/admin/ai" className="bg-surface border border-border rounded-2xl px-4 py-3.5 flex items-center gap-3 active:bg-surface-2">
+          <div className="w-10 h-10 rounded-[12px] bg-accent-bg flex items-center justify-center text-[13px] font-bold text-accent shrink-0">AI</div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[15px] font-semibold text-text-1">AI Log</p>
+            <p className="text-[12px] text-text-2 truncate">Review captures, plans, and actual changes</p>
+          </div>
+          <span className="text-text-3 shrink-0">
+            <Chevron />
+          </span>
+        </Link>
+      </section>
+
       <div className="mx-4 mb-5 h-12 rounded-[14px] bg-surface-2 flex items-center gap-2.5 px-3.5 text-text-2">
         <SearchIcon />
         <input

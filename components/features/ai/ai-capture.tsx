@@ -8,6 +8,7 @@ type AiCaptureResult = {
   inboxItem?: { id: string; title: string } | null
   conversationId?: string | null
   jobId: string
+  finalResponse?: string
   plan: {
     result: string
     response: string
@@ -70,7 +71,7 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   const isWorking = isPending || processing
 
   function handleResult(result: AiCaptureResult) {
-    setMessage(result.plan.clarificationQuestion || result.plan.response)
+    setMessage(result.plan.clarificationQuestion || result.finalResponse || result.plan.response)
     if (result.inboxItem) onInboxItem?.(result.inboxItem)
     router.refresh()
   }

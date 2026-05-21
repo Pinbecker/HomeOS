@@ -55,4 +55,36 @@ const taskPlan = aiPlanSchema.parse({
 assert.equal(taskPlan.result, 'apply_actions')
 assert.equal(taskPlan.actions[0].confidence, 'high')
 
+const shoppingClearPlan = aiPlanSchema.parse({
+  result: 'apply_actions',
+  response: 'I cleared the Sainsbury’s shopping list.',
+  originalWording: "Clear off the Sainsbury's shopping list. All done.",
+  planningConfidence: 'high',
+  entityResolutionConfidence: 'high',
+  inferredTags: ['shopping'],
+  relatedEntityIds: [],
+  clarificationQuestion: null,
+  clarificationOptions: [],
+  confirmationSummary: null,
+  actions: [{
+    type: 'clear_shopping_list',
+    title: null,
+    body: null,
+    dueDate: null,
+    listName: 'Sainsbury’s',
+    assigneeName: null,
+    recordId: null,
+    recordCategory: null,
+    recordTitle: null,
+    fields: [],
+    reminderDate: null,
+    reminderMessage: null,
+    fromEntityId: null,
+    toEntityId: null,
+    confidence: 'high',
+  }],
+})
+
+assert.equal(shoppingClearPlan.actions[0].type, 'clear_shopping_list')
+
 console.log('AI triage schema smoke tests passed')
