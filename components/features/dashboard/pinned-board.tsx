@@ -135,7 +135,14 @@ export function PinnedBoard({ initialPins }: { initialPins: BoardPin[] }) {
         <NotePinEditor
           note={editingNote === 'new' ? null : editingNote}
           onClose={() => setEditingNote(null)}
-          onSaved={(pin, isNew) => { isNew ? prepend(pin) : replacePin(pin); setEditingNote(null) }}
+          onSaved={(pin, isNew) => {
+            if (isNew) {
+              prepend(pin)
+            } else {
+              replacePin(pin)
+            }
+            setEditingNote(null)
+          }}
           onUnpinned={id => { removePin('note', id); setEditingNote(null) }}
         />
       )}
