@@ -6,6 +6,7 @@ import { requireSession } from '@/lib/auth/session'
 import { eq, and } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import { revalidatePath } from 'next/cache'
+import { GENERAL_SHOPPING_ICON } from './general'
 
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
 
@@ -46,6 +47,8 @@ export async function renameShop(shopId: string, name: string, color: string) {
 
 export async function deleteShop(shopId: string) {
   await requireSession()
+  const shop = await db.query.lists.findFirst({ where: eq(lists.id, shopId), columns: { icon: true } })
+  if (shop?.icon === GENERAL_SHOPPING_ICON) return
   // listItems cascade-delete via FK, then remove the shop
   await db.delete(listItems).where(eq(listItems.listId, shopId))
   await db.delete(lists).where(eq(lists.id, shopId))

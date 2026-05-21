@@ -1,9 +1,11 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { items, lists, listItems, bins, records, calendarEvents, pins } from '@/lib/db/schema'
-import { eq, and, isNull, isNotNull, lte, gte, asc, desc } from 'drizzle-orm'
+import { items, lists, listItems, bins, records, calendarEvents, pins, reminders } from '@/lib/db/schema'
+import { eq, and, isNull, isNotNull, lte, gte, asc, desc, inArray } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
 import { getNextBinCollection } from '@/lib/utils/bins'
+
+const RECORD_ENTITY_TYPE = 'record'
 
 export default async function DashboardPage() {
   const session = await requireSession()
@@ -14,8 +16,8 @@ export default async function DashboardPage() {
   const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
 
-  // All 8 queries are independent — run in parallel
-  const [shoppingLists, dueTasks, inboxCount, inboxPreview, binsList, renewalRows, calRows, pinRows] =
+  // These queries are independent — run in parallel
+  const [shoppingLists, dueTasks, inboxCount, inboxPreview, binsList, renewalRows, reminderRows, calRows, pinRows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -50,6 +52,15 @@ export default async function DashboardPage() {
         orderBy: [asc(records.renewalDate)],
         columns: { id: true, title: true, category: true, renewalLabel: true, renewalDate: true },
       }),
+      db.query.reminders.findMany({
+        where: and(
+          eq(reminders.entityType, RECORD_ENTITY_TYPE),
+          isNull(reminders.dismissedAt),
+          lte(reminders.triggerAt, renewalWindow)
+        ),
+        orderBy: [asc(reminders.triggerAt)],
+        columns: { id: true, entityId: true, message: true, triggerAt: true },
+      }),
       db.query.calendarEvents.findMany({
         where: and(gte(calendarEvents.startsAt, startOfToday), lte(calendarEvents.startsAt, calWindow)),
         orderBy: [asc(calendarEvents.startsAt)],
@@ -64,6 +75,15 @@ export default async function DashboardPage() {
 
   const shoppingItems = shoppingLists.flatMap(l => l.items).slice(0, 6)
 
+  const reminderRecordIds = Array.from(new Set(reminderRows.map(r => r.entityId)))
+  const reminderRecords = reminderRecordIds.length
+    ? await db.query.records.findMany({
+        where: inArray(records.id, reminderRecordIds),
+        columns: { id: true, title: true },
+      })
+    : []
+  const reminderRecordMap = new Map(reminderRecords.map(r => [r.id, r.title]))
+
   const nextBins = binsList.map(bin => ({
     ...bin,
     nextCollection: getNextBinCollection(bin),
@@ -74,13 +94,22 @@ export default async function DashboardPage() {
     return daysUntil <= 1
   })
 
-  const renewals = renewalRows.map(r => ({
+  const renewals = [
+    ...reminderRows.map(r => ({
+      id: `reminder-${r.id}`,
+      title: reminderRecordMap.get(r.entityId) ?? 'Record reminder',
+      label: r.message || 'Reminder',
+      date: r.triggerAt,
+      href: `/life/admin/${r.entityId}`,
+    })),
+    ...renewalRows.map(r => ({
     id: r.id,
     title: r.title,
-    category: r.category,
     label: r.renewalLabel,
     date: r.renewalDate!,
-  }))
+      href: `/life/admin/${r.id}`,
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime())
 
   return (
     <DashboardClient

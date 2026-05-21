@@ -3,6 +3,7 @@ import { lists, listItems } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { ShopView } from './shop-view'
+import { GENERAL_SHOPPING_ICON } from '../general'
 
 export default async function ShopPage({ params }: { params: Promise<{ shopId: string }> }) {
   const { shopId } = await params
@@ -24,6 +25,7 @@ export default async function ShopPage({ params }: { params: Promise<{ shopId: s
         id: shop.id,
         name: shop.name,
         color: shop.color ?? '#34C759',
+        isGeneral: shop.icon === GENERAL_SHOPPING_ICON,
         items: shop.items.map(i => ({ id: i.id, title: i.title, checked: i.checked, checkedAt: i.checkedAt })),
       }}
     />

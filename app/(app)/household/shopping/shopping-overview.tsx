@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createShop } from './actions'
 import { LIST_COLORS, DEFAULT_LIST_COLOR } from '../tasks/colors'
 
-type ShopCard = { id: string; name: string; color: string; count: number }
+type ShopCard = { id: string; name: string; color: string; count: number; isGeneral: boolean }
 
 export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; totalActive: number }) {
   const router = useRouter()
@@ -14,6 +14,8 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(DEFAULT_LIST_COLOR)
   const [pending, startTransition] = useTransition()
+  const general = shops.find(shop => shop.isGeneral)
+  const shopSpecific = shops.filter(shop => !shop.isGeneral)
 
   function submit() {
     const trimmed = name.trim()
@@ -60,10 +62,27 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
         </Link>
       </div>
 
-      <p className="px-5 mb-2 text-[13px] font-semibold text-text-2">My Shops</p>
+      {general && (
+        <div className="mx-4 mb-5">
+          <Link
+            href={`/household/shopping/${general.id}`}
+            className="bg-surface rounded-xl px-3.5 py-3 flex items-center gap-3 active:opacity-60 transition-opacity"
+          >
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: general.color }}>
+              <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-[15px] h-[15px]">
+                <path d="M4 6h12M4 10h12M4 14h8" />
+              </svg>
+            </div>
+            <span className="flex-1 text-[16px] font-medium text-text-1">General</span>
+            <span className="text-[16px] font-medium text-text-2">{general.count}</span>
+          </Link>
+        </div>
+      )}
+
+      <p className="px-5 mb-2 text-[13px] font-semibold text-text-2">Shops</p>
 
       <div className="mx-4 grid grid-cols-2 gap-3">
-        {shops.map(s => (
+        {shopSpecific.map(s => (
           <Link
             key={s.id}
             href={`/household/shopping/${s.id}`}
@@ -83,6 +102,12 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
           </Link>
         ))}
       </div>
+
+      {shopSpecific.length === 0 && (
+        <div className="mx-4 bg-surface rounded-2xl px-4 py-6 text-center">
+          <p className="text-[14px] text-text-2">Add shops when you want specific lists.</p>
+        </div>
+      )}
 
       {adding ? (
         <div className="mx-4 mt-3 bg-surface rounded-2xl p-4">

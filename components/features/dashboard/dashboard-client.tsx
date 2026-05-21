@@ -25,9 +25,9 @@ type BinWithDate = {
 type Renewal = {
   id: string
   title: string
-  category: string
   label: string | null
   date: Date
+  href: string
 }
 type CalEvent = {
   id: string
@@ -203,7 +203,7 @@ export function DashboardClient({
               return (
                 <Link
                   key={r.id}
-                  href={`/life/admin/${r.id}`}
+                  href={r.href}
                   className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}
                 >
                   <div className="flex-1 min-w-0">

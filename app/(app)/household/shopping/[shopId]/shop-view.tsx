@@ -8,7 +8,7 @@ import { LIST_COLORS } from '../../tasks/colors'
 import { SwipeRow } from '@/components/ui/swipe-row'
 
 type ListItem = { id: string; title: string; checked: boolean; checkedAt: Date | null }
-type Shop = { id: string; name: string; color: string; items: ListItem[] }
+type Shop = { id: string; name: string; color: string; isGeneral: boolean; items: ListItem[] }
 
 export function ShopView({ shop }: { shop: Shop }) {
   const router = useRouter()
@@ -116,9 +116,11 @@ export function ShopView({ shop }: { shop: Shop }) {
               Save
             </button>
           </div>
-          <button onClick={handleDelete} className="mt-3 w-full h-10 rounded-xl text-[15px] font-medium text-red active:bg-surface-2">
-            Delete Shop
-          </button>
+          {!shop.isGeneral && (
+            <button onClick={handleDelete} className="mt-3 w-full h-10 rounded-xl text-[15px] font-medium text-red active:bg-surface-2">
+              Delete Shop
+            </button>
+          )}
         </div>
       ) : (
         <header className="px-5 pt-1 pb-3 flex items-center justify-between">

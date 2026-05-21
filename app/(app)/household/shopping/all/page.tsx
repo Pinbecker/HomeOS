@@ -2,10 +2,13 @@ import { db } from '@/lib/db'
 import { lists, listItems } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
 import { AllShopsView } from './all-shops-view'
+import { ensureGeneralShoppingList } from '../general'
 
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
 
 export default async function AllShoppingPage() {
+  await ensureGeneralShoppingList()
+
   const shops = await db.query.lists.findMany({
     where: and(eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'shopping'), eq(lists.archived, false)),
     orderBy: [asc(lists.sortOrder), asc(lists.createdAt)],

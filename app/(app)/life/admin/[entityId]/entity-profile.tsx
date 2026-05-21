@@ -28,6 +28,10 @@ function formatShortDate(timestamp: number) {
   return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+function formatDateWithYear(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 function toInputDate(timestamp: number | null) {
   if (!timestamp) return ''
   const date = new Date(timestamp)
@@ -136,12 +140,16 @@ export function EntityProfile({
   return (
     <div className="flex flex-col max-w-lg mx-auto pb-4">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-        <Link href="/life/admin" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
+        <button onClick={() => router.back()} className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
           <ChevronLeft />
-          <span className="text-[16px]">Records</span>
-        </Link>
-        <button onClick={() => setEditing(true)} className="text-[15px] font-semibold text-accent active:opacity-60 px-1">
-          Edit
+          <span className="text-[16px]">Back</span>
+        </button>
+        <button
+          onClick={() => setEditing(true)}
+          disabled={editing}
+          className={`text-[15px] font-semibold active:opacity-60 px-1 ${editing ? 'text-text-3' : 'text-accent'}`}
+        >
+          {editing ? 'Editing' : 'Edit'}
         </button>
       </div>
 
@@ -167,7 +175,7 @@ export function EntityProfile({
             <div className="flex items-center justify-between">
               <p className="text-[17px] font-bold text-text-1">Edit details</p>
               <button type="button" onClick={() => setEditing(false)} className="text-[14px] font-semibold text-text-2 active:opacity-60">
-                Done
+                Cancel
               </button>
             </div>
             <div className="bg-surface-2 rounded-2xl overflow-hidden">
@@ -209,12 +217,15 @@ export function EntityProfile({
               <p className="text-[12px] font-bold uppercase tracking-wide text-text-3 mb-2">Renewal or due date</p>
               <div className="bg-surface-2 rounded-2xl overflow-hidden">
                 <input name="renewalLabel" defaultValue={entity.renewalLabel ?? ''} placeholder="Label, e.g. Renews" className="w-full px-4 py-3 bg-transparent outline-none text-[15px] text-text-1" />
-                <input name="renewalDate" type="date" defaultValue={toInputDate(entity.renewalDate)} className="w-full px-4 py-3 bg-transparent outline-none text-[15px] text-text-1 border-t border-border" />
+                <label className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border">
+                  <span className="text-[14px] font-medium text-text-2">Pick a date</span>
+                  <input name="renewalDate" type="date" defaultValue={toInputDate(entity.renewalDate)} className="min-w-0 bg-transparent outline-none text-[15px] text-text-1 text-right" />
+                </label>
               </div>
             </div>
 
             <textarea name="notes" defaultValue={entity.notes ?? ''} placeholder="Notes" rows={3} className="w-full bg-surface-2 rounded-2xl px-4 py-3 text-[15px] text-text-1 outline-none resize-none" />
-            <SubmitButton label="Save changes" pending={pending} />
+            <SubmitButton label="Done" pending={pending} />
           </form>
         </section>
       )}
@@ -248,10 +259,24 @@ export function EntityProfile({
       )}
 
       <Section title="Key facts">
-        {profile.facts.length > 0 ? (
+        {profile.facts.length > 0 || entity.renewalDate ? (
           <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            {entity.renewalDate && (
+              <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-bg">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-[10px] bg-amber/15 flex items-center justify-center text-amber shrink-0">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <rect x="3" y="3.5" width="10" height="9.5" rx="2" />
+                      <path d="M5.5 2.5v2M10.5 2.5v2M3 6.5h10" />
+                    </svg>
+                  </div>
+                  <p className="text-[13.5px] font-semibold text-amber truncate">{entity.renewalLabel || 'Due date'}</p>
+                </div>
+                <p className="text-[14.5px] font-bold text-text-1 text-right shrink-0">{formatDateWithYear(entity.renewalDate)}</p>
+              </div>
+            )}
             {profile.facts.map((fact, index) => (
-              <div key={`${fact.label}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+              <div key={`${fact.label}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 || entity.renewalDate ? 'border-t border-border' : ''}`}>
                 <p className="text-[13.5px] text-text-2 shrink-0">{fact.label || 'Detail'}</p>
                 <p className="text-[14.5px] font-medium text-text-1 text-right break-words">{fact.value || 'Not set'}</p>
               </div>
@@ -277,7 +302,10 @@ export function EntityProfile({
           <InlinePanel onCancel={() => setOpenPanel(null)}>
             <form action={formData => submitAction(formDataForTask => addLinkedTask(entity.id, formDataForTask), formData)} className="flex flex-col gap-3">
               <input name="title" required placeholder={`Task for ${entity.title}`} className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
-              <input name="dueDate" type="date" className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
+              <label className="bg-surface-2 rounded-xl px-3 py-2">
+                <span className="block text-[12px] font-semibold text-text-2 mb-1">Due date</span>
+                <input name="dueDate" type="date" className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+              </label>
               <SubmitButton label="Add task" pending={pending} />
             </form>
           </InlinePanel>
@@ -306,7 +334,10 @@ export function EntityProfile({
           <InlinePanel onCancel={() => setOpenPanel(null)}>
             <form action={formData => submitAction(formDataForReminder => addEntityReminder(entity.id, formDataForReminder), formData)} className="flex flex-col gap-3">
               <input name="message" placeholder={`Remind me about ${entity.title}`} className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
-              <input name="triggerAt" type="date" required className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
+              <label className="bg-surface-2 rounded-xl px-3 py-2">
+                <span className="block text-[12px] font-semibold text-text-2 mb-1">Reminder date</span>
+                <input name="triggerAt" type="date" required className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+              </label>
               <SubmitButton label="Add reminder" pending={pending} />
             </form>
           </InlinePanel>
