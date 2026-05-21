@@ -9,13 +9,23 @@ type AiCaptureResult = {
   conversationId?: string | null
   jobId: string
   finalResponse?: string
+  appliedActions?: Record<string, unknown>[]
   plan: {
     result: string
     response: string
     clarificationQuestion: string | null
+    clarificationOptions: string[]
     confirmationSummary: string | null
     inferredTags: string[]
   }
+}
+
+type ActiveThread = {
+  itemId: string
+  conversationId: string
+  assistantMessage: string
+  clarificationOptions: string[]
+  complete: boolean
 }
 
 type Props = {
@@ -60,10 +70,12 @@ function extensionForAudioType(type: string) {
 export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   const router = useRouter()
   const [text, setText] = useState('')
+  const [reply, setReply] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [activeThread, setActiveThread] = useState<ActiveThread | null>(null)
   const [isPending, startTransition] = useTransition()
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -71,8 +83,20 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   const isWorking = isPending || processing
 
   function handleResult(result: AiCaptureResult) {
-    setMessage(result.plan.clarificationQuestion || result.finalResponse || result.plan.response)
+    const assistantMessage = result.plan.clarificationQuestion || result.finalResponse || result.plan.response
     if (result.inboxItem) onInboxItem?.(result.inboxItem)
+    if (result.inboxItem && result.conversationId) {
+      setMessage(null)
+      setActiveThread({
+        itemId: result.inboxItem.id,
+        conversationId: result.conversationId,
+        assistantMessage,
+        clarificationOptions: result.plan.clarificationOptions,
+        complete: false,
+      })
+    } else {
+      setMessage(assistantMessage)
+    }
     router.refresh()
   }
 
@@ -83,29 +107,82 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
     setText('')
     setError(null)
     setMessage(null)
+    setActiveThread(null)
 
     startTransition(async () => {
-      const response = await fetch('/api/ai/capture', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: value,
-          sourceType: 'typed_capture',
-          sourceContext: { surface },
-        }),
-      })
-      const payload = await response.json()
-      if (!response.ok) {
-        setError(payload.error || 'I could not save that just now.')
-        return
+      try {
+        const response = await fetch('/api/ai/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: value,
+            sourceType: 'typed_capture',
+            sourceContext: { surface },
+          }),
+        })
+        const payload = await response.json()
+        if (!response.ok) {
+          setError(payload.error || 'I could not save that just now.')
+          return
+        }
+        handleResult(payload)
+      } catch {
+        setError('I could not save that just now.')
       }
-      handleResult(payload)
     })
+  }
+
+  function submitReply(value: string) {
+    const trimmed = value.trim()
+    if (!activeThread || !trimmed || isWorking) return
+
+    setReply('')
+    setError(null)
+    setMessage(null)
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/ai/inbox/${activeThread.itemId}/triage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: trimmed,
+            conversationId: activeThread.conversationId,
+          }),
+        })
+        const payload = await response.json()
+        if (!response.ok) {
+          setError(payload.error || 'I could not sort that just now.')
+          return
+        }
+
+        const assistantMessage = payload.plan?.clarificationQuestion || payload.finalResponse || payload.plan?.response || 'Done.'
+        const complete = payload.appliedActions?.length > 0 && payload.plan?.result === 'apply_actions'
+
+        setMessage(null)
+        setActiveThread(prev => prev && {
+          ...prev,
+          conversationId: payload.conversationId ?? prev.conversationId,
+          assistantMessage,
+          clarificationOptions: complete ? [] : payload.plan?.clarificationOptions ?? [],
+          complete,
+        })
+        router.refresh()
+      } catch {
+        setError('I could not sort that just now.')
+      }
+    })
+  }
+
+  function submitReplyForm(e: React.FormEvent) {
+    e.preventDefault()
+    submitReply(reply)
   }
 
   async function startRecording() {
     setError(null)
     setMessage(null)
+    setActiveThread(null)
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Voice capture is not available in this browser.')
       return
@@ -163,54 +240,56 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
 
   return (
     <section className="mx-4 mb-4">
-      <form onSubmit={submitText} className="bg-surface border border-border rounded-2xl px-3 py-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={recording ? stopRecording : startRecording}
-            disabled={isWorking && !recording}
-            className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-              recording ? 'bg-red text-white' : 'bg-accent text-white'
-            } disabled:opacity-40`}
-            aria-label={recording ? 'Stop recording' : 'Record voice note'}
-          >
-            {recording ? (
-              <span className="w-3.5 h-3.5 bg-white rounded-[3px]" />
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="22" />
-              </svg>
-            )}
-          </button>
+      <div className="bg-surface border border-border rounded-2xl px-3 py-3">
+        <form onSubmit={submitText}>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={recording ? stopRecording : startRecording}
+              disabled={isWorking && !recording}
+              className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                recording ? 'bg-red text-white' : 'bg-accent text-white'
+              } disabled:opacity-40`}
+              aria-label={recording ? 'Stop recording' : 'Record voice note'}
+            >
+              {recording ? (
+                <span className="w-3.5 h-3.5 bg-white rounded-[3px]" />
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              )}
+            </button>
 
-          <input
-            value={text}
-            onChange={event => setText(event.target.value)}
-            disabled={isWorking || recording}
-            placeholder={recording ? 'Listening...' : isWorking ? 'Thinking...' : placeholder ?? 'Say or type anything to remember'}
-            className="min-w-0 flex-1 h-11 bg-surface-2 rounded-xl px-3 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none disabled:opacity-60"
-          />
+            <input
+              value={text}
+              onChange={event => setText(event.target.value)}
+              disabled={isWorking || recording}
+              placeholder={recording ? 'Listening...' : isWorking ? 'Thinking...' : placeholder ?? 'Say or type anything to remember'}
+              className="min-w-0 flex-1 h-11 bg-surface-2 rounded-xl px-3 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none disabled:opacity-60"
+            />
 
-          <button
-            type="submit"
-            disabled={!text.trim() || isWorking}
-            className="w-11 h-11 rounded-xl bg-accent text-white flex items-center justify-center disabled:opacity-40 shrink-0"
-            aria-label="Capture"
-          >
-            {isWorking ? (
-              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d="M5 12h14" />
-                <path d="M13 6l6 6-6 6" />
-              </svg>
-            )}
-          </button>
-        </div>
+            <button
+              type="submit"
+              disabled={!text.trim() || isWorking}
+              className="w-11 h-11 rounded-xl bg-accent text-white flex items-center justify-center disabled:opacity-40 shrink-0"
+              aria-label="Capture"
+            >
+              {isWorking ? (
+                <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <path d="M5 12h14" />
+                  <path d="M13 6l6 6-6 6" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </form>
 
-        {(isWorking || message || error || recording) && (
+        {(isWorking || (!activeThread && message) || error || recording) && (
           <div className="mt-2 px-1 flex items-center gap-2">
             {isWorking && !error && (
               <span className="flex gap-[3px] items-center shrink-0">
@@ -234,7 +313,49 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
             </p>
           </div>
         )}
-      </form>
+
+        {activeThread && (
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="bg-surface-2 rounded-xl px-3 py-2.5">
+              <p className="text-[13px] text-text-1 leading-relaxed">{activeThread.assistantMessage}</p>
+              {activeThread.clarificationOptions.length > 0 && !activeThread.complete && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {activeThread.clarificationOptions.map(option => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => submitReply(option)}
+                      disabled={isWorking}
+                      className="text-[12px] font-bold text-accent bg-accent/10 px-2.5 py-1.5 rounded-lg disabled:opacity-40"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {!activeThread.complete && (
+              <form onSubmit={submitReplyForm} className="mt-2 flex gap-2">
+                <input
+                  value={reply}
+                  onChange={event => setReply(event.target.value)}
+                  disabled={isWorking}
+                  placeholder="Reply naturally..."
+                  className="min-w-0 flex-1 h-10 bg-surface-2 rounded-xl px-3 text-[14px] text-text-1 placeholder:text-text-3 outline-none disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={!reply.trim() || isWorking}
+                  className="h-10 px-3 rounded-xl bg-accent text-white text-[13px] font-bold disabled:opacity-40"
+                >
+                  Send
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
