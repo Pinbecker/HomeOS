@@ -34,6 +34,16 @@ export function daysUntil(date: Date): number {
   return Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+export function getBinReminderDate(collectionDate: Date): Date {
+  const reminderDate = new Date(
+    collectionDate.getFullYear(),
+    collectionDate.getMonth(),
+    collectionDate.getDate(),
+  )
+  reminderDate.setDate(reminderDate.getDate() - 1)
+  return reminderDate
+}
+
 export const BIN_COLOURS: Record<string, { bg: string; text: string; label: string }> = {
   grey:  { bg: '#6B7280', text: '#fff', label: 'Grey bin'  },
   blue:  { bg: '#3B82F6', text: '#fff', label: 'Blue bin'  },

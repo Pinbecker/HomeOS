@@ -64,7 +64,10 @@
       "Bash(pkill -f \"next-server\")",
       "Bash(curl -s -o /dev/null -w \"3137=%{http_code}\\\\n\" http://localhost:3137/)",
       "Bash(curl -s -o /dev/null -w \"3142=%{http_code}\\\\n\" http://localhost:3142/)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(sqlite3 data/db/homeapp.db \"SELECT * FROM bins;\")",
+      "Bash(docker -H npipe:////./pipe/docker_engine ps --format \"table {{.Names}}\\\\t{{.Status}}\")",
+      "Bash(Get-ChildItem -Path . -Name \"*.db\" -Recurse)"
     ],
     "additionalDirectories": [
       "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"

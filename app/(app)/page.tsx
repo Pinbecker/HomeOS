@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { items, lists, listItems, bins, records, calendarEvents, pins, reminders } from '@/lib/db/schema'
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc, inArray } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
-import { getNextBinCollection } from '@/lib/utils/bins'
+import { daysUntil, getNextBinCollection } from '@/lib/utils/bins'
 
 const RECORD_ENTITY_TYPE = 'record'
 
@@ -114,10 +114,7 @@ export default async function DashboardPage() {
     nextCollection: getNextBinCollection(bin),
   })).sort((a, b) => a.nextCollection.getTime() - b.nextCollection.getTime())
 
-  const relevantBins = nextBins.filter(b => {
-    const daysUntil = Math.ceil((b.nextCollection.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    return daysUntil <= 1
-  })
+  const relevantBins = nextBins.filter(b => daysUntil(b.nextCollection) === 1)
 
   const renewals = [
     ...reminderRows.map(r => ({
