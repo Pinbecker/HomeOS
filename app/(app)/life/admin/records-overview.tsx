@@ -231,10 +231,9 @@ function CategoryEditor({ initial, onClose, onSaved }: {
               <div className="mt-2.5 flex items-center gap-2 bg-surface rounded-xl px-3">
                 <span className="text-[12.5px] text-text-2 shrink-0">Or type your own</span>
                 <input
-                  value={icon}
-                  onChange={e => setIcon(e.target.value.slice(0, 4))}
+                  onChange={e => { const v = e.target.value.slice(0, 4); if (v) { setIcon(v); setPickingIcon(false) } }}
                   placeholder="🙂"
-                  className="flex-1 py-2.5 text-[20px] bg-transparent outline-none text-right placeholder:text-text-3"
+                  className="flex-1 py-2.5 text-[20px] bg-transparent outline-none text-left placeholder:text-text-3"
                   aria-label="Type any emoji"
                 />
               </div>
