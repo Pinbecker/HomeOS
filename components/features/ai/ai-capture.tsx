@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 
 type AiCaptureResult = {
   transcript?: string
@@ -23,6 +24,7 @@ type Props = {
 }
 
 export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
+  const router = useRouter()
   const [text, setText] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -37,6 +39,7 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   function handleResult(result: AiCaptureResult) {
     setMessage(result.plan.clarificationQuestion || result.plan.response)
     if (result.inboxItem) onInboxItem?.(result.inboxItem)
+    router.refresh()
   }
 
   function submitText(e?: React.FormEvent) {
