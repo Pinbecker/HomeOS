@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { records } from '@/lib/db/schema'
 import { CATEGORIES } from '../categories'
 
 export default async function LifeAdminPage() {

@@ -47,6 +47,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/lib/db/migrations ./lib/db/migrations
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.js ./scripts/start.js
 
+# Next's standalone tracer copies only the CJS entry for temporal-polyfill,
+# but Node 20.20 resolves the package's module-sync export to index.js.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/temporal-polyfill@0.3.2 ./node_modules/.pnpm/temporal-polyfill@0.3.2
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/temporal-spec@0.3.1 ./node_modules/.pnpm/temporal-spec@0.3.1
+
 # Create data directories (these will be overridden by Docker volumes in prod)
 RUN mkdir -p /data/db /data/files && chown -R nextjs:nodejs /data
 

@@ -1,6 +1,6 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { lists, listItems } from '@/lib/db/schema'
+import { lists } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import { ShoppingOverview } from './shopping-overview'
