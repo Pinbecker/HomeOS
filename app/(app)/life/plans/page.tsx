@@ -1,13 +1,10 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { items } from '@/lib/db/schema'
 import { and, eq, isNull, desc } from 'drizzle-orm'
 import { PlansView } from './plans-view'
 
 export default async function PlansPage() {
-  await requireSession()
-
   const rows = await db.query.items.findMany({
     where: and(eq(items.type, 'trip_idea'), isNull(items.deletedAt)),
     orderBy: [desc(items.createdAt)],

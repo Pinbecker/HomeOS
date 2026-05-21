@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 
 function NavIcon({ children }: { children: React.ReactNode }) {
@@ -152,17 +152,11 @@ function radialPos(angleDeg: number, r: number) {
 
 export function BottomNav() {
   const pathname = usePathname()
-  const router = useRouter()
   const [open, setOpen] = useState(false)
 
   function isActive(href: string, exact = false) {
     if (exact) return pathname === href
     return pathname.startsWith(href)
-  }
-
-  function navigate(href: string) {
-    setOpen(false)
-    router.push(href)
   }
 
   return (
@@ -214,13 +208,16 @@ export function BottomNav() {
                 flexShrink: 0,
               }}
             >
-              {/* Radial items fan out from button center */}
+              {/* Radial items fan out from button center.
+                  Using <Link> (not router.push) so Next.js prefetches these routes
+                  on mount — the links are in the DOM even when visually hidden. */}
               {radialItems.map((item, idx) => {
                 const { x, y } = radialPos(item.angle, RADIUS)
                 return (
-                  <button
+                  <Link
                     key={item.href}
-                    onClick={() => navigate(item.href)}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
                     aria-label={item.label}
                     style={{
                       position: 'absolute',
@@ -267,7 +264,7 @@ export function BottomNav() {
                     >
                       {item.label}
                     </span>
-                  </button>
+                  </Link>
                 )
               })}
 

@@ -1,14 +1,16 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
+import { records } from '@/lib/db/schema'
+import { count } from 'drizzle-orm'
 import { CATEGORIES } from '../categories'
 
 export default async function LifeAdminPage() {
-  await requireSession()
-
-  const all = await db.query.records.findMany({ columns: { category: true } })
+  const countRows = await db
+    .select({ category: records.category, n: count() })
+    .from(records)
+    .groupBy(records.category)
   const counts: Record<string, number> = {}
-  for (const r of all) counts[r.category] = (counts[r.category] ?? 0) + 1
+  for (const r of countRows) counts[r.category] = r.n
 
   return (
     <div className="flex flex-col max-w-lg mx-auto">

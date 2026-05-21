@@ -1,4 +1,3 @@
-import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { lists, listItems } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
@@ -6,7 +5,6 @@ import { notFound } from 'next/navigation'
 import { ShopView } from './shop-view'
 
 export default async function ShopPage({ params }: { params: Promise<{ shopId: string }> }) {
-  await requireSession()
   const { shopId } = await params
 
   const shop = await db.query.lists.findFirst({

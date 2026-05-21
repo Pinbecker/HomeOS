@@ -1,9 +1,6 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/auth/session'
 
 export default async function LifePage() {
-  await requireSession()
-
   const sections = [
     {
       href: '/life/admin',

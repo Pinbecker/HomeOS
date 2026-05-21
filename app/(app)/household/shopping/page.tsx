@@ -1,4 +1,3 @@
-import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { lists } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
@@ -8,15 +7,13 @@ import { ShoppingOverview } from './shopping-overview'
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
 
 export default async function ShoppingPage() {
-  await requireSession()
-
   let shops = await db.query.lists.findMany({
     where: and(eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'shopping'), eq(lists.archived, false)),
     orderBy: [asc(lists.sortOrder), asc(lists.createdAt)],
     with: { items: { columns: { id: true, checked: true } } },
   })
 
-  // Ensure a default shop exists so there's always somewhere to add
+  // Ensure a default shop exists — construct the row in-memory to avoid a second DB round-trip
   if (shops.length === 0) {
     const id = ulid()
     const now = new Date()
@@ -24,11 +21,7 @@ export default async function ShoppingPage() {
       id, householdId: HOUSEHOLD_ID, name: 'Shopping', type: 'shopping',
       color: '#34C759', sortOrder: 0, createdAt: now, updatedAt: now,
     })
-    shops = await db.query.lists.findMany({
-      where: and(eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'shopping'), eq(lists.archived, false)),
-      orderBy: [asc(lists.sortOrder), asc(lists.createdAt)],
-      with: { items: { columns: { id: true, checked: true } } },
-    })
+    shops = [{ id, householdId: HOUSEHOLD_ID, name: 'Shopping', type: 'shopping' as const, color: '#34C759', sortOrder: 0, archived: false, icon: null, createdAt: now, updatedAt: now, items: [] }]
   }
 
   const shopCards = shops.map(s => ({

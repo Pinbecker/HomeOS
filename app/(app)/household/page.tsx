@@ -1,9 +1,6 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/auth/session'
 
 export default async function HouseholdPage() {
-  await requireSession()
-
   const sections = [
     { href: '/household/shopping', label: 'Shopping',    icon: '🛒', desc: 'Shared grocery list' },
     { href: '/household/tasks',    label: 'Tasks',       icon: '✓',  desc: 'Things to get done' },

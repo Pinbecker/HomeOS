@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { items, lists } from '@/lib/db/schema'
 import { and, eq, isNull, asc } from 'drizzle-orm'
@@ -8,8 +7,6 @@ import { HousePlansView } from './plans-view'
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
 
 export default async function HousePlansPage() {
-  await requireSession()
-
   const list = await db.query.lists.findFirst({
     where: and(eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'house_plans')),
   })
