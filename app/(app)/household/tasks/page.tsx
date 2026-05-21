@@ -16,8 +16,10 @@ export default async function TasksPage() {
   ])
 
   const counts: Record<string, number> = {}
+  let inboxCount = 0
   for (const t of activeTasks) {
     if (t.listId) counts[t.listId] = (counts[t.listId] ?? 0) + 1
+    else inboxCount += 1
   }
 
   const taskListIds = new Set(taskLists.map(l => l.id))
@@ -28,7 +30,7 @@ export default async function TasksPage() {
     count: counts[l.id] ?? 0,
   }))
 
-  const totalActive = activeTasks.filter(t => t.listId && taskListIds.has(t.listId)).length
+  const totalActive = activeTasks.filter(t => !t.listId || taskListIds.has(t.listId)).length
 
-  return <TasksOverview lists={listsWithCounts} totalActive={totalActive} />
+  return <TasksOverview lists={listsWithCounts} totalActive={totalActive} inboxCount={inboxCount} />
 }

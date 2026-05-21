@@ -203,7 +203,7 @@ export function DashboardClient({
               return (
                 <Link
                   key={r.id}
-                  href={`/life/${r.category}`}
+                  href={`/life/admin/${r.id}`}
                   className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}
                 >
                   <div className="flex-1 min-w-0">

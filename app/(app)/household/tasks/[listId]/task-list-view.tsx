@@ -15,13 +15,18 @@ type Task = {
   assigneeId: string | null
 }
 type User = { id: string; name: string }
+type TaskList = { id: string; name: string }
+type TaskSource = { id: string; title: string; icon: string | null; href: string }
 
 interface Props {
   listId: string
   isAll: boolean
+  isInbox: boolean
   title: string
   color: string
   users: User[]
+  lists: TaskList[]
+  taskSources: Record<string, TaskSource>
   initialActive: Task[]
   initialCompleted: Task[]
 }
@@ -51,7 +56,7 @@ function formatDue(due: Date): { label: string; overdue: boolean } {
   return { label: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), overdue: false }
 }
 
-export function TaskListView({ listId, isAll, title, color, users, initialActive, initialCompleted }: Props) {
+export function TaskListView({ listId, isAll, isInbox, title, color, users, lists, taskSources, initialActive, initialCompleted }: Props) {
   const [active, setActive] = useState<Task[]>(initialActive)
   const [completed, setCompleted] = useState<Task[]>(initialCompleted)
   const [newTitle, setNewTitle] = useState('')
@@ -79,10 +84,11 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
     const t = newTitle.trim()
     if (!t || isAll) return
     const tempId = ulid()
-    setActive(prev => [...prev, { id: tempId, title: t, dueDate: null, status: 'active', listId, assigneeId: null }])
+    const targetListId = isInbox ? null : listId
+    setActive(prev => [...prev, { id: tempId, title: t, dueDate: null, status: 'active', listId: targetListId, assigneeId: null }])
     setNewTitle('')
     inputRef.current?.focus()
-    createTask(listId, t).then(res => {
+    createTask(targetListId, t).then(res => {
       if (res?.id) patchTask(tempId, { id: res.id } as Partial<Task>)
     })
   }
@@ -115,10 +121,19 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
     patchTask(task.id, { assigneeId })
     updateTask(task.id, { assigneeId })
   }
+  function moveToList(task: Task, nextListId: string | null) {
+    patchTask(task.id, { listId: nextListId })
+    if (isInbox || (!isAll && nextListId !== listId)) {
+      setActive(prev => prev.filter(x => x.id !== task.id))
+      setExpandedId(null)
+    }
+    updateTask(task.id, { listId: nextListId })
+  }
 
   function renderRow(task: Task, i: number, section: 'active' | 'completed') {
     const isExpanded = expandedId === task.id
     const due = task.dueDate ? formatDue(new Date(task.dueDate)) : null
+    const source = taskSources[task.id]
     return (
       <div key={task.id} className={i > 0 ? 'border-t border-border' : ''}>
        <SwipeRow onDelete={() => remove(task, section)}>
@@ -148,17 +163,28 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
             </button>
           )}
 
-          <button
-            onClick={() => !editing && section === 'active' && setExpandedId(isExpanded ? null : task.id)}
-            className="flex-1 min-w-0 text-left"
-          >
-            <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
-              {task.title}
-            </p>
-            {due && (
-              <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
+          <div className="flex-1 min-w-0">
+            <button
+              onClick={() => !editing && section === 'active' && setExpandedId(isExpanded ? null : task.id)}
+              className="w-full min-w-0 text-left"
+            >
+              <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
+                {task.title}
+              </p>
+              {due && (
+                <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
+              )}
+            </button>
+            {source && (
+              <Link
+                href={source.href}
+                className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[12px] font-medium text-accent active:opacity-60"
+              >
+                <span className="shrink-0">{source.icon || '📋'}</span>
+                <span className="truncate">Linked to {source.title}</span>
+              </Link>
             )}
-          </button>
+          </div>
 
           {task.assigneeId && (
             <span
@@ -209,6 +235,20 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
                 ))}
               </div>
             </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-[14px] text-text-1">List</span>
+              <select
+                value={task.listId ?? ''}
+                onChange={e => moveToList(task, e.target.value || null)}
+                className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none max-w-[190px]"
+              >
+                <option value="">Inbox</option>
+                {lists.map(list => (
+                  <option key={list.id} value={list.id}>{list.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </div>
@@ -254,7 +294,7 @@ export function TaskListView({ listId, isAll, title, color, users, initialActive
             value={newTitle}
             onChange={e => setNewTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addTask() }}
-            placeholder="Add a reminder"
+            placeholder={isInbox ? 'Add a task to inbox' : 'Add a reminder'}
             className="flex-1 bg-transparent text-[16px] text-text-1 placeholder:text-text-3 outline-none"
           />
         </div>

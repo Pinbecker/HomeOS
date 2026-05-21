@@ -79,24 +79,26 @@ export function CategoryView({ meta, initialRecords }: { meta: CategoryMeta; ini
       ) : (
         <div className="mx-4 flex flex-col gap-3">
           {list.map(rec => (
-            <button
+            <Link
               key={rec.id}
-              onClick={() => setEditing(rec)}
-              className="bg-surface rounded-2xl p-4 text-left active:bg-surface-2"
+              href={`/life/admin/${rec.id}`}
+              className="bg-surface rounded-2xl p-4 text-left"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
                   <p className="text-[16px] font-semibold text-text-1">{rec.title}</p>
                   {rec.subtitle && <p className="text-[13px] text-text-2 mt-0.5">{rec.subtitle}</p>}
                 </div>
-                {rec.renewalDate && (() => {
-                  const r = formatRenewal(rec.renewalDate)
-                  return (
-                    <span className={`text-[11.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${r.soon ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>
-                      {rec.renewalLabel ?? 'Due'} · {r.text}
-                    </span>
-                  )
-                })()}
+                <div className="flex items-start gap-2 shrink-0">
+                  {rec.renewalDate && (() => {
+                    const r = formatRenewal(rec.renewalDate)
+                    return (
+                      <span className={`text-[11.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${r.soon ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>
+                        {rec.renewalLabel ?? 'Due'} · {r.text}
+                      </span>
+                    )
+                  })()}
+                </div>
               </div>
 
               {rec.fields.filter(f => f.value).length > 0 && (
@@ -111,7 +113,7 @@ export function CategoryView({ meta, initialRecords }: { meta: CategoryMeta; ini
               )}
 
               {rec.notes && <p className="text-[13px] text-text-2 mt-3 whitespace-pre-wrap">{rec.notes}</p>}
-            </button>
+            </Link>
           ))}
         </div>
       )}

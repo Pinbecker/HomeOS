@@ -8,7 +8,7 @@ import { LIST_COLORS, DEFAULT_LIST_COLOR } from './colors'
 
 type ListCard = { id: string; name: string; color: string; count: number }
 
-export function TasksOverview({ lists, totalActive }: { lists: ListCard[]; totalActive: number }) {
+export function TasksOverview({ lists, totalActive, inboxCount }: { lists: ListCard[]; totalActive: number; inboxCount: number }) {
   const router = useRouter()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -33,8 +33,8 @@ export function TasksOverview({ lists, totalActive }: { lists: ListCard[]; total
         <h1 className="text-[28px] font-bold text-text-1 tracking-tight">Lists</h1>
       </header>
 
-      {/* All — smart list */}
-      <div className="mx-4 mb-5">
+      {/* Smart lists */}
+      <div className="mx-4 mb-5 flex flex-col gap-2">
         <Link
           href="/household/tasks/all"
           className="bg-surface rounded-xl px-3.5 py-3 flex items-center gap-3 active:opacity-60 transition-opacity"
@@ -46,6 +46,19 @@ export function TasksOverview({ lists, totalActive }: { lists: ListCard[]; total
           </div>
           <span className="flex-1 text-[16px] font-medium text-text-1">All</span>
           <span className="text-[16px] font-medium text-text-2">{totalActive}</span>
+        </Link>
+        <Link
+          href="/household/tasks/inbox"
+          className="bg-surface rounded-xl px-3.5 py-3 flex items-center gap-3 active:opacity-60 transition-opacity"
+        >
+          <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" className="w-[15px] h-[15px]">
+              <path d="M4 5h12l-1.5 10h-9L4 5z" />
+              <path d="M7 9h6" />
+            </svg>
+          </div>
+          <span className="flex-1 text-[16px] font-medium text-text-1">Inbox</span>
+          <span className="text-[16px] font-medium text-text-2">{inboxCount}</span>
         </Link>
       </div>
 

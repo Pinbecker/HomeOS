@@ -4,10 +4,10 @@ export default async function LifePage() {
   const sections = [
     {
       href: '/life/admin',
-      label: 'Records & Admin',
+      label: 'Records',
       icon: '📋',
       color: '#5856D6',
-      desc: 'Documents, insurance, utilities & accounts',
+      desc: 'Household things, renewals, documents & contacts',
     },
     {
       href: '/life/plans',

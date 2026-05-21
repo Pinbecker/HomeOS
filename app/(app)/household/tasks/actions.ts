@@ -44,7 +44,7 @@ export async function deleteTaskList(listId: string) {
   revalidatePath('/household/tasks')
 }
 
-export async function createTask(listId: string, title: string) {
+export async function createTask(listId: string | null, title: string) {
   const session = await requireSession()
   const id = ulid()
   const now = new Date()
@@ -55,11 +55,11 @@ export async function createTask(listId: string, title: string) {
     type: 'task',
     title: title.trim(),
     status: 'active',
-    listId,
+    listId: listId === 'inbox' ? null : listId,
     createdAt: now,
     updatedAt: now,
   })
-  revalidatePath(`/household/tasks/${listId}`)
+  revalidatePath(`/household/tasks/${listId ?? 'inbox'}`)
   revalidatePath('/household/tasks')
   revalidatePath('/')
   return { id, title: title.trim() }
@@ -67,7 +67,7 @@ export async function createTask(listId: string, title: string) {
 
 export async function updateTask(
   id: string,
-  data: { dueDate?: number | null; assigneeId?: string | null },
+  data: { dueDate?: number | null; assigneeId?: string | null; listId?: string | null },
 ) {
   await requireSession()
   const task = await db.query.items.findFirst({ where: eq(items.id, id) })
@@ -75,8 +75,12 @@ export async function updateTask(
   const patch: Record<string, unknown> = { updatedAt: new Date() }
   if ('dueDate' in data) patch.dueDate = data.dueDate == null ? null : new Date(data.dueDate)
   if ('assigneeId' in data) patch.assigneeId = data.assigneeId
+  if ('listId' in data) patch.listId = data.listId
   await db.update(items).set(patch).where(eq(items.id, id))
   if (task.listId) revalidatePath(`/household/tasks/${task.listId}`)
+  else revalidatePath('/household/tasks/inbox')
+  if ('listId' in data && data.listId) revalidatePath(`/household/tasks/${data.listId}`)
+  if ('listId' in data && !data.listId) revalidatePath('/household/tasks/inbox')
   revalidatePath('/household/tasks/all')
   revalidatePath('/household/tasks')
   revalidatePath('/')
@@ -105,6 +109,7 @@ export async function deleteTask(id: string) {
   const task = await db.query.items.findFirst({ where: eq(items.id, id) })
   await db.update(items).set({ deletedAt: new Date() }).where(eq(items.id, id))
   if (task?.listId) revalidatePath(`/household/tasks/${task.listId}`)
+  else revalidatePath('/household/tasks/inbox')
   revalidatePath('/household/tasks')
   revalidatePath('/')
 }
