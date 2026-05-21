@@ -1,26 +1,35 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useState } from 'react'
 
-const NavIcon = ({ children }: { children: React.ReactNode }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.75}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="w-[22px] h-[22px]"
-  >
-    {children}
-  </svg>
-)
+function NavIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}
+      strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+      {children}
+    </svg>
+  )
+}
 
-const tabs = [
+function RadialIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8}
+      strokeLinecap="round" strokeLinejoin="round" className="w-[21px] h-[21px]">
+      {children}
+    </svg>
+  )
+}
+
+type Tab = { href: string; label: string; exact?: boolean; icon: React.ReactNode }
+type RadialItem = { href: string; label: string; angle: number; bg: string; icon: React.ReactNode }
+
+const leftTabs: Tab[] = [
   {
     href: '/',
     label: 'Home',
+    exact: true,
     icon: (
       <NavIcon>
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -29,29 +38,26 @@ const tabs = [
     ),
   },
   {
-    href: '/household',
-    label: 'Household',
+    href: '/household/tasks',
+    label: 'Tasks',
+    icon: (
+      <NavIcon>
+        <polyline points="9 11 12 14 22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+      </NavIcon>
+    ),
+  },
+]
+
+const rightTabs: Tab[] = [
+  {
+    href: '/household/shopping',
+    label: 'Shopping',
     icon: (
       <NavIcon>
         <circle cx="9" cy="21" r="1" />
         <circle cx="20" cy="21" r="1" />
         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-      </NavIcon>
-    ),
-  },
-  {
-    href: '/watch',
-    label: 'Watch',
-    icon: (
-      <NavIcon>
-        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-        <line x1="7" y1="2" x2="7" y2="22" />
-        <line x1="17" y1="2" x2="17" y2="22" />
-        <line x1="2" y1="12" x2="22" y2="12" />
-        <line x1="2" y1="7" x2="7" y2="7" />
-        <line x1="2" y1="17" x2="7" y2="17" />
-        <line x1="17" y1="7" x2="22" y2="7" />
-        <line x1="17" y1="17" x2="22" y2="17" />
       </NavIcon>
     ),
   },
@@ -66,58 +72,270 @@ const tabs = [
   },
 ]
 
+// Items fanning from left to right; angles use standard trig (0=right, ccw positive)
+// 270° = straight up, which is where we want items to spread from
+const radialItems: RadialItem[] = [
+  {
+    href: '/watch',
+    label: 'Watch',
+    angle: 213,
+    bg: '#FF2D55',
+    icon: (
+      <RadialIcon>
+        <polygon points="23 7 16 12 23 17 23 7" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      </RadialIcon>
+    ),
+  },
+  {
+    href: '/household',
+    label: 'Household',
+    angle: 247,
+    bg: '#34C759',
+    icon: (
+      <RadialIcon>
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
+      </RadialIcon>
+    ),
+  },
+  {
+    href: '/inbox',
+    label: 'Inbox',
+    angle: 270,
+    bg: '#007AFF',
+    icon: (
+      <RadialIcon>
+        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+      </RadialIcon>
+    ),
+  },
+  {
+    href: '/calendar',
+    label: 'Calendar',
+    angle: 293,
+    bg: '#FF9500',
+    icon: (
+      <RadialIcon>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </RadialIcon>
+    ),
+  },
+  {
+    href: '/life/plans',
+    label: 'Plans',
+    angle: 327,
+    bg: '#AF52DE',
+    icon: (
+      <RadialIcon>
+        <polygon points="3 11 22 2 13 21 11 13 3 11" />
+      </RadialIcon>
+    ),
+  },
+]
+
+// Open stagger: center item (Inbox) first, outer items last
+const OPEN_DELAYS = [50, 25, 0, 25, 50]
+const RADIUS = 92
+
+function radialPos(angleDeg: number, r: number) {
+  const rad = (angleDeg * Math.PI) / 180
+  return {
+    x: Math.round(Math.cos(rad) * r),
+    y: Math.round(Math.sin(rad) * r),
+  }
+}
+
 export function BottomNav() {
   const pathname = usePathname()
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
 
-  function isActive(href: string) {
-    if (href === '/') return pathname === '/'
+  function isActive(href: string, exact = false) {
+    if (exact) return pathname === href
     return pathname.startsWith(href)
   }
 
+  function navigate(href: string) {
+    setOpen(false)
+    router.push(href)
+  }
+
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-nav-bg backdrop-blur-2xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+10px)]">
-      <div className="flex items-start pt-2 pb-1 px-1">
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40"
+        style={{
+          background: 'rgba(0,0,0,0.48)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? 'auto' : 'none',
+          transition: 'opacity 0.22s ease',
+        }}
+        onClick={() => setOpen(false)}
+      />
 
-        {/* Home */}
-        <Link href={tabs[0].href} className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${isActive(tabs[0].href) ? 'text-accent' : 'text-text-3'}`}>
-          {tabs[0].icon}
-          <span className="text-[9.5px] font-semibold tracking-wide">{tabs[0].label}</span>
-        </Link>
+      <nav
+        className="fixed bottom-0 inset-x-0 z-50 bg-nav-bg backdrop-blur-2xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+10px)]"
+        style={{ overflow: 'visible' }}
+      >
+        <div className="flex items-start pt-2 pb-1 px-1" style={{ overflow: 'visible' }}>
 
-        {/* Household */}
-        <Link href={tabs[1].href} className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${isActive(tabs[1].href) ? 'text-accent' : 'text-text-3'}`}>
-          {tabs[1].icon}
-          <span className="text-[9.5px] font-semibold tracking-wide">{tabs[1].label}</span>
-        </Link>
+          {/* Left tabs: Home, Tasks */}
+          {leftTabs.map(tab => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              onClick={() => setOpen(false)}
+              className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
+                isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
+              }`}
+            >
+              {tab.icon}
+              <span className="text-[9.5px] font-semibold tracking-wide">{tab.label}</span>
+            </Link>
+          ))}
 
-        {/* Capture — centre, raised */}
-        <div className="flex-1 flex flex-col items-center gap-1">
-          <Link
-            href="/inbox/capture"
-            className="w-[46px] h-[46px] bg-accent rounded-[15px] flex items-center justify-center shadow-lg shadow-accent/30 -mt-[18px] active:scale-95 transition-transform"
-            aria-label="Capture"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </Link>
-          <span className="text-[9.5px] font-semibold tracking-wide text-accent">Capture</span>
+          {/* Centre: radial menu button */}
+          <div className="flex-1 flex flex-col items-center" style={{ overflow: 'visible' }}>
+            <div
+              style={{
+                position: 'relative',
+                width: 46,
+                height: 46,
+                marginTop: -18,
+                overflow: 'visible',
+                flexShrink: 0,
+              }}
+            >
+              {/* Radial items fan out from button center */}
+              {radialItems.map((item, idx) => {
+                const { x, y } = radialPos(item.angle, RADIUS)
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => navigate(item.href)}
+                    aria-label={item.label}
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      top: '50%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 3,
+                      transform: open
+                        ? `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(1)`
+                        : `translate(-50%, -50%) scale(0.25)`,
+                      opacity: open ? 1 : 0,
+                      transition: open
+                        ? `transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) ${OPEN_DELAYS[idx]}ms, opacity 0.18s ease ${OPEN_DELAYS[idx]}ms`
+                        : 'transform 0.18s ease, opacity 0.14s ease',
+                      pointerEvents: open ? 'auto' : 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: '50%',
+                        background: item.bg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: `0 4px 16px ${item.bg}55`,
+                      }}
+                    >
+                      {item.icon}
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: '#fff',
+                        textShadow: '0 1px 4px rgba(0,0,0,0.55)',
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1,
+                        letterSpacing: '0.01em',
+                      }}
+                    >
+                      {item.label}
+                    </span>
+                  </button>
+                )
+              })}
+
+              {/* The center button itself */}
+              <button
+                onClick={() => setOpen(o => !o)}
+                aria-label={open ? 'Close menu' : 'Open menu'}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: 14,
+                  background: open
+                    ? 'linear-gradient(135deg, #2C2C2E 0%, #1C1C1E 100%)'
+                    : 'linear-gradient(135deg, #007AFF 0%, #0051D4 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: open
+                    ? '0 2px 10px rgba(0,0,0,0.4)'
+                    : '0 4px 16px rgba(0,122,255,0.5)',
+                  transition: 'background 0.25s ease, box-shadow 0.25s ease',
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{
+                    width: 20,
+                    height: 20,
+                    transform: open ? 'rotate(45deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  }}
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            </div>
+
+            <span
+              className="text-[9.5px] font-semibold tracking-wide"
+              style={{ color: open ? '#007AFF' : '#8E8E93', transition: 'color 0.2s ease' }}
+            >
+              More
+            </span>
+          </div>
+
+          {/* Right tabs: Shopping, Life */}
+          {rightTabs.map(tab => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              onClick={() => setOpen(false)}
+              className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
+                isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
+              }`}
+            >
+              {tab.icon}
+              <span className="text-[9.5px] font-semibold tracking-wide">{tab.label}</span>
+            </Link>
+          ))}
+
         </div>
-
-        {/* Watch */}
-        <Link href={tabs[2].href} className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${isActive(tabs[2].href) ? 'text-accent' : 'text-text-3'}`}>
-          {tabs[2].icon}
-          <span className="text-[9.5px] font-semibold tracking-wide">{tabs[2].label}</span>
-        </Link>
-
-        {/* Life */}
-        <Link href={tabs[3].href} className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${isActive(tabs[3].href) ? 'text-accent' : 'text-text-3'}`}>
-          {tabs[3].icon}
-          <span className="text-[9.5px] font-semibold tracking-wide">{tabs[3].label}</span>
-        </Link>
-
-      </div>
-    </nav>
+      </nav>
+    </>
   )
 }
