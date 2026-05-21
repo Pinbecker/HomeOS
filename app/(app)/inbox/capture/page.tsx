@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createInboxItem } from '../actions'
 
 export default function CapturePage() {
   const router = useRouter()
@@ -12,7 +11,15 @@ export default function CapturePage() {
   async function handleSave() {
     if (!text.trim()) return
     setSaving(true)
-    await createInboxItem(text.trim())
+    await fetch('/api/ai/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: text.trim(),
+        sourceType: 'typed_capture',
+        sourceContext: { surface: 'capture_page' },
+      }),
+    })
     router.back()
   }
 

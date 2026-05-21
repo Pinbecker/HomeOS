@@ -5,6 +5,7 @@ import { daysUntil } from '@/lib/utils/bins'
 import { relativeDayLabel, eventTimeLabel } from '@/lib/utils/calendar'
 import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
+import { AiCapture } from '@/components/features/ai/ai-capture'
 
 type ShoppingItem = { id: string; title: string; checked: boolean }
 type Task = {
@@ -96,6 +97,8 @@ export function DashboardClient({
         </div>
         <UserMenu user={user} />
       </header>
+
+      <AiCapture surface="home" placeholder="Speak or type anything for the house brain" />
 
       {/* Pinned — fridge corkboard */}
       <PinnedBoard initialPins={pins} />

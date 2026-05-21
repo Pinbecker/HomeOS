@@ -63,7 +63,8 @@
       "Bash(pkill -f \"next dev\")",
       "Bash(pkill -f \"next-server\")",
       "Bash(curl -s -o /dev/null -w \"3137=%{http_code}\\\\n\" http://localhost:3137/)",
-      "Bash(curl -s -o /dev/null -w \"3142=%{http_code}\\\\n\" http://localhost:3142/)"
+      "Bash(curl -s -o /dev/null -w \"3142=%{http_code}\\\\n\" http://localhost:3142/)",
+      "Bash(python3 -c ' *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"

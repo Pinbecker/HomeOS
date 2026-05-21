@@ -345,23 +345,59 @@ export const notifications = sqliteTable('notifications', {
 })
 
 // ============================================================
-// AI JOBS (future — defined now, used in Phase 9)
+// AI JOBS
 // ============================================================
 
-export type AiJobStatus = 'pending' | 'confirmed' | 'rejected' | 'error'
+export type AiJobStatus =
+  | 'captured'
+  | 'planned'
+  | 'needs_clarification'
+  | 'applied'
+  | 'rejected'
+  | 'error'
 export type AiInputType = 'text' | 'voice' | 'image'
+export type AiSourceType =
+  | 'voice'
+  | 'typed_capture'
+  | 'inbox_triage'
+  | 'calendar_event'
+  | 'notification_reply'
+  | 'imported_email'
+export type AiConversationStatus = 'open' | 'applied' | 'dismissed' | 'error'
+export type AiConversationMessage = {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+}
 
 export const aiJobs = sqliteTable('ai_jobs', {
   id: text('id').primaryKey(),
   householdId: text('household_id').notNull().references(() => household.id),
   createdById: text('created_by_id').notNull().references(() => users.id),
   inputType: text('input_type').$type<AiInputType>().notNull().default('text'),
+  sourceType: text('source_type').$type<AiSourceType>().notNull().default('typed_capture'),
+  sourceContext: text('source_context', { mode: 'json' }).$type<Record<string, unknown>>(),
+  conversationId: text('conversation_id'),
+  relatedEntityIds: text('related_entity_ids', { mode: 'json' }).$type<string[]>(),
+  transcriptConfidence: integer('transcript_confidence'),
   rawInput: text('raw_input').notNull(),
   classification: text('classification', { mode: 'json' }).$type<Record<string, unknown>>(),
   actionsTaken: text('actions_taken', { mode: 'json' }).$type<Record<string, unknown>[]>(),
-  status: text('status').$type<AiJobStatus>().notNull().default('pending'),
+  status: text('status').$type<AiJobStatus>().notNull().default('captured'),
   reviewedById: text('reviewed_by_id').references(() => users.id),
   reviewedAt: integer('reviewed_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+})
+
+export const aiConversations = sqliteTable('ai_conversations', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  originJobId: text('origin_job_id').references(() => aiJobs.id, { onDelete: 'set null' }),
+  originItemId: text('origin_item_id').references(() => items.id, { onDelete: 'set null' }),
+  status: text('status').$type<AiConversationStatus>().notNull().default('open'),
+  messages: text('messages', { mode: 'json' }).$type<AiConversationMessage[]>().notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
