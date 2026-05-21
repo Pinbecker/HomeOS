@@ -72,14 +72,14 @@ const rightTabs: Tab[] = [
   },
 ]
 
-// Items fanning from left to right; angles use standard trig (0=right, ccw positive)
-// 270° = straight up, which is where we want items to spread from
+// Angles use standard math trig convention (ccw from positive-x, so 270° = straight up in screen).
+// Spread: 215° → 325° gives a clean upper semicircle with clear separation at R=120.
 const radialItems: RadialItem[] = [
   {
     href: '/watch',
     label: 'Watch',
-    angle: 213,
-    bg: '#FF2D55',
+    angle: 215,
+    bg: '#FF3B30',
     icon: (
       <RadialIcon>
         <polygon points="23 7 16 12 23 17 23 7" />
@@ -90,7 +90,7 @@ const radialItems: RadialItem[] = [
   {
     href: '/household',
     label: 'Household',
-    angle: 247,
+    angle: 243,
     bg: '#34C759',
     icon: (
       <RadialIcon>
@@ -114,7 +114,7 @@ const radialItems: RadialItem[] = [
   {
     href: '/calendar',
     label: 'Calendar',
-    angle: 293,
+    angle: 297,
     bg: '#FF9500',
     icon: (
       <RadialIcon>
@@ -128,8 +128,8 @@ const radialItems: RadialItem[] = [
   {
     href: '/life/plans',
     label: 'Plans',
-    angle: 327,
-    bg: '#AF52DE',
+    angle: 325,
+    bg: '#5856D6',
     icon: (
       <RadialIcon>
         <polygon points="3 11 22 2 13 21 11 13 3 11" />
@@ -140,7 +140,7 @@ const radialItems: RadialItem[] = [
 
 // Open stagger: center item (Inbox) first, outer items last
 const OPEN_DELAYS = [50, 25, 0, 25, 50]
-const RADIUS = 92
+const RADIUS = 120
 
 function radialPos(angleDeg: number, r: number) {
   const rad = (angleDeg * Math.PI) / 180
@@ -242,14 +242,14 @@ export function BottomNav() {
                   >
                     <div
                       style={{
-                        width: 50,
-                        height: 50,
+                        width: 48,
+                        height: 48,
                         borderRadius: '50%',
                         background: item.bg,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        boxShadow: `0 4px 16px ${item.bg}55`,
+                        boxShadow: `0 3px 10px ${item.bg}4D`,
                       }}
                     >
                       {item.icon}
@@ -279,16 +279,14 @@ export function BottomNav() {
                   position: 'absolute',
                   inset: 0,
                   borderRadius: 14,
-                  background: open
-                    ? 'linear-gradient(135deg, #2C2C2E 0%, #1C1C1E 100%)'
-                    : 'linear-gradient(135deg, #007AFF 0%, #0051D4 100%)',
+                  background: open ? '#3A3A3C' : '#007AFF',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxShadow: open
-                    ? '0 2px 10px rgba(0,0,0,0.4)'
-                    : '0 4px 16px rgba(0,122,255,0.5)',
-                  transition: 'background 0.25s ease, box-shadow 0.25s ease',
+                    ? '0 2px 8px rgba(0,0,0,0.35)'
+                    : '0 3px 12px rgba(0,122,255,0.45)',
+                  transition: 'background 0.22s ease, box-shadow 0.22s ease',
                 }}
               >
                 <svg
