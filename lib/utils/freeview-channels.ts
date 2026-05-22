@@ -181,10 +181,13 @@ export function getMainChannelDefs(): ChannelDef[] {
 }
 
 export function formatAirtime(date: Date): string {
-  let h = date.getHours()
-  const m = date.getMinutes()
-  const period = h < 12 ? 'am' : 'pm'
-  h = h % 12 === 0 ? 12 : h % 12
-  if (m === 0) return `${h}${period}`
-  return `${h}:${String(m).padStart(2, '0')}${period}`
+  // Always format in UK local time regardless of server TZ (Docker runs UTC).
+  const str = date.toLocaleTimeString('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Europe/London',
+  })
+  // en-GB returns e.g. "9:00 pm" — strip :00 for whole hours, collapse the space
+  return str.replace(':00', '').replace(' ', '')
 }

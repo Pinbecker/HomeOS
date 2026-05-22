@@ -44,5 +44,11 @@ export function relativeDayLabel(date: Date, allDay: boolean): string {
 
 export function eventTimeLabel(date: Date, allDay: boolean): string {
   if (allDay) return 'All day'
-  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  // Explicit timezone so server-side renders are always UK local time, not UTC.
+  return date.toLocaleTimeString('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Europe/London',
+  })
 }
