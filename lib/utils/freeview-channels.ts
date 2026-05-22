@@ -168,6 +168,18 @@ export function isKnownChannel(feedId: string): boolean {
   return CHANNEL_BY_ID.has(feedId)
 }
 
+// The subset shown as rows in the EPG grid (big 5 + popular), in registry order.
+export const MAIN_CHANNELS: string[] = [
+  'BBC One', 'BBC Two', 'ITV1', 'Channel 4', 'Channel 5',
+  'ITV2', 'BBC Three', 'BBC Four', 'ITV3', 'ITV4',
+  'E4', 'More4', 'Film4', 'Sky Mix', '5USA', 'U&Dave',
+]
+
+export function getMainChannelDefs(): ChannelDef[] {
+  const wanted = new Set(MAIN_CHANNELS)
+  return CHANNELS.filter(c => wanted.has(c.name))
+}
+
 export function formatAirtime(date: Date): string {
   let h = date.getHours()
   const m = date.getMinutes()

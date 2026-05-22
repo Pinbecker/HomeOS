@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { tvProgrammes, tvChannels } from '@/lib/db/schema'
-import { and, gt, gte, lte, lt, eq, asc } from 'drizzle-orm'
+import { and, gt, gte, lte, lt, eq, asc, inArray } from 'drizzle-orm'
 import { CHANNELS, channelName } from '@/lib/utils/freeview-channels'
 
 export type Programme = {
@@ -67,6 +67,44 @@ export async function getChannelDay(channelId: string, date: Date = new Date()):
       gte(tvProgrammes.endsAt, dayStart),
     ))
     .orderBy(asc(tvProgrammes.startsAt))
+}
+
+export type GridChannel = {
+  feedId: string
+  name: string
+  logo: string | null
+  programmes: Programme[]
+}
+
+// Full day's listings for a set of channels, grouped in registry order — powers the grid.
+export async function getDayGrid(feedIds: string[], date: Date = new Date()): Promise<GridChannel[]> {
+  if (feedIds.length === 0) return []
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+
+  const rows = await db.select().from(tvProgrammes)
+    .where(and(
+      inArray(tvProgrammes.channelId, feedIds),
+      lt(tvProgrammes.startsAt, dayEnd),
+      gte(tvProgrammes.endsAt, dayStart),
+    ))
+    .orderBy(asc(tvProgrammes.startsAt))
+
+  const byChannel = new Map<string, Programme[]>()
+  for (const r of rows) {
+    if (!byChannel.has(r.channelId)) byChannel.set(r.channelId, [])
+    byChannel.get(r.channelId)!.push(r)
+  }
+
+  const logos = await channelLogoMap()
+
+  // feedIds arrive already in registry order (see getMainChannelDefs).
+  return feedIds.map(feedId => ({
+    feedId,
+    name: channelName(feedId),
+    logo: logos.get(feedId) ?? null,
+    programmes: byChannel.get(feedId) ?? [],
+  }))
 }
 
 export type FollowMatch = { title: string; channel: string | null }

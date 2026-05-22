@@ -2,8 +2,13 @@ import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { items } from '@/lib/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
-import { getOnNow, getTodayMatches } from '@/lib/services/epg'
+import { getOnNow, getTodayMatches, getDayGrid } from '@/lib/services/epg'
+import { getMainChannelDefs } from '@/lib/utils/freeview-channels'
 import { WatchClient } from './watch-client'
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export default async function WatchPage() {
   await requireSession()
@@ -17,12 +22,16 @@ export default async function WatchPage() {
     columns: { id: true, title: true, metadata: true },
   })
 
-  const [channels, tonight] = await Promise.all([
+  const now = new Date()
+  const mainFeedIds = getMainChannelDefs().map(c => c.feedId)
+
+  const [channels, tonight, initialGrid] = await Promise.all([
     getOnNow(),
     getTodayMatches(followedShows.map(s => ({
       title: s.title,
       channel: (s.metadata as Record<string, unknown> | null)?.channel as string ?? null,
     }))),
+    getDayGrid(mainFeedIds, now),
   ])
 
   return (
@@ -30,6 +39,8 @@ export default async function WatchPage() {
       channels={channels}
       followedShows={followedShows}
       tonight={tonight}
+      initialGrid={initialGrid}
+      today={ymd(now)}
     />
   )
 }

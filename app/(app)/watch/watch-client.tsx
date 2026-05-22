@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import type { ChannelNowNext, Programme } from '@/lib/services/epg'
+import type { ChannelNowNext, Programme, GridChannel } from '@/lib/services/epg'
 import { TvGuide } from '@/components/features/watch/tv-guide'
+import { TvGrid } from '@/components/features/watch/tv-grid'
 import { FollowingList } from '@/components/features/watch/following-list'
 import { followShow, unfollowShow } from './actions'
 
@@ -13,15 +14,19 @@ type FollowedShow = {
 }
 
 type Tab = 'guide' | 'following'
+type GuideView = 'grid' | 'now'
 
 interface Props {
   channels: ChannelNowNext[]
   followedShows: FollowedShow[]
   tonight: Programme[]
+  initialGrid: GridChannel[]
+  today: string
 }
 
-export function WatchClient({ channels, followedShows: initialFollowed, tonight }: Props) {
+export function WatchClient({ channels, followedShows: initialFollowed, tonight, initialGrid, today }: Props) {
   const [tab, setTab] = useState<Tab>('guide')
+  const [guideView, setGuideView] = useState<GuideView>('grid')
   const [followed, setFollowed] = useState(initialFollowed)
   const [, startTransition] = useTransition()
 
@@ -70,11 +75,53 @@ export function WatchClient({ channels, followedShows: initialFollowed, tonight 
       </div>
 
       {tab === 'guide' && (
-        <TvGuide
-          channels={channels}
-          followedTitles={followedTitles}
-          onToggleFollow={toggleFollow}
-        />
+        <>
+          {/* Grid / Now view toggle */}
+          <div className="flex items-center justify-end px-4 mb-2">
+            <div className="inline-flex bg-surface border border-border rounded-lg p-0.5">
+              <button
+                onClick={() => setGuideView('grid')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-semibold transition-colors ${
+                  guideView === 'grid' ? 'bg-accent text-white' : 'text-text-2'
+                }`}
+                aria-label="Grid view"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-3.5 h-3.5">
+                  <rect x="1.5" y="2.5" width="13" height="4" rx="1" />
+                  <rect x="1.5" y="9.5" width="13" height="4" rx="1" />
+                </svg>
+                Grid
+              </button>
+              <button
+                onClick={() => setGuideView('now')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-semibold transition-colors ${
+                  guideView === 'now' ? 'bg-accent text-white' : 'text-text-2'
+                }`}
+                aria-label="Now view"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="w-3.5 h-3.5">
+                  <path d="M3 4h10M3 8h10M3 12h10" />
+                </svg>
+                Now
+              </button>
+            </div>
+          </div>
+
+          {guideView === 'grid' ? (
+            <TvGrid
+              initialGrid={initialGrid}
+              today={today}
+              followedTitles={followedTitles}
+              onToggleFollow={toggleFollow}
+            />
+          ) : (
+            <TvGuide
+              channels={channels}
+              followedTitles={followedTitles}
+              onToggleFollow={toggleFollow}
+            />
+          )}
+        </>
       )}
       {tab === 'following' && (
         <FollowingList
