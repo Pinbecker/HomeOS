@@ -13,7 +13,6 @@ export default async function DashboardPage() {
   const session = await requireSession()
 
   const now = new Date()
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
