@@ -126,6 +126,25 @@ export async function addEntityReminder(entityId: string, formData: FormData) {
   revalidatePath('/life/admin/reminders')
 }
 
+export async function deleteEntityReminder(reminderId: string, entityId: string) {
+  await db.delete(reminders).where(eq(reminders.id, reminderId))
+  await revalidateEntity(entityId)
+  revalidatePath('/life/admin/reminders')
+}
+
+export async function updateEntityReminder(reminderId: string, entityId: string, formData: FormData) {
+  const triggerAt = dateFromInput(formData.get('triggerAt'))
+  if (!triggerAt) return
+  await db.update(reminders)
+    .set({
+      message: String(formData.get('message') ?? '').trim() || null,
+      triggerAt,
+    })
+    .where(eq(reminders.id, reminderId))
+  await revalidateEntity(entityId)
+  revalidatePath('/life/admin/reminders')
+}
+
 export async function attachEntityDocument(entityId: string, formData: FormData) {
   const session = await requireSession()
   const file = formData.get('file')

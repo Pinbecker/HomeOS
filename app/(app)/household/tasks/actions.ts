@@ -67,12 +67,13 @@ export async function createTask(listId: string | null, title: string) {
 
 export async function updateTask(
   id: string,
-  data: { dueDate?: number | null; assigneeId?: string | null; listId?: string | null },
+  data: { title?: string; dueDate?: number | null; assigneeId?: string | null; listId?: string | null },
 ) {
   await requireSession()
   const task = await db.query.items.findFirst({ where: eq(items.id, id) })
   if (!task) return
   const patch: Record<string, unknown> = { updatedAt: new Date() }
+  if ('title' in data && data.title?.trim()) patch.title = data.title.trim()
   if ('dueDate' in data) patch.dueDate = data.dueDate == null ? null : new Date(data.dueDate)
   if ('assigneeId' in data) patch.assigneeId = data.assigneeId
   if ('listId' in data) patch.listId = data.listId

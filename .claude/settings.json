@@ -67,7 +67,10 @@
       "Bash(python3 -c ' *)",
       "Bash(sqlite3 data/db/homeapp.db \"SELECT * FROM bins;\")",
       "Bash(docker -H npipe:////./pipe/docker_engine ps --format \"table {{.Names}}\\\\t{{.Status}}\")",
-      "Bash(Get-ChildItem -Path . -Name \"*.db\" -Recurse)"
+      "Bash(Get-ChildItem -Path . -Name \"*.db\" -Recurse)",
+      "Bash(xargs grep -l \"Today\\\\|Coming Up\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\" -Directory)",
+      "Bash(Select-Object Name)"
     ],
     "additionalDirectories": [
       "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"

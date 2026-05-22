@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { ulid } from 'ulid'
 import { createTask, toggleTask, deleteTask, updateTask } from '../actions'
@@ -63,7 +63,14 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
   const [editing, setEditing] = useState(false)
   const [showCompleted, setShowCompleted] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const renameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (renamingId) renameRef.current?.focus()
+  }, [renamingId])
 
   const userColor = (id: string | null) => {
     if (!id) return '#8E8E93'
@@ -130,8 +137,24 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     updateTask(task.id, { listId: nextListId })
   }
 
+  function startRename(task: Task) {
+    setExpandedId(null)
+    setRenamingId(task.id)
+    setRenameValue(task.title)
+  }
+
+  function commitRename(task: Task) {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== task.title) {
+      patchTask(task.id, { title: trimmed })
+      updateTask(task.id, { title: trimmed })
+    }
+    setRenamingId(null)
+  }
+
   function renderRow(task: Task, i: number, section: 'active' | 'completed') {
     const isExpanded = expandedId === task.id
+    const isRenaming = renamingId === task.id
     const due = task.dueDate ? formatDue(new Date(task.dueDate)) : null
     const source = taskSources[task.id]
     return (
@@ -164,17 +187,34 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
           )}
 
           <div className="flex-1 min-w-0">
-            <button
-              onClick={() => !editing && section === 'active' && setExpandedId(isExpanded ? null : task.id)}
-              className="w-full min-w-0 text-left"
-            >
-              <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
-                {task.title}
-              </p>
-              {due && (
-                <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
-              )}
-            </button>
+            {isRenaming ? (
+              <input
+                ref={renameRef}
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onBlur={() => commitRename(task)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitRename(task) }
+                  if (e.key === 'Escape') { e.preventDefault(); setRenamingId(null) }
+                }}
+                className="w-full bg-transparent text-[16px] text-text-1 outline-none py-0.5"
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  if (editing) return
+                  if (section === 'active') startRename(task)
+                }}
+                className="w-full min-w-0 text-left"
+              >
+                <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
+                  {task.title}
+                </p>
+                {due && (
+                  <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
+                )}
+              </button>
+            )}
             {source && (
               <Link
                 href={source.href}
@@ -193,6 +233,17 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
             >
               {userInitial(task.assigneeId)}
             </span>
+          )}
+          {section === 'active' && !editing && !isRenaming && (
+            <button
+              onClick={() => setExpandedId(isExpanded ? null : task.id)}
+              className="shrink-0 text-text-3 active:opacity-60 -mr-1 p-1"
+              aria-label="Show details"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                <path d="M6 4l4 4-4 4" />
+              </svg>
+            </button>
           )}
         </div>
        </SwipeRow>

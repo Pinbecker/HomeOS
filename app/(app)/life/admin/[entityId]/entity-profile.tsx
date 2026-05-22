@@ -8,6 +8,8 @@ import { SwipeRow } from '@/components/ui/swipe-row'
 import { createPin } from '@/app/(app)/pins/actions'
 import {
   addEntityReminder,
+  deleteEntityReminder,
+  updateEntityReminder,
   addLinkedTask,
   addRelatedEntity,
   attachEntityDocument,
@@ -124,6 +126,7 @@ export function EntityProfile({
   const { entity } = profile
   const [editing, setEditing] = useState(false)
   const [openPanel, setOpenPanel] = useState<null | 'task' | 'reminder' | 'document' | 'related'>(null)
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null)
   const [fields, setFields] = useState<Field[]>(profile.facts.length ? profile.facts : [{ label: '', value: '' }])
   const [pending, startTransition] = useTransition()
   const [pinnedFlash, setPinnedFlash] = useState<string | null>(null)
@@ -387,12 +390,35 @@ export function EntityProfile({
         <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'reminder' ? 'mt-3' : ''}`}>
           {profile.linkedReminders.length > 0 ? (
             profile.linkedReminders.map((reminder, index) => (
-              <div key={reminder.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <div className="w-9 h-9 rounded-[11px] bg-amber-bg flex items-center justify-center text-amber text-[17px] shrink-0">⏱</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14.5px] font-semibold text-text-1 truncate">{reminder.message || entity.title}</p>
-                  <p className="text-[12px] text-text-2 mt-0.5">{formatShortDate(reminder.triggerAt)}</p>
-                </div>
+              <div key={reminder.id}>
+                <SwipeRow
+                  wrapClassName={index > 0 ? 'border-t border-border' : ''}
+                  onDelete={() => startTransition(async () => { await deleteEntityReminder(reminder.id, entity.id); router.refresh() })}
+                  onEdit={() => setEditingReminderId(prev => prev === reminder.id ? null : reminder.id)}
+                >
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-9 h-9 rounded-[11px] bg-amber-bg flex items-center justify-center text-amber text-[17px] shrink-0">⏱</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14.5px] font-semibold text-text-1 truncate">{reminder.message || entity.title}</p>
+                      <p className="text-[12px] text-text-2 mt-0.5">{formatShortDate(reminder.triggerAt)}</p>
+                    </div>
+                  </div>
+                </SwipeRow>
+                {editingReminderId === reminder.id && (
+                  <div className="border-t border-border p-4 bg-surface-2">
+                    <form action={formData => startTransition(async () => { await updateEntityReminder(reminder.id, entity.id, formData); router.refresh(); setEditingReminderId(null) })} className="flex flex-col gap-3">
+                      <input name="message" defaultValue={reminder.message ?? ''} placeholder={`Remind me about ${entity.title}`} className="h-11 bg-surface rounded-xl px-3 text-[15px] text-text-1 outline-none border border-border" />
+                      <label className="bg-surface rounded-xl px-3 py-2 border border-border">
+                        <span className="block text-[12px] font-semibold text-text-2 mb-1">Reminder date</span>
+                        <input name="triggerAt" type="date" required defaultValue={toInputDate(reminder.triggerAt)} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+                      </label>
+                      <div className="flex gap-2">
+                        <SubmitButton label="Save" pending={pending} />
+                        <button type="button" onClick={() => setEditingReminderId(null)} className="h-11 px-4 rounded-xl bg-surface border border-border text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
             ))
           ) : (
