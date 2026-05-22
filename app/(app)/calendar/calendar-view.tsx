@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { allDayAsLocal, localDayKey } from '@/lib/utils/calendar'
+import { toggleTask } from '@/app/(app)/household/tasks/actions'
 
 type CalEvent = {
   id: string
@@ -107,6 +108,13 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
   const [view, setView] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [selectedKey, setSelectedKey] = useState(localDayKey(today))
   const [detail, setDetail] = useState<CalEvent | null>(null)
+  const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
+  const [, startTransition] = useTransition()
+
+  function toggleCalTask(id: string, current: boolean) {
+    setTaskOverrides(prev => ({ ...prev, [id]: !current }))
+    startTransition(() => { toggleTask(id) })
+  }
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalEvent[]>()
@@ -253,26 +261,35 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
               </button>
             ))}
 
-            {selectedTasks.map((t, i) => (
-              <Link
-                key={t.id}
-                href={`/household/tasks/${t.listId ?? 'all'}`}
-                className={`w-full flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${(selectedEvents.length + i) > 0 ? 'border-t border-border' : ''}`}
-              >
+            {selectedTasks.map((t, i) => {
+              const completed = taskOverrides[t.id] ?? t.completed
+              return (
                 <div
-                  className="w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center"
-                  style={t.completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
+                  key={t.id}
+                  className={`w-full flex items-center gap-3 px-4 py-3 ${(selectedEvents.length + i) > 0 ? 'border-t border-border' : ''}`}
                 >
-                  {t.completed && (
-                    <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                      <path d="M4 10.5l4 4 8-9" />
-                    </svg>
-                  )}
+                  <button
+                    onClick={() => toggleCalTask(t.id, completed)}
+                    className="w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
+                    style={completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
+                    aria-label={completed ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`}
+                  >
+                    {completed && (
+                      <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                        <path d="M4 10.5l4 4 8-9" />
+                      </svg>
+                    )}
+                  </button>
+                  <Link
+                    href={`/household/tasks/${t.listId ?? 'all'}`}
+                    className="flex-1 min-w-0 flex items-center gap-3 active:opacity-70"
+                  >
+                    <p className={`flex-1 text-[15px] font-medium truncate ${completed ? 'text-text-3 line-through' : 'text-text-1'}`}>{t.title}</p>
+                    <span className="text-[11px] font-bold shrink-0" style={{ color: TASK_COLOR }}>Task</span>
+                  </Link>
                 </div>
-                <p className={`flex-1 text-[15px] font-medium truncate ${t.completed ? 'text-text-3 line-through' : 'text-text-1'}`}>{t.title}</p>
-                <span className="text-[11px] font-bold shrink-0" style={{ color: TASK_COLOR }}>Task</span>
-              </Link>
-            ))}
+              )
+            })}
           </div>
         )}
         <p className="px-1 pt-3 text-[12px] text-text-3 text-center">

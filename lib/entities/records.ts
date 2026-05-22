@@ -399,7 +399,7 @@ export async function getEntityProfileData(id: string): Promise<EntityProfileDat
     facts: entity.fields.filter(field => field.label || field.value),
     renewal: renewalAttention(entity),
     linkedTasks: linkedItems
-      .filter(item => item.type === 'task')
+      .filter(item => item.type === 'task' && item.status !== 'completed' && !item.deletedAt)
       .map(item => ({
         id: item.id,
         title: item.title,

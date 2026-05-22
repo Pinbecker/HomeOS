@@ -1,11 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { useState, useTransition } from 'react'
 import { daysUntil } from '@/lib/utils/bins'
 import { relativeDayLabel, eventTimeLabel } from '@/lib/utils/calendar'
 import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
 import { AiCapture } from '@/components/features/ai/ai-capture'
+import { toggleTask } from '@/app/(app)/household/tasks/actions'
 
 type ShoppingItem = { id: string; title: string; checked: boolean }
 type Task = {
@@ -84,6 +86,20 @@ export function DashboardClient({
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+
+  const [doneTaskIds, setDoneTaskIds] = useState<Set<string>>(new Set())
+  const [, startTransition] = useTransition()
+
+  function toggleDashTask(id: string) {
+    setDoneTaskIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    startTransition(() => { toggleTask(id) })
+  }
+
   const hasAlerts = bins.length > 0 || dueTasks.length > 0 || inboxCount > 0
 
   return (
@@ -135,22 +151,39 @@ export function DashboardClient({
             {dueTasks.map((task, i) => {
               const { label, urgent } = taskDueLabel(task.dueDate)
               const idx = bins.length + i
+              const done = doneTaskIds.has(task.id)
               return (
-                <Link
+                <div
                   key={task.id}
-                  href={`/household/tasks/${task.listId ?? 'all'}`}
-                  className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${idx > 0 ? 'border-t border-border' : ''}`}
+                  className={`flex items-center gap-3 px-4 py-3 ${idx > 0 ? 'border-t border-border' : ''}`}
                 >
-                  <div className="w-[18px] h-[18px] rounded-full border-[1.5px] border-border shrink-0" />
-                  <p className="flex-1 text-[13.5px] font-semibold text-text-1 truncate">{task.title}</p>
-                  {label && (
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${
-                      urgent ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'
-                    }`}>
-                      {label}
-                    </span>
-                  )}
-                </Link>
+                  <button
+                    onClick={() => toggleDashTask(task.id)}
+                    className={`w-[20px] h-[20px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform ${
+                      done ? 'bg-sage' : 'border-2 border-border'
+                    }`}
+                    aria-label={done ? `Mark "${task.title}" incomplete` : `Mark "${task.title}" complete`}
+                  >
+                    {done && (
+                      <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                        <path d="M3 8l3.5 3.5L13 4.5" />
+                      </svg>
+                    )}
+                  </button>
+                  <Link
+                    href={`/household/tasks/${task.listId ?? 'all'}`}
+                    className="flex-1 min-w-0 flex items-center gap-3 active:opacity-70"
+                  >
+                    <p className={`flex-1 text-[13.5px] font-semibold truncate ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
+                    {label && !done && (
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${
+                        urgent ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'
+                      }`}>
+                        {label}
+                      </span>
+                    )}
+                  </Link>
+                </div>
               )
             })}
 

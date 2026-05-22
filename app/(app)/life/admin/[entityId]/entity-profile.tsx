@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { EntityProfileData, HouseholdEntity } from '@/lib/entities/records'
 import { SwipeRow } from '@/components/ui/swipe-row'
 import { createPin } from '@/app/(app)/pins/actions'
+import { toggleTask } from '@/app/(app)/household/tasks/actions'
 import {
   addEntityReminder,
   deleteEntityReminder,
@@ -140,6 +141,17 @@ export function EntityProfile({
   const [fields, setFields] = useState<Field[]>(profile.facts.length ? profile.facts : [{ label: '', value: '' }])
   const [pending, startTransition] = useTransition()
   const [pinnedFlash, setPinnedFlash] = useState<string | null>(null)
+  const [doneTasks, setDoneTasks] = useState<Set<string>>(new Set())
+
+  function toggleLinkedTask(id: string) {
+    setDoneTasks(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    startTransition(() => { toggleTask(id) })
+  }
 
   function pinFact(fact: Field) {
     if (!fact.value.trim()) return
@@ -377,17 +389,32 @@ export function EntityProfile({
         )}
         <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'task' ? 'mt-3' : ''}`}>
           {profile.linkedTasks.length > 0 ? (
-            profile.linkedTasks.map((task, index) => (
-              <Link key={task.id} href={task.href} className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <div className="w-[20px] h-[20px] rounded-full border-2 border-border shrink-0" />
-                <p className="flex-1 text-[14.5px] font-medium text-text-1 truncate">{task.title}</p>
-                {task.dueDate && (
-                  <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${daysUntil(task.dueDate) <= 0 ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'}`}>
-                    {formatShortDate(task.dueDate)}
-                  </span>
-                )}
-              </Link>
-            ))
+            profile.linkedTasks.map((task, index) => {
+              const done = doneTasks.has(task.id)
+              return (
+                <div key={task.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                  <button
+                    onClick={() => toggleLinkedTask(task.id)}
+                    className={`w-[20px] h-[20px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform ${done ? 'bg-sage' : 'border-2 border-border'}`}
+                    aria-label={done ? `Mark "${task.title}" incomplete` : `Mark "${task.title}" complete`}
+                  >
+                    {done && (
+                      <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                        <path d="M3 8l3.5 3.5L13 4.5" />
+                      </svg>
+                    )}
+                  </button>
+                  <Link href={task.href} className="flex-1 min-w-0 flex items-center gap-3 active:opacity-70">
+                    <p className={`flex-1 text-[14.5px] font-medium truncate ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
+                    {task.dueDate && !done && (
+                      <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${daysUntil(task.dueDate) <= 0 ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'}`}>
+                        {formatShortDate(task.dueDate)}
+                      </span>
+                    )}
+                  </Link>
+                </div>
+              )
+            })
           ) : (
             <EmptyRow icon="✓" title="No linked tasks" subtitle="Add a job that belongs with this." />
           )}

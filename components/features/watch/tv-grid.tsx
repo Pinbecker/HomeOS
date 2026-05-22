@@ -185,7 +185,7 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
               </div>
 
               {/* Programme track */}
-              <div className="relative" style={{ width: TRACK_W, height: ROW_H }}>
+              <div className="relative bg-surface" style={{ width: TRACK_W, height: ROW_H }}>
                 {ch.programmes.map(p => {
                   const startMin = (p.startsAt.getTime() - dayStart.getTime()) / 60000
                   const endMin = (p.endsAt.getTime() - dayStart.getTime()) / 60000
@@ -195,6 +195,8 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
                   const following = followedTitles.has(p.title.toLowerCase())
                   const isPast = isToday && endMin <= nowMin
                   const isNow = isToday && startMin <= nowMin && endMin > nowMin
+                  const showTime = width >= 50
+                  const showTitle = width >= 26
                   return (
                     <button
                       key={p.id}
@@ -205,8 +207,8 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
                       style={{ left, width }}
                     >
                       {following && <span className="absolute left-0 inset-y-0 w-[2px] bg-sage" />}
-                      <p className="text-[9px] text-text-3 leading-none mb-0.5">{formatAirtime(p.startsAt)}</p>
-                      <p className="text-[11px] font-semibold text-text-1 leading-[1.15] line-clamp-2">{p.title}</p>
+                      {showTime && <p className="text-[9px] text-text-3 leading-none mb-0.5">{formatAirtime(p.startsAt)}</p>}
+                      {showTitle && <p className="text-[11px] font-semibold text-text-1 leading-[1.15] line-clamp-2">{p.title}</p>}
                     </button>
                   )
                 })}
