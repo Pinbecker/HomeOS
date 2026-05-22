@@ -19,7 +19,7 @@ export default async function DashboardPage() {
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
 
   // These queries are independent — run in parallel
-  const [shoppingLists, dueTasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows, followedTvShows] =
+  const [shoppingLists, tasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows, followedTvShows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -35,10 +35,11 @@ export default async function DashboardPage() {
           eq(items.type, 'task'),
           eq(items.status, 'active'),
           isNull(items.deletedAt),
-          lte(items.dueDate, endOfToday)
+          isNotNull(items.dueDate),
+          lte(items.dueDate, calWindow)
         ),
         orderBy: [asc(items.dueDate), asc(items.createdAt)],
-        limit: 5,
+        limit: 20,
         with: { assignee: true, createdBy: true },
       }),
       db.$count(items, and(eq(items.type, 'inbox'), eq(items.status, 'active'), isNull(items.deletedAt))),
@@ -173,7 +174,7 @@ export default async function DashboardPage() {
     <DashboardClient
       user={session.user}
       shoppingItems={shoppingItems}
-      dueTasks={dueTasks}
+      tasks={tasks}
       inboxCount={inboxCount}
       inboxPreview={inboxPreview}
       bins={relevantBins}
