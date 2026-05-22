@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await requireSession()
+  await requireSession()
   const body = await req.json()
   const { endpoint } = body
   if (!endpoint) return NextResponse.json({ error: 'No endpoint' }, { status: 400 })

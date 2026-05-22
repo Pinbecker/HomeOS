@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { items, users } from '@/lib/db/schema'
+import { items } from '@/lib/db/schema'
 import { and, eq, isNull, lte, gte } from 'drizzle-orm'
 import { sendPushToUser, sendPushToAll } from '@/lib/services/push'
 
