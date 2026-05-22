@@ -254,19 +254,19 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
       {/* Move to list — bottom sheet */}
       {movingItemId && (
         <div
-          className="fixed inset-0 z-50 flex flex-col justify-end"
+          className="fixed inset-0 z-[60] flex flex-col justify-end max-w-lg mx-auto"
           style={{ background: 'rgba(0,0,0,0.4)' }}
           onClick={() => setMovingItemId(null)}
         >
           <div
-            className="bg-surface rounded-t-2xl pb-8 shadow-xl"
+            className="bg-surface rounded-t-2xl shadow-xl flex flex-col max-h-[75vh] pb-[calc(env(safe-area-inset-bottom)+16px)]"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-center pt-3 pb-1">
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
               <div className="w-10 h-1 rounded-full bg-border" />
             </div>
-            <p className="text-[13px] font-semibold text-text-3 px-5 pt-2 pb-1">Move to</p>
-            <div className="flex flex-col">
+            <p className="text-[13px] font-semibold text-text-3 px-5 pt-2 pb-1 shrink-0">Move to</p>
+            <div className="flex flex-col overflow-y-auto">
               {otherShops.map((s, i) => (
                 <button
                   key={s.id}
