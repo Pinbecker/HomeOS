@@ -8,6 +8,16 @@ import { ulid } from 'ulid'
 import { revalidatePath } from 'next/cache'
 
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
+const TASK_DUE_SENT_FOR_KEY = 'taskDueNotificationSentFor'
+const TASK_DUE_SENT_AT_KEY = 'taskDueNotificationSentAt'
+
+function clearTaskDueNotificationMetadata(metadata: Record<string, unknown> | null) {
+  if (!metadata) return metadata
+  const next = { ...metadata }
+  delete next[TASK_DUE_SENT_FOR_KEY]
+  delete next[TASK_DUE_SENT_AT_KEY]
+  return next
+}
 
 export async function createTaskList(name: string, color: string) {
   await requireSession()
@@ -74,7 +84,10 @@ export async function updateTask(
   if (!task) return
   const patch: Record<string, unknown> = { updatedAt: new Date() }
   if ('title' in data && data.title?.trim()) patch.title = data.title.trim()
-  if ('dueDate' in data) patch.dueDate = data.dueDate == null ? null : new Date(data.dueDate)
+  if ('dueDate' in data) {
+    patch.dueDate = data.dueDate == null ? null : new Date(data.dueDate)
+    patch.metadata = clearTaskDueNotificationMetadata(task.metadata)
+  }
   if ('assigneeId' in data) patch.assigneeId = data.assigneeId
   if ('listId' in data) patch.listId = data.listId
   await db.update(items).set(patch).where(eq(items.id, id))

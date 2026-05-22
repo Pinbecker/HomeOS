@@ -159,11 +159,21 @@ export function EntityProfile({
   const availableRelated = relatedOptions.filter(option => !relatedIds.has(option.id))
 
   function submitAction(action: (formData: FormData) => Promise<void>, formData: FormData, closePanel = true) {
+    formData.set('timezoneOffset', String(new Date().getTimezoneOffset()))
     startTransition(async () => {
       await action(formData)
       router.refresh()
       if (closePanel) setOpenPanel(null)
       setEditing(false)
+    })
+  }
+
+  function submitReminderUpdate(reminderId: string, formData: FormData) {
+    formData.set('timezoneOffset', String(new Date().getTimezoneOffset()))
+    startTransition(async () => {
+      await updateEntityReminder(reminderId, entity.id, formData)
+      router.refresh()
+      setEditingReminderId(null)
     })
   }
 
@@ -422,7 +432,7 @@ export function EntityProfile({
                 </SwipeRow>
                 {editingReminderId === reminder.id && (
                   <div className="border-t border-border p-4 bg-surface-2">
-                    <form action={formData => startTransition(async () => { await updateEntityReminder(reminder.id, entity.id, formData); router.refresh(); setEditingReminderId(null) })} className="flex flex-col gap-3">
+                    <form action={formData => submitReminderUpdate(reminder.id, formData)} className="flex flex-col gap-3">
                       <input name="message" defaultValue={reminder.message ?? ''} placeholder={`Remind me about ${entity.title}`} className="h-11 bg-surface rounded-xl px-3 text-[15px] text-text-1 outline-none border border-border" />
                       <div className="bg-surface rounded-xl overflow-hidden border border-border">
                         <label className="flex items-center justify-between gap-3 px-3 py-2">

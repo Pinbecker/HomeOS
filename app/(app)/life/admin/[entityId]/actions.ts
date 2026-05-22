@@ -37,12 +37,20 @@ function dateFromInput(value: FormDataEntryValue | null) {
   return new Date(year, month - 1, day)
 }
 
-function dateTimeFromInputs(dateValue: FormDataEntryValue | null, timeValue: FormDataEntryValue | null) {
+function dateTimeFromInputs(
+  dateValue: FormDataEntryValue | null,
+  timeValue: FormDataEntryValue | null,
+  timezoneOffsetValue: FormDataEntryValue | null,
+) {
   const date = String(dateValue ?? '').trim()
   if (!date) return null
   const [year, month, day] = date.split('-').map(Number)
   const time = String(timeValue ?? '').trim() || '09:00'
   const [hour, minute] = time.split(':').map(Number)
+  const timezoneOffset = Number(timezoneOffsetValue)
+  if (Number.isFinite(timezoneOffset)) {
+    return new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0) + timezoneOffset * 60_000)
+  }
   return new Date(year, month - 1, day, hour, minute, 0, 0)
 }
 
@@ -117,7 +125,11 @@ export async function addLinkedTask(entityId: string, formData: FormData) {
 
 export async function addEntityReminder(entityId: string, formData: FormData) {
   const session = await requireSession()
-  const triggerAt = dateTimeFromInputs(formData.get('triggerAt'), formData.get('triggerAt_time'))
+  const triggerAt = dateTimeFromInputs(
+    formData.get('triggerAt'),
+    formData.get('triggerAt_time'),
+    formData.get('timezoneOffset'),
+  )
   if (!triggerAt) return
 
   await db.insert(reminders).values({
@@ -142,7 +154,11 @@ export async function deleteEntityReminder(reminderId: string, entityId: string)
 }
 
 export async function updateEntityReminder(reminderId: string, entityId: string, formData: FormData) {
-  const triggerAt = dateTimeFromInputs(formData.get('triggerAt'), formData.get('triggerAt_time'))
+  const triggerAt = dateTimeFromInputs(
+    formData.get('triggerAt'),
+    formData.get('triggerAt_time'),
+    formData.get('timezoneOffset'),
+  )
   if (!triggerAt) return
   await db.update(reminders)
     .set({
