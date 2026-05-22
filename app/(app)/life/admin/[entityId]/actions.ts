@@ -37,6 +37,15 @@ function dateFromInput(value: FormDataEntryValue | null) {
   return new Date(year, month - 1, day)
 }
 
+function dateTimeFromInputs(dateValue: FormDataEntryValue | null, timeValue: FormDataEntryValue | null) {
+  const date = String(dateValue ?? '').trim()
+  if (!date) return null
+  const [year, month, day] = date.split('-').map(Number)
+  const time = String(timeValue ?? '').trim() || '09:00'
+  const [hour, minute] = time.split(':').map(Number)
+  return new Date(year, month - 1, day, hour, minute, 0, 0)
+}
+
 function safeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
@@ -108,7 +117,7 @@ export async function addLinkedTask(entityId: string, formData: FormData) {
 
 export async function addEntityReminder(entityId: string, formData: FormData) {
   const session = await requireSession()
-  const triggerAt = dateFromInput(formData.get('triggerAt'))
+  const triggerAt = dateTimeFromInputs(formData.get('triggerAt'), formData.get('triggerAt_time'))
   if (!triggerAt) return
 
   await db.insert(reminders).values({
@@ -133,7 +142,7 @@ export async function deleteEntityReminder(reminderId: string, entityId: string)
 }
 
 export async function updateEntityReminder(reminderId: string, entityId: string, formData: FormData) {
-  const triggerAt = dateFromInput(formData.get('triggerAt'))
+  const triggerAt = dateTimeFromInputs(formData.get('triggerAt'), formData.get('triggerAt_time'))
   if (!triggerAt) return
   await db.update(reminders)
     .set({

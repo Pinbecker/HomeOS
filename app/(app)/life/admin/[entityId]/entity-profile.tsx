@@ -29,7 +29,17 @@ function daysUntil(timestamp: number) {
 }
 
 function formatShortDate(timestamp: number) {
-  return new Date(timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const d = new Date(timestamp)
+  const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  if (d.getHours() === 0 && d.getMinutes() === 0) return datePart
+  const timePart = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  return `${datePart} · ${timePart}`
+}
+
+function toInputTime(timestamp: number | null) {
+  if (!timestamp) return '09:00'
+  const d = new Date(timestamp)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function formatDateWithYear(timestamp: number) {
@@ -379,10 +389,16 @@ export function EntityProfile({
           <InlinePanel onCancel={() => setOpenPanel(null)}>
             <form action={formData => submitAction(formDataForReminder => addEntityReminder(entity.id, formDataForReminder), formData)} className="flex flex-col gap-3">
               <input name="message" placeholder={`Remind me about ${entity.title}`} className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
-              <label className="bg-surface-2 rounded-xl px-3 py-2">
-                <span className="block text-[12px] font-semibold text-text-2 mb-1">Reminder date</span>
-                <input name="triggerAt" type="date" required className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
-              </label>
+              <div className="bg-surface-2 rounded-xl overflow-hidden">
+                <label className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-[13px] font-semibold text-text-2 shrink-0">Date</span>
+                  <input name="triggerAt" type="date" required className="bg-transparent text-[15px] text-text-1 outline-none text-right" />
+                </label>
+                <label className="flex items-center justify-between gap-3 px-3 py-2 border-t border-border">
+                  <span className="text-[13px] font-semibold text-text-2 shrink-0">Time</span>
+                  <input name="triggerAt_time" type="time" defaultValue="09:00" className="bg-transparent text-[15px] text-text-1 outline-none text-right" />
+                </label>
+              </div>
               <SubmitButton label="Add reminder" pending={pending} />
             </form>
           </InlinePanel>
@@ -408,10 +424,16 @@ export function EntityProfile({
                   <div className="border-t border-border p-4 bg-surface-2">
                     <form action={formData => startTransition(async () => { await updateEntityReminder(reminder.id, entity.id, formData); router.refresh(); setEditingReminderId(null) })} className="flex flex-col gap-3">
                       <input name="message" defaultValue={reminder.message ?? ''} placeholder={`Remind me about ${entity.title}`} className="h-11 bg-surface rounded-xl px-3 text-[15px] text-text-1 outline-none border border-border" />
-                      <label className="bg-surface rounded-xl px-3 py-2 border border-border">
-                        <span className="block text-[12px] font-semibold text-text-2 mb-1">Reminder date</span>
-                        <input name="triggerAt" type="date" required defaultValue={toInputDate(reminder.triggerAt)} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
-                      </label>
+                      <div className="bg-surface rounded-xl overflow-hidden border border-border">
+                        <label className="flex items-center justify-between gap-3 px-3 py-2">
+                          <span className="text-[13px] font-semibold text-text-2 shrink-0">Date</span>
+                          <input name="triggerAt" type="date" required defaultValue={toInputDate(reminder.triggerAt)} className="bg-transparent text-[15px] text-text-1 outline-none text-right" />
+                        </label>
+                        <label className="flex items-center justify-between gap-3 px-3 py-2 border-t border-border">
+                          <span className="text-[13px] font-semibold text-text-2 shrink-0">Time</span>
+                          <input name="triggerAt_time" type="time" defaultValue={toInputTime(reminder.triggerAt)} className="bg-transparent text-[15px] text-text-1 outline-none text-right" />
+                        </label>
+                      </div>
                       <div className="flex gap-2">
                         <SubmitButton label="Save" pending={pending} />
                         <button type="button" onClick={() => setEditingReminderId(null)} className="h-11 px-4 rounded-xl bg-surface border border-border text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>

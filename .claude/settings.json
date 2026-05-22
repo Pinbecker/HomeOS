@@ -70,7 +70,8 @@
       "Bash(Get-ChildItem -Path . -Name \"*.db\" -Recurse)",
       "Bash(xargs grep -l \"Today\\\\|Coming Up\")",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\danco\\\\CodingProjectsLocal\\\\HomeApp\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(xargs ls -1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\danco\\CodingProjectsLocal\\HomeApp\\app\\(app)\\household\\shopping\\[shopId]"

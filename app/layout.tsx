@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { PushManager } from '@/components/features/push/push-manager'
 
 export const metadata: Metadata = {
   title: 'HomeOS',
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeScript />
         {children}
+        <PushManager />
       </body>
     </html>
   )

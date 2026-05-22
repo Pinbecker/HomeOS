@@ -407,6 +407,19 @@ export const aiConversations = sqliteTable('ai_conversations', {
 })
 
 // ============================================================
+// PUSH SUBSCRIPTIONS
+// ============================================================
+
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
+// ============================================================
 // ACTIVITY LOG
 // ============================================================
 

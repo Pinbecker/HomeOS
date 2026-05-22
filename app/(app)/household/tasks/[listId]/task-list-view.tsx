@@ -44,16 +44,23 @@ function toInputDate(d: Date) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${m}-${day}`
 }
+function toInputTime(d: Date) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 function formatDue(due: Date): { label: string; overdue: boolean } {
   const days = dayDiff(due)
+  const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
+  const timeSuffix = hasTime
+    ? ` · ${due.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    : ''
   if (days < 0) {
-    const label = due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    const label = due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + timeSuffix
     return { label, overdue: true }
   }
-  if (days === 0) return { label: 'Today', overdue: false }
-  if (days === 1) return { label: 'Tomorrow', overdue: false }
-  if (days < 7) return { label: due.toLocaleDateString('en-GB', { weekday: 'long' }), overdue: false }
-  return { label: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), overdue: false }
+  if (days === 0) return { label: `Today${timeSuffix}`, overdue: false }
+  if (days === 1) return { label: `Tomorrow${timeSuffix}`, overdue: false }
+  if (days < 7) return { label: due.toLocaleDateString('en-GB', { weekday: 'long' }) + timeSuffix, overdue: false }
+  return { label: due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + timeSuffix, overdue: false }
 }
 
 export function TaskListView({ listId, isAll, isInbox, title, color, users, lists, taskSources, initialActive, initialCompleted }: Props) {
@@ -117,10 +124,19 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     deleteTask(task.id)
   }
 
-  function setDue(task: Task, value: string) {
-    if (!value) { patchTask(task.id, { dueDate: null }); updateTask(task.id, { dueDate: null }); return }
-    const [y, m, d] = value.split('-').map(Number)
-    const date = new Date(y, m - 1, d)
+  function setDueDate(task: Task, dateStr: string) {
+    if (!dateStr) { patchTask(task.id, { dueDate: null }); updateTask(task.id, { dueDate: null }); return }
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const existing = task.dueDate ? new Date(task.dueDate) : null
+    const date = new Date(y, m - 1, d, existing?.getHours() ?? 0, existing?.getMinutes() ?? 0)
+    patchTask(task.id, { dueDate: date })
+    updateTask(task.id, { dueDate: date.getTime() })
+  }
+  function setDueTime(task: Task, timeStr: string) {
+    if (!task.dueDate) return
+    const base = new Date(task.dueDate)
+    const [h, min] = timeStr ? timeStr.split(':').map(Number) : [0, 0]
+    const date = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, min)
     patchTask(task.id, { dueDate: date })
     updateTask(task.id, { dueDate: date.getTime() })
   }
@@ -251,17 +267,25 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
         {/* Inline detail editor */}
         {isExpanded && !editing && (
           <div className="px-4 pb-3 pl-[49px] flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[14px] text-text-1">Due date</span>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[14px] text-text-1 shrink-0">Due date</span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <input
                   type="date"
                   value={task.dueDate ? toInputDate(new Date(task.dueDate)) : ''}
-                  onChange={e => setDue(task, e.target.value)}
+                  onChange={e => setDueDate(task, e.target.value)}
                   className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none"
                 />
                 {task.dueDate && (
-                  <button onClick={() => setDue(task, '')} className="text-[13px] text-red active:opacity-60">Clear</button>
+                  <input
+                    type="time"
+                    value={toInputTime(new Date(task.dueDate))}
+                    onChange={e => setDueTime(task, e.target.value)}
+                    className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none"
+                  />
+                )}
+                {task.dueDate && (
+                  <button onClick={() => setDueDate(task, '')} className="text-[13px] text-red active:opacity-60">Clear</button>
                 )}
               </div>
             </div>
