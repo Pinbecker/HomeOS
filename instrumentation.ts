@@ -6,10 +6,19 @@ export async function register() {
   const { dispatchReminders } = await import('./lib/jobs/dispatch-reminders')
   const { dispatchBinNotifications } = await import('./lib/jobs/dispatch-bin-notifications')
   const { dispatchDueTasks, dispatchTaskDueNotifications } = await import('./lib/jobs/dispatch-due-tasks')
+  const { dispatchTvNotifications } = await import('./lib/jobs/dispatch-tv-notifications')
+  const { ingestEpg } = await import('./lib/jobs/ingest-epg')
   const cron = await import('node-cron')
 
   // Sync calendar immediately on startup, then every 15 minutes
   syncCalendar().catch(err => console.error('[startup] Initial calendar sync failed:', err))
+
+  // Refresh TV listings on startup, then twice a day (the feed rebuilds every 12h)
+  ingestEpg().catch(err => console.error('[startup] Initial EPG ingest failed:', err))
+
+  cron.default.schedule('30 4,16 * * *', () => {
+    ingestEpg().catch(err => console.error('[cron] EPG ingest failed:', err))
+  })
 
   cron.default.schedule('*/15 * * * *', () => {
     syncCalendar().catch(err => console.error('[cron] Calendar sync failed:', err))
@@ -35,6 +44,13 @@ export async function register() {
     dispatchDueTasks().catch(err => console.error('[cron] Due task notifications failed:', err))
   })
 
+  // Every afternoon at 3pm — notify about followed TV shows on tonight
+  cron.default.schedule('0 15 * * *', () => {
+    dispatchTvNotifications().catch(err => console.error('[cron] TV notifications failed:', err))
+  })
+
   console.log('[startup] Calendar sync job registered (every 15 min)')
   console.log('[startup] Push notification jobs registered')
+  console.log('[startup] TV notification job registered (3pm daily)')
+  console.log('[startup] EPG ingest job registered (4:30am & 4:30pm)')
 }

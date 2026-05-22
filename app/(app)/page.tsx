@@ -4,6 +4,8 @@ import { items, lists, listItems, records, calendarEvents, pins, reminders } fro
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc, inArray } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
 import { STATIC_BIN_SCHEDULES, daysUntil, getNextStaticBinCollection } from '@/lib/utils/bins'
+import { getTodayMatches } from '@/lib/services/epg'
+import { formatAirtime, channelName } from '@/lib/utils/freeview-channels'
 
 const RECORD_ENTITY_TYPE = 'record'
 
@@ -17,7 +19,7 @@ export default async function DashboardPage() {
   const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
 
   // These queries are independent — run in parallel
-  const [shoppingLists, dueTasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows] =
+  const [shoppingLists, dueTasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows, followedTvShows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -76,6 +78,10 @@ export default async function DashboardPage() {
         orderBy: [desc(items.pinnedAt)],
         columns: { id: true, title: true, body: true, pinnedAt: true, updatedAt: true },
       }),
+      db.query.items.findMany({
+        where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
+        columns: { id: true, title: true, metadata: true },
+      }),
     ])
 
   const boardPins = [
@@ -107,6 +113,25 @@ export default async function DashboardPage() {
       })
     : []
   const reminderRecordMap = new Map(reminderRecords.map(r => [r.id, r.title]))
+
+  const tvMatches = followedTvShows.length > 0
+    ? await getTodayMatches(followedTvShows.map(s => ({
+        title: s.title,
+        channel: (s.metadata as Record<string, unknown> | null)?.channel as string ?? null,
+      }))).catch(() => [])
+    : []
+
+  const seenTitles = new Set<string>()
+  const tonightShows = tvMatches.flatMap(prog => {
+    const key = prog.title.toLowerCase()
+    if (seenTitles.has(key)) return []
+    seenTitles.add(key)
+    return [{
+      title: prog.title,
+      channel: channelName(prog.channelId),
+      airtime: formatAirtime(prog.startsAt),
+    }]
+  })
 
   const nextBins = STATIC_BIN_SCHEDULES.map(bin => ({
     ...bin,
@@ -143,6 +168,7 @@ export default async function DashboardPage() {
       renewals={renewals}
       calendarEvents={calRows}
       pins={boardPins}
+      tonightShows={tonightShows}
     />
   )
 }

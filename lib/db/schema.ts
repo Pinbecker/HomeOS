@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ============================================================
@@ -343,6 +343,31 @@ export const notifications = sqliteTable('notifications', {
   readAt: integer('read_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
+
+// ============================================================
+// TV LISTINGS (EPG) — ingested from XMLTV feed, see lib/jobs/ingest-epg.ts
+// ============================================================
+
+export const tvChannels = sqliteTable('tv_channels', {
+  id: text('id').primaryKey(),          // feed channel id, e.g. "5.uk"
+  name: text('name').notNull(),         // feed display name, e.g. "5 HD"
+  logo: text('logo'),                   // channel logo url
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+})
+
+export const tvProgrammes = sqliteTable('tv_programmes', {
+  id: text('id').primaryKey(),
+  channelId: text('channel_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  startsAt: integer('starts_at', { mode: 'timestamp' }).notNull(),
+  endsAt: integer('ends_at', { mode: 'timestamp' }).notNull(),
+  iconUrl: text('icon_url'),
+  episodeNum: text('episode_num'),
+}, t => ({
+  channelStartIdx: index('tv_prog_channel_start_idx').on(t.channelId, t.startsAt),
+  startIdx: index('tv_prog_start_idx').on(t.startsAt),
+}))
 
 // ============================================================
 // AI JOBS

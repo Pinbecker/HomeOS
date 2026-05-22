@@ -38,6 +38,7 @@ type CalEvent = {
   location: string | null
 }
 type Pin = BoardPin
+type TonightShow = { title: string; channel: string; airtime: string }
 
 interface Props {
   user: { name: string; email: string }
@@ -49,6 +50,7 @@ interface Props {
   renewals: Renewal[]
   calendarEvents: CalEvent[]
   pins: Pin[]
+  tonightShows: TonightShow[]
 }
 
 const BIN_DOT: Record<string, string> = {
@@ -78,7 +80,7 @@ function taskDueLabel(due: Date | null): { label: string; urgent: boolean } {
 }
 
 export function DashboardClient({
-  user, shoppingItems, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins,
+  user, shoppingItems, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins, tonightShows,
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -174,6 +176,34 @@ export function DashboardClient({
                 </svg>
               </Link>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* On Tonight */}
+      {tonightShows.length > 0 && (
+        <section className="mx-4 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">On Tonight</p>
+            <Link href="/watch" className="text-[11.5px] font-semibold text-accent">TV Guide</Link>
+          </div>
+          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            {tonightShows.map((show, i) => (
+              <Link
+                key={show.title}
+                href="/watch"
+                className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}
+              >
+                <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-accent">
+                    <rect x="1" y="4" width="14" height="10" rx="1.5" />
+                    <path d="M5 2l3 2 3-2" />
+                  </svg>
+                </div>
+                <p className="flex-1 text-[13.5px] font-semibold text-text-1 truncate">{show.title}</p>
+                <span className="text-[11.5px] text-text-2 shrink-0">{show.channel} · {show.airtime}</span>
+              </Link>
+            ))}
           </div>
         </section>
       )}
