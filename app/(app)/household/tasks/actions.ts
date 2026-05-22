@@ -3,7 +3,7 @@
 import { db } from '@/lib/db'
 import { items, lists } from '@/lib/db/schema'
 import { requireSession } from '@/lib/auth/session'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import { revalidatePath } from 'next/cache'
 
@@ -41,17 +41,29 @@ export async function renameTaskList(listId: string, name: string, color: string
   await requireSession()
   await db.update(lists)
     .set({ name: name.trim(), color, updatedAt: new Date() })
-    .where(eq(lists.id, listId))
+    .where(and(eq(lists.id, listId), eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'tasks')))
   revalidatePath('/household/tasks')
   revalidatePath(`/household/tasks/${listId}`)
+  revalidatePath('/')
 }
 
 export async function deleteTaskList(listId: string) {
   await requireSession()
+  const taskList = await db.query.lists.findFirst({
+    where: and(eq(lists.id, listId), eq(lists.householdId, HOUSEHOLD_ID), eq(lists.type, 'tasks')),
+    columns: { id: true },
+  })
+  if (!taskList) return
+
   // soft-delete the tasks, then remove the list
-  await db.update(items).set({ deletedAt: new Date() }).where(eq(items.listId, listId))
-  await db.delete(lists).where(eq(lists.id, listId))
+  await db.update(items)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(items.householdId, HOUSEHOLD_ID), eq(items.type, 'task'), eq(items.listId, listId)))
+  await db.delete(lists)
+    .where(eq(lists.id, taskList.id))
   revalidatePath('/household/tasks')
+  revalidatePath(`/household/tasks/${listId}`)
+  revalidatePath('/')
 }
 
 export async function createTask(listId: string | null, title: string) {

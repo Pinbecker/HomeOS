@@ -10,7 +10,7 @@ export async function register() {
   const { ingestEpg } = await import('./lib/jobs/ingest-epg')
   const cron = await import('node-cron')
 
-  // Sync calendar immediately on startup, then every 15 minutes
+  // Sync calendar immediately on startup, then every 5 minutes
   syncCalendar().catch(err => console.error('[startup] Initial calendar sync failed:', err))
 
   // Refresh TV listings on startup, then twice a day (the feed rebuilds every 12h)
@@ -20,7 +20,7 @@ export async function register() {
     ingestEpg().catch(err => console.error('[cron] EPG ingest failed:', err))
   })
 
-  cron.default.schedule('*/15 * * * *', () => {
+  cron.default.schedule('*/5 * * * *', () => {
     syncCalendar().catch(err => console.error('[cron] Calendar sync failed:', err))
   })
 
@@ -49,7 +49,7 @@ export async function register() {
     dispatchTvNotifications().catch(err => console.error('[cron] TV notifications failed:', err))
   })
 
-  console.log('[startup] Calendar sync job registered (every 15 min)')
+  console.log('[startup] Calendar sync job registered (every 5 min)')
   console.log('[startup] Push notification jobs registered')
   console.log('[startup] TV notification job registered (3pm daily)')
   console.log('[startup] EPG ingest job registered (4:30am & 4:30pm)')
