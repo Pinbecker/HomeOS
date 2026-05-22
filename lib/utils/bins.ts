@@ -65,7 +65,11 @@ export function getNextStaticBinCollection(bin: StaticBinSchedule): Date {
 
 export function daysUntil(date: Date): number {
   const today = todayAtMidnight()
-  return Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  // Compare calendar days: floor the target to its own local midnight so that a
+  // time-of-day (e.g. a reminder or task due this evening) still counts as today,
+  // rather than rounding up to "1d".
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 export function getBinReminderDate(collectionDate: Date): Date {
