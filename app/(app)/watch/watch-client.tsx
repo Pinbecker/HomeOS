@@ -22,9 +22,10 @@ interface Props {
   tonight: Programme[]
   initialGrid: GridChannel[]
   today: string
+  focus?: { channelId: string; atMs: number } | null
 }
 
-export function WatchClient({ channels, followedShows: initialFollowed, tonight, initialGrid, today }: Props) {
+export function WatchClient({ channels, followedShows: initialFollowed, tonight, initialGrid, today, focus }: Props) {
   const [tab, setTab] = useState<Tab>('guide')
   const [guideView, setGuideView] = useState<GuideView>('grid')
   const [followed, setFollowed] = useState(initialFollowed)
@@ -111,6 +112,7 @@ export function WatchClient({ channels, followedShows: initialFollowed, tonight,
             <TvGrid
               initialGrid={initialGrid}
               today={today}
+              focus={focus}
               followedTitles={followedTitles}
               onToggleFollow={toggleFollow}
             />

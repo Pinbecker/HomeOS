@@ -28,6 +28,7 @@ type GC = { feedId: string; name: string; logo: string | null; programmes: GP[] 
 interface Props {
   initialGrid: GridChannel[]
   today: string // YYYY-MM-DD
+  focus?: { channelId: string; atMs: number } | null
   followedTitles: Set<string>
   onToggleFollow: (title: string, channel: string, posterUrl: string | null) => void
 }
@@ -61,7 +62,7 @@ function hourLabel(h: number): string {
   return `${h12}${period}`
 }
 
-export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: Props) {
+export function TvGrid({ initialGrid, today, focus, followedTitles, onToggleFollow }: Props) {
   const days = useMemo(() => {
     const base = new Date()
     base.setHours(0, 0, 0, 0)
@@ -76,6 +77,7 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
   const [cache, setCache] = useState<Record<string, GC[]>>({ [today]: normalize(initialGrid) })
   const [loading, setLoading] = useState(false)
   const [sheet, setSheet] = useState<{ p: GP; channel: string } | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const channels = cache[selected]
@@ -100,13 +102,34 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
     return () => { cancelled = true }
   }, [selected, cache])
 
-  // Auto-scroll so "now" is near the left when viewing today
+  // On load: jump to a focused programme (from a deep link) if given,
+  // otherwise scroll so "now" is near the left when viewing today.
   useEffect(() => {
-    if (!isToday || !scrollRef.current) return
-    const now = new Date()
-    const nowMin = now.getHours() * 60 + now.getMinutes()
-    scrollRef.current.scrollLeft = Math.max(0, nowMin * PX_PER_MIN - 60)
-  }, [isToday, channels])
+    const el = scrollRef.current
+    if (!el || !channels) return
+
+    if (focus) {
+      const rowIndex = channels.findIndex(c => c.feedId === focus.channelId)
+      const focusMin = (focus.atMs - dayStart.getTime()) / 60000
+      el.scrollLeft = Math.max(0, focusMin * PX_PER_MIN - 60)
+      if (rowIndex >= 0) {
+        el.scrollTop = Math.max(0, rowIndex * ROW_H - ROW_H)
+        const match = channels[rowIndex].programmes.find(p => Math.abs(p.startsAt.getTime() - focus.atMs) < 60000)
+        if (match) {
+          setHighlightId(match.id)
+          const t = setTimeout(() => setHighlightId(null), 5000)
+          return () => clearTimeout(t)
+        }
+      }
+      return
+    }
+
+    if (isToday) {
+      const now = new Date()
+      const min = now.getHours() * 60 + now.getMinutes()
+      el.scrollLeft = Math.max(0, min * PX_PER_MIN - 60)
+    }
+  }, [isToday, channels, focus, dayStart])
 
   const nowMin = (() => {
     const now = new Date()
@@ -197,13 +220,14 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
                   const isNow = isToday && startMin <= nowMin && endMin > nowMin
                   const showTime = width >= 50
                   const showTitle = width >= 26
+                  const highlighted = highlightId === p.id
                   return (
                     <button
                       key={p.id}
                       onClick={() => setSheet({ p, channel: ch.name })}
                       className={`absolute inset-y-0 border-r border-b border-border text-left overflow-hidden px-1.5 py-1 active:bg-bg ${
                         following ? 'bg-sage/12' : isNow ? 'bg-accent/8' : 'bg-surface'
-                      } ${isPast ? 'opacity-45' : ''}`}
+                      } ${isPast ? 'opacity-45' : ''} ${highlighted ? 'z-[16] ring-2 ring-accent ring-inset bg-accent/15' : ''}`}
                       style={{ left, width }}
                     >
                       {following && <span className="absolute left-0 inset-y-0 w-[2px] bg-sage" />}

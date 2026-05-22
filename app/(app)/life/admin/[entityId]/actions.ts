@@ -244,3 +244,27 @@ export async function addRelatedEntity(entityId: string, formData: FormData) {
   await revalidateEntity(entityId)
   revalidatePath(`/life/admin/${relatedId}`)
 }
+
+export async function removeRelatedEntity(entityId: string, relatedId: string) {
+  await requireSession()
+
+  await db.delete(entityLinks).where(
+    or(
+      and(
+        eq(entityLinks.fromType, RECORD_ENTITY_TYPE),
+        eq(entityLinks.fromId, entityId),
+        eq(entityLinks.toType, RECORD_ENTITY_TYPE),
+        eq(entityLinks.toId, relatedId),
+      ),
+      and(
+        eq(entityLinks.fromType, RECORD_ENTITY_TYPE),
+        eq(entityLinks.fromId, relatedId),
+        eq(entityLinks.toType, RECORD_ENTITY_TYPE),
+        eq(entityLinks.toId, entityId),
+      ),
+    ),
+  )
+
+  await revalidateEntity(entityId)
+  revalidatePath(`/life/admin/${relatedId}`)
+}

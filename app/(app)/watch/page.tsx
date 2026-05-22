@@ -10,8 +10,17 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default async function WatchPage() {
+export default async function WatchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ channel?: string; at?: string }>
+}) {
   await requireSession()
+  const sp = await searchParams
+  const focusAt = sp.at ? Number(sp.at) : NaN
+  const focus = sp.channel && Number.isFinite(focusAt)
+    ? { channelId: sp.channel, atMs: focusAt }
+    : null
 
   const followedShows = await db.query.items.findMany({
     where: and(
@@ -41,6 +50,7 @@ export default async function WatchPage() {
       tonight={tonight}
       initialGrid={initialGrid}
       today={ymd(now)}
+      focus={focus}
     />
   )
 }

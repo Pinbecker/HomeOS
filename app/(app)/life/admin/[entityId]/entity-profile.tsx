@@ -13,6 +13,7 @@ import {
   updateEntityReminder,
   addLinkedTask,
   addRelatedEntity,
+  removeRelatedEntity,
   attachEntityDocument,
   updateEntityDetails,
 } from './actions'
@@ -535,15 +536,22 @@ export function EntityProfile({
         <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'related' ? 'mt-3' : ''}`}>
           {profile.relatedEntities.length > 0 ? (
             profile.relatedEntities.map((related, index) => (
-              <Link key={related.id} href={related.href} className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <div className="w-9 h-9 rounded-[11px] flex items-center justify-center text-[18px] shrink-0" style={{ background: `${related.color}1F` }}>
-                  {related.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14.5px] font-semibold text-text-1 truncate">{related.title}</p>
-                  <p className="text-[12px] text-text-2 mt-0.5 truncate">{related.subtitle || related.kindLabel}</p>
-                </div>
-              </Link>
+              <SwipeRow
+                key={related.id}
+                wrapClassName={index > 0 ? 'border-t border-border' : ''}
+                onDelete={() => startTransition(async () => { await removeRelatedEntity(entity.id, related.id); router.refresh() })}
+                deleteLabel="Unlink"
+              >
+                <Link href={related.href} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
+                  <div className="w-9 h-9 rounded-[11px] flex items-center justify-center text-[18px] shrink-0" style={{ background: `${related.color}1F` }}>
+                    {related.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14.5px] font-semibold text-text-1 truncate">{related.title}</p>
+                    <p className="text-[12px] text-text-2 mt-0.5 truncate">{related.subtitle || related.kindLabel}</p>
+                  </div>
+                </Link>
+              </SwipeRow>
             ))
           ) : (
             <EmptyRow icon="↔" title="Nothing connected yet" subtitle="Link providers, policies and household things." />

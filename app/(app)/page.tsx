@@ -103,7 +103,17 @@ export default async function DashboardPage() {
     })),
   ].sort((a, b) => b.ts - a.ts)
 
-  const shoppingItems = shoppingLists.flatMap(l => l.items).slice(0, 6)
+  const allShoppingItems = shoppingLists.flatMap(l =>
+    l.items.map(it => ({
+      id: it.id,
+      title: it.title,
+      checked: it.checked,
+      shopName: l.name,
+      shopColor: l.color ?? '#34C759',
+    }))
+  )
+  const shoppingItems = allShoppingItems.slice(0, 12)
+  const shoppingTotal = allShoppingItems.length
 
   const reminderRecordIds = Array.from(new Set(reminderRows.map(r => r.entityId)))
   const reminderRecords = reminderRecordIds.length
@@ -130,6 +140,8 @@ export default async function DashboardPage() {
       title: prog.title,
       channel: channelName(prog.channelId),
       airtime: formatAirtime(prog.startsAt),
+      channelId: prog.channelId,
+      atMs: prog.startsAt.getTime(),
     }]
   })
 
@@ -169,6 +181,7 @@ export default async function DashboardPage() {
       calendarEvents={calRows}
       pins={boardPins}
       tonightShows={tonightShows}
+      shoppingTotal={shoppingTotal}
     />
   )
 }

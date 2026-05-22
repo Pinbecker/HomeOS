@@ -8,8 +8,9 @@ import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
 import { AiCapture } from '@/components/features/ai/ai-capture'
 import { toggleTask } from '@/app/(app)/household/tasks/actions'
+import { toggleShoppingItem } from '@/app/(app)/household/shopping/actions'
 
-type ShoppingItem = { id: string; title: string; checked: boolean }
+type ShoppingItem = { id: string; title: string; checked: boolean; shopName: string; shopColor: string }
 type Task = {
   id: string
   title: string
@@ -40,7 +41,7 @@ type CalEvent = {
   location: string | null
 }
 type Pin = BoardPin
-type TonightShow = { title: string; channel: string; airtime: string }
+type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 
 interface Props {
   user: { name: string; email: string }
@@ -53,6 +54,7 @@ interface Props {
   calendarEvents: CalEvent[]
   pins: Pin[]
   tonightShows: TonightShow[]
+  shoppingTotal: number
 }
 
 const BIN_DOT: Record<string, string> = {
@@ -82,7 +84,7 @@ function taskDueLabel(due: Date | null): { label: string; urgent: boolean } {
 }
 
 export function DashboardClient({
-  user, shoppingItems, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins, tonightShows,
+  user, shoppingItems, dueTasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins, tonightShows, shoppingTotal,
 }: Props) {
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -98,6 +100,18 @@ export function DashboardClient({
       return next
     })
     startTransition(() => { toggleTask(id) })
+  }
+
+  const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
+
+  function toggleShopItem(id: string) {
+    setCheckedShopIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    startTransition(() => { toggleShoppingItem(id) })
   }
 
   const hasAlerts = bins.length > 0 || dueTasks.length > 0 || inboxCount > 0
@@ -224,7 +238,7 @@ export function DashboardClient({
             {tonightShows.map((show, i) => (
               <Link
                 key={show.title}
-                href="/watch"
+                href={`/watch?channel=${encodeURIComponent(show.channelId)}&at=${show.atMs}`}
                 className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${i > 0 ? 'border-t border-border' : ''}`}
               >
                 <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
@@ -350,16 +364,39 @@ export function DashboardClient({
             <span className="text-[13.5px] text-text-3">Add shopping items</span>
           </Link>
         ) : (
-          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-            {shoppingItems.slice(0, 5).map((item, i) => (
-              <div key={item.id} className={`flex items-center gap-3 px-4 py-[11px] ${i > 0 ? 'border-t border-border' : ''}`}>
-                <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0" />
-                <span className="text-[13.5px] font-medium text-text-1">{item.title}</span>
-              </div>
-            ))}
-            {shoppingItems.length > 5 && (
-              <div className="px-4 py-[9px] border-t border-border">
-                <span className="text-[12px] text-text-3">+ {shoppingItems.length - 5} more</span>
+          <div className="bg-surface border border-border rounded-2xl px-2 py-1.5">
+            <div className="grid grid-cols-2 gap-x-3">
+              {shoppingItems.map(item => {
+                const checked = checkedShopIds.has(item.id)
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleShopItem(item.id)}
+                    className="flex items-center gap-2.5 px-2 py-[9px] min-w-0 text-left active:opacity-70"
+                  >
+                    <span
+                      className="w-5 h-5 rounded-[6px] shrink-0 flex items-center justify-center transition-transform active:scale-90"
+                      style={
+                        checked
+                          ? { background: item.shopColor, boxShadow: `0 0 0 2px ${item.shopColor}` }
+                          : { boxShadow: `0 0 0 2px ${item.shopColor}` }
+                      }
+                      title={item.shopName}
+                    >
+                      {checked && (
+                        <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                          <path d="M3 8l3.5 3.5L13 4.5" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className={`text-[13.5px] font-medium truncate ${checked ? 'text-text-2 line-through' : 'text-text-1'}`}>{item.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {shoppingTotal > shoppingItems.length && (
+              <div className="px-2 pt-1 pb-0.5">
+                <span className="text-[12px] text-text-3">+ {shoppingTotal - shoppingItems.length} more</span>
               </div>
             )}
           </div>
