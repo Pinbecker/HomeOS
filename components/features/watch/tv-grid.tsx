@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GridChannel } from '@/lib/services/epg'
+import { formatAirtime } from '@/lib/utils/freeview-channels'
 import { ProgrammeSheet, type SheetProgramme } from './programme-sheet'
 
 const PX_PER_MIN = 3
@@ -158,15 +159,6 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
             </div>
           </div>
 
-          {/* Hour gridlines spanning all rows */}
-          {Array.from({ length: 24 }, (_, h) => (
-            <div
-              key={h}
-              className="absolute bg-border/60"
-              style={{ left: CHANNEL_COL + h * 60 * PX_PER_MIN, top: HEADER_H, height: rowsH, width: 1 }}
-            />
-          ))}
-
           {/* Now line */}
           {isToday && (
             <div
@@ -202,16 +194,19 @@ export function TvGrid({ initialGrid, today, followedTitles, onToggleFollow }: P
                   const width = Math.max(right - left, MIN_BLOCK_W)
                   const following = followedTitles.has(p.title.toLowerCase())
                   const isPast = isToday && endMin <= nowMin
+                  const isNow = isToday && startMin <= nowMin && endMin > nowMin
                   return (
                     <button
                       key={p.id}
                       onClick={() => setSheet({ p, channel: ch.name })}
-                      className={`absolute top-[3px] bottom-[3px] rounded-md border text-left overflow-hidden px-1.5 py-1 active:opacity-80 ${
-                        following ? 'bg-sage/15 border-sage/40' : 'bg-surface border-border'
-                      } ${isPast ? 'opacity-50' : ''}`}
+                      className={`absolute inset-y-0 border-r border-b border-border text-left overflow-hidden px-1.5 py-1 active:bg-bg ${
+                        following ? 'bg-sage/12' : isNow ? 'bg-accent/8' : 'bg-surface'
+                      } ${isPast ? 'opacity-45' : ''}`}
                       style={{ left, width }}
                     >
-                      <p className="text-[11px] font-semibold text-text-1 leading-tight line-clamp-2">{p.title}</p>
+                      {following && <span className="absolute left-0 inset-y-0 w-[2px] bg-sage" />}
+                      <p className="text-[9px] text-text-3 leading-none mb-0.5">{formatAirtime(p.startsAt)}</p>
+                      <p className="text-[11px] font-semibold text-text-1 leading-[1.15] line-clamp-2">{p.title}</p>
                     </button>
                   )
                 })}
