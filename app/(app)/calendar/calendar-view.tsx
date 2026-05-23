@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition, useEffect, useRef } from 'react'
+import { useState, useMemo, useTransition, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { allDayAsLocal, localDayKey } from '@/lib/utils/calendar'
@@ -174,8 +174,9 @@ export function CalendarView({
     }
   }, [today])
 
-  // After rowHeight changes during a pinch, re-anchor so the same row stays under the fingers
-  useEffect(() => {
+  // After rowHeight changes during a pinch, re-anchor so the same row stays under the fingers.
+  // useLayoutEffect runs before paint, so the correction happens in the same frame — no flicker.
+  useLayoutEffect(() => {
     const anchor = zoomAnchorRef.current
     const container = scrollRef.current
     if (!anchor || !container) return
@@ -339,9 +340,12 @@ export function CalendarView({
   function goToday() {
     setSelectedKey(todayKey)
     const container = scrollRef.current
-    const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
-    if (container && el) {
-      container.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+    // Scroll to today's actual cell (not just the month label) so it lands near the top at any zoom
+    const todayCell = document.getElementById('cal-today')
+    const monthEl = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const target = todayCell ?? monthEl
+    if (container && target) {
+      container.scrollTo({ top: Math.max(0, target.offsetTop - 8), behavior: 'smooth' })
     }
   }
 
@@ -403,7 +407,7 @@ export function CalendarView({
       </div>
 
       {/* ── Scrollable months ── */}
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain" style={{ overflowAnchor: 'none' }}>
         {monthList.map(({ year, month, grid }) => (
           <section
             key={`${year}-${month}`}
@@ -442,6 +446,7 @@ export function CalendarView({
                 return (
                   <button
                     key={key}
+                    id={isToday ? 'cal-today' : undefined}
                     onClick={() => setSelectedKey(key)}
                     className="flex flex-col items-start px-0.5 pt-1 pb-0.5 overflow-hidden border-t border-border active:opacity-70"
                     style={{ height: rowHeight }}
