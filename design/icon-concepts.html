@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HomeOS — App Icon Concepts (iOS 26 glass)</title>
+<style>
+  :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 80px;
+    background: #0d0d0f; color: #f2f2f7;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: #98989f; font-size: 14px; margin: 0 0 36px; max-width: 640px; line-height: 1.5; }
+  .grid { display: flex; flex-direction: column; gap: 28px; max-width: 760px; }
+  .row {
+    display: grid; grid-template-columns: 200px 1fr; gap: 28px; align-items: center;
+    background: #16161a; border: 1px solid #26262b; border-radius: 22px; padding: 24px;
+  }
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .hero svg { width: 168px; height: 168px; border-radius: 38px; box-shadow: 0 12px 34px rgba(0,0,0,0.45); }
+  .minis { display: flex; gap: 12px; }
+  .wall { width: 60px; height: 60px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+  .wall svg { width: 52px; height: 52px; border-radius: 12px; }
+  .wall.light { background: linear-gradient(135deg,#e8eaf0,#c9cdd8); }
+  .wall.dark  { background: linear-gradient(135deg,#3a2f4a,#161a2e); }
+  .meta h2 { font-size: 17px; font-weight: 650; margin: 0 0 6px; }
+  .meta p { margin: 0 0 10px; color: #b8b8c0; font-size: 14px; line-height: 1.55; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: #26262b; color: #c9c9d2; }
+  .label { font-size: 11px; color: #6a6a73; }
+</style>
+</head>
+<body>
+<h1>HomeOS — App Icon Concepts</h1>
+<p class="sub">Five directions with an iOS 26 “liquid glass” feel: translucent layered panels, specular sheen, edge light. Big = home-screen size; the two small tiles test legibility on light and dark wallpapers. All built on the app palette (accent blue / red / sage / amber / indigo).</p>
+
+<!-- ============ SHARED DEFS ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- soft glassy sheen overlay reused by all icons -->
+    <radialGradient id="sheen" cx="32%" cy="20%" r="80%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="38%" stop-color="#ffffff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edgeLight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="14%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="86%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="grid">
+
+  <!-- ========================================================= 1. GLASS HEARTH ========================================================= -->
+  <div class="row">
+    <div class="hero">
+      <svg viewBox="0 0 512 512" id="ic1">
+        <defs>
+          <linearGradient id="g1bg" x1="0" y1="0" x2="0.4" y2="1">
+            <stop offset="0%" stop-color="#FFB84D"/>
+            <stop offset="55%" stop-color="#FF7A3D"/>
+            <stop offset="100%" stop-color="#FF3B30"/>
+          </linearGradient>
+          <clipPath id="sq1"><rect width="512" height="512" rx="114"/></clipPath>
+        </defs>
+        <g clip-path="url(#sq1)">
+          <rect width="512" height="512" fill="url(#g1bg)"/>
+          <!-- translucent stacked glass house panels -->
+          <g>
+            <path d="M256 120 L408 252 H104 Z" fill="#ffffff" fill-opacity="0.92"/>
+            <rect x="150" y="244" width="212" height="160" rx="26" fill="#ffffff" fill-opacity="0.75"/>
+            <!-- inner warm glass door -->
+            <rect x="226" y="300" width="60" height="104" rx="28" fill="#FF7A3D" fill-opacity="0.85"/>
+            <!-- secondary offset glass panel for depth -->
+            <path d="M256 150 L380 258 H132 Z" fill="#ffffff" fill-opacity="0.25" style="mix-blend-mode:overlay"/>
+          </g>
+          <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+          <rect width="512" height="512" rx="114" fill="url(#edgeLight)"/>
+        </g>
+      </svg>
+      <span class="label">Glass Hearth</span>
+    </div>
+    <div class="meta">
+      <h2>1 · Glass Hearth</h2>
+      <p>The familiar house glyph, but built from stacked frosted-glass panels over a warm amber→red gradient. Reads instantly as “home,” the warm tones say <em>hearth</em> not <em>utility</em>. Closest to the current icon, just elevated.</p>
+      <div class="minis">
+        <div class="wall light"><svg viewBox="0 0 512 512"><use href="#ic1"/></svg></div>
+        <div class="wall dark"><svg viewBox="0 0 512 512"><use href="#ic1"/></svg></div>
+      </div>
+      <div class="tags"><span class="tag">warm</span><span class="tag">on-brand</span><span class="tag">safest evolution</span></div>
+    </div>
+  </div>
+
+  <!-- ========================================================= 2. TOGETHER (TWO ROOFS) ========================================================= -->
+  <div class="row">
+    <div class="hero">
+      <svg viewBox="0 0 512 512" id="ic2">
+        <defs>
+          <linearGradient id="g2bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FBFCFE"/>
+            <stop offset="100%" stop-color="#DDE3EE"/>
+          </linearGradient>
+          <linearGradient id="g2blue" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#3FA0FF"/><stop offset="100%" stop-color="#007AFF"/>
+          </linearGradient>
+          <linearGradient id="g2sage" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#5CE07C"/><stop offset="100%" stop-color="#34C759"/>
+          </linearGradient>
+          <clipPath id="sq2"><rect width="512" height="512" rx="114"/></clipPath>
+        </defs>
+        <g clip-path="url(#sq2)">
+          <rect width="512" height="512" fill="url(#g2bg)"/>
+          <!-- two overlapping translucent rooflines; overlap blends to teal -->
+          <g style="mix-blend-mode:multiply">
+            <path d="M196 150 L330 290 V392 H62 V290 Z" fill="url(#g2blue)" fill-opacity="0.82"/>
+            <path d="M316 150 L450 290 V392 H182 V290 Z" fill="url(#g2sage)" fill-opacity="0.82"/>
+          </g>
+          <!-- glossy highlight on each roof apex -->
+          <path d="M196 150 L330 290 H62 Z" fill="#ffffff" fill-opacity="0.18"/>
+          <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+          <rect width="512" height="512" rx="114" fill="url(#edgeLight)"/>
+        </g>
+      </svg>
+      <span class="label">Together</span>
+    </div>
+    <div class="meta">
+      <h2>2 · Together</h2>
+      <p>Two translucent house shapes — Dan &amp; Imogen — overlapping like Photos’ petals, blending to teal where they meet. White frosted background = the modern glass look. Symbolic, personal, and unmistakably <em>shared</em>.</p>
+      <div class="minis">
+        <div class="wall light"><svg viewBox="0 0 512 512"><use href="#ic2"/></svg></div>
+        <div class="wall dark"><svg viewBox="0 0 512 512"><use href="#ic2"/></svg></div>
+      </div>
+      <div class="tags"><span class="tag">two-of-us</span><span class="tag">Photos-style overlap</span><span class="tag">white glass</span></div>
+    </div>
+  </div>
+
+  <!-- ========================================================= 3. PINWHEEL (5 SECTIONS) ========================================================= -->
+  <div class="row">
+    <div class="hero">
+      <svg viewBox="0 0 512 512" id="ic3">
+        <defs>
+          <radialGradient id="g3bg" cx="50%" cy="42%" r="70%">
+            <stop offset="0%" stop-color="#FFFFFF"/>
+            <stop offset="100%" stop-color="#E9ECF3"/>
+          </radialGradient>
+          <clipPath id="sq3"><rect width="512" height="512" rx="114"/></clipPath>
+        </defs>
+        <g clip-path="url(#sq3)">
+          <rect width="512" height="512" fill="url(#g3bg)"/>
+          <!-- five glass petals = the five nav sections, screen-blended where they cross -->
+          <g transform="translate(256,256)" style="mix-blend-mode:multiply">
+            <g fill-opacity="0.8">
+              <ellipse cx="0" cy="-92" rx="46" ry="118" fill="#007AFF" transform="rotate(0)"/>
+              <ellipse cx="0" cy="-92" rx="46" ry="118" fill="#FF3B30" transform="rotate(72)"/>
+              <ellipse cx="0" cy="-92" rx="46" ry="118" fill="#34C759" transform="rotate(144)"/>
+              <ellipse cx="0" cy="-92" rx="46" ry="118" fill="#FF9500" transform="rotate(216)"/>
+              <ellipse cx="0" cy="-92" rx="46" ry="118" fill="#5856D6" transform="rotate(288)"/>
+            </g>
+          </g>
+          <!-- bright glass core -->
+          <circle cx="256" cy="256" r="40" fill="#ffffff" fill-opacity="0.9"/>
+          <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+          <rect width="512" height="512" rx="114" fill="url(#edgeLight)"/>
+        </g>
+      </svg>
+      <span class="label">Pinwheel</span>
+    </div>
+    <div class="meta">
+      <h2>3 · Pinwheel</h2>
+      <p>The most direct Photos homage: five overlapping glass petals, one per nav section (Watch / Household / Inbox / Reminders / Notes), blending where they cross. Colourful and joyful — but more abstract, doesn’t literally say “home.”</p>
+      <div class="minis">
+        <div class="wall light"><svg viewBox="0 0 512 512"><use href="#ic3"/></svg></div>
+        <div class="wall dark"><svg viewBox="0 0 512 512"><use href="#ic3"/></svg></div>
+      </div>
+      <div class="tags"><span class="tag">Photos-inspired</span><span class="tag">5 sections</span><span class="tag">most colourful</span></div>
+    </div>
+  </div>
+
+  <!-- ========================================================= 4. CLEAR GLASS HOUSE ========================================================= -->
+  <div class="row">
+    <div class="hero">
+      <svg viewBox="0 0 512 512" id="ic4">
+        <defs>
+          <linearGradient id="g4bg" x1="0" y1="0" x2="0.5" y2="1">
+            <stop offset="0%" stop-color="#EAF3FF"/>
+            <stop offset="55%" stop-color="#BFD9F5"/>
+            <stop offset="100%" stop-color="#8FB7E8"/>
+          </linearGradient>
+          <clipPath id="sq4"><rect width="512" height="512" rx="114"/></clipPath>
+        </defs>
+        <g clip-path="url(#sq4)">
+          <rect width="512" height="512" fill="url(#g4bg)"/>
+          <!-- refraction streaks behind the glyph -->
+          <path d="M-40 360 L300 60 L360 60 L20 360 Z" fill="#ffffff" fill-opacity="0.18"/>
+          <path d="M120 400 L420 120 L452 150 L150 430 Z" fill="#ffffff" fill-opacity="0.12"/>
+          <!-- house glyph as clear glass: edge-lit emboss -->
+          <g>
+            <path d="M256 130 L404 258 V388 H108 V258 Z" fill="#ffffff" fill-opacity="0.22"/>
+            <path d="M256 130 L404 258 V388 H108 V258 Z" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="10" stroke-linejoin="round"/>
+            <path d="M256 130 L404 258" stroke="#ffffff" stroke-opacity="0.95" stroke-width="12" stroke-linecap="round"/>
+            <rect x="222" y="312" width="68" height="76" rx="6" fill="#007AFF" fill-opacity="0.5"/>
+          </g>
+          <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+          <rect width="512" height="512" rx="114" fill="url(#edgeLight)"/>
+        </g>
+      </svg>
+      <span class="label">Clear Glass</span>
+    </div>
+    <div class="meta">
+      <h2>4 · Clear Glass House</h2>
+      <p>The literal “liquid glass” variant: a near-transparent house cut from frosted glass, edge-lit with refraction streaks behind it, over a cool blue tint. Most faithful to iOS 26’s clear material — calm and premium, less bold from a distance.</p>
+      <div class="minis">
+        <div class="wall light"><svg viewBox="0 0 512 512"><use href="#ic4"/></svg></div>
+        <div class="wall dark"><svg viewBox="0 0 512 512"><use href="#ic4"/></svg></div>
+      </div>
+      <div class="tags"><span class="tag">truest glass</span><span class="tag">cool/calm</span><span class="tag">accent blue</span></div>
+    </div>
+  </div>
+
+  <!-- ========================================================= 5. WARM WINDOW ========================================================= -->
+  <div class="row">
+    <div class="hero">
+      <svg viewBox="0 0 512 512" id="ic5">
+        <defs>
+          <linearGradient id="g5bg" x1="0" y1="0" x2="0.3" y2="1">
+            <stop offset="0%" stop-color="#3B3170"/>
+            <stop offset="60%" stop-color="#231B45"/>
+            <stop offset="100%" stop-color="#141026"/>
+          </linearGradient>
+          <radialGradient id="g5glow" cx="50%" cy="55%" r="60%">
+            <stop offset="0%" stop-color="#FFD27A"/>
+            <stop offset="55%" stop-color="#FF9500"/>
+            <stop offset="100%" stop-color="#FF9500" stop-opacity="0"/>
+          </radialGradient>
+          <clipPath id="sq5"><rect width="512" height="512" rx="114"/></clipPath>
+        </defs>
+        <g clip-path="url(#sq5)">
+          <rect width="512" height="512" fill="url(#g5bg)"/>
+          <!-- warm light spilling through a doorway -->
+          <ellipse cx="256" cy="300" rx="190" ry="150" fill="url(#g5glow)" filter="url(#glow)" opacity="0.9"/>
+          <!-- glass doorway arch -->
+          <path d="M180 360 V236 a76 76 0 0 1 152 0 V360 Z" fill="#FFE3AC" fill-opacity="0.95"/>
+          <path d="M180 360 V236 a76 76 0 0 1 152 0 V360 Z" fill="none" stroke="#ffffff" stroke-opacity="0.5" stroke-width="6"/>
+          <!-- roofline framing the door -->
+          <path d="M256 120 L392 246 H120 Z" fill="#ffffff" fill-opacity="0.16"/>
+          <rect width="512" height="512" rx="114" fill="url(#sheen)"/>
+          <rect width="512" height="512" rx="114" fill="url(#edgeLight)"/>
+        </g>
+      </svg>
+      <span class="label">Warm Window</span>
+    </div>
+    <div class="meta">
+      <h2>5 · Warm Window</h2>
+      <p>“Coming home” at dusk: a glowing doorway spilling warm light against a deep indigo glass. The most emotional, cosy direction — leans hard into <em>warm &amp; personal</em>. Striking on a dark wallpaper; the glyph is more illustrative than iconic.</p>
+      <div class="minis">
+        <div class="wall light"><svg viewBox="0 0 512 512"><use href="#ic5"/></svg></div>
+        <div class="wall dark"><svg viewBox="0 0 512 512"><use href="#ic5"/></svg></div>
+      </div>
+      <div class="tags"><span class="tag">cosy</span><span class="tag">dusk glow</span><span class="tag">most emotional</span></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
