@@ -236,6 +236,28 @@ export const calendarEvents = sqliteTable('calendar_events', {
 })
 
 // ============================================================
+// GOOGLE CALENDAR — per-user OAuth connection (tokens for the
+// shared family calendar). Separate from better-auth's `accounts`
+// table so the auth library doesn't treat these as login providers.
+// ============================================================
+
+export const googleCalendarConnections = sqliteTable('google_calendar_connections', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  googleEmail: text('google_email'),
+  accessToken: text('access_token'),
+  // Google only returns a refresh token on first consent (access_type=offline,
+  // prompt=consent). It is the long-lived credential — required.
+  refreshToken: text('refresh_token').notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  scope: text('scope'),
+  // Resolved id of the target shared calendar for this connection.
+  calendarId: text('calendar_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+})
+
+// ============================================================
 // PINS — cards the household pins to the home feed
 //   Like sticky notes on a fridge: a quick title + optional body,
 //   colour-coded. May optionally deep-link somewhere in the app.

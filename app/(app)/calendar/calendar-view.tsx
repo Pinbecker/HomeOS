@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useMemo, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { allDayAsLocal, localDayKey } from '@/lib/utils/calendar'
 import { toggleTask } from '@/app/(app)/household/tasks/actions'
+import { EventEditor } from './event-editor'
 
 type CalEvent = {
   id: string
@@ -103,7 +105,22 @@ function fullDate(d: Date) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-export function CalendarView({ events, tasks, calendarName }: { events: CalEvent[]; tasks: CalTask[]; calendarName: string }) {
+export function CalendarView({
+  events,
+  tasks,
+  calendarName,
+  connected,
+  connectedEmail,
+  notice,
+}: {
+  events: CalEvent[]
+  tasks: CalTask[]
+  calendarName: string
+  connected: boolean
+  connectedEmail: string | null
+  notice: string | null
+}) {
+  const router = useRouter()
   const today = new Date()
   const [view, setView] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const [selectedKey, setSelectedKey] = useState(localDayKey(today))
@@ -111,9 +128,51 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
   const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
   const [, startTransition] = useTransition()
 
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [banner, setBanner] = useState<string | null>(
+    notice === 'connected' ? 'Google Calendar connected.'
+    : notice === 'denied' ? 'Google connection cancelled.'
+    : notice === 'error' ? 'Could not connect to Google. Please try again.'
+    : null,
+  )
+
   function toggleCalTask(id: string, current: boolean) {
     setTaskOverrides(prev => ({ ...prev, [id]: !current }))
     startTransition(() => { toggleTask(id) })
+  }
+
+  function openCreate() {
+    setEditingEvent(null)
+    setEditorOpen(true)
+  }
+  function openEdit(ev: CalEvent) {
+    setEditingEvent(ev)
+    setEditorOpen(true)
+  }
+  function onEditorSaved() {
+    setEditorOpen(false)
+    setEditingEvent(null)
+    setDetail(null)
+    router.refresh()
+  }
+  async function deleteEvent(ev: CalEvent) {
+    if (!confirm(`Delete "${ev.title}"?`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/calendar/events/${ev.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setDetail(null)
+        router.refresh()
+      } else if (res.status === 409) {
+        setBanner('Connect your Google account before editing events.')
+      } else {
+        setBanner('Could not delete the event. Please try again.')
+      }
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const eventsByDay = useMemo(() => {
@@ -173,8 +232,29 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
           </svg>
           <span className="text-[16px]">Home</span>
         </Link>
-        <button onClick={goToday} className="text-accent text-[16px] font-medium active:opacity-60 px-1">Today</button>
+        <div className="flex items-center gap-1">
+          <button onClick={goToday} className="text-accent text-[16px] font-medium active:opacity-60 px-1">Today</button>
+          {connected && (
+            <button
+              onClick={openCreate}
+              aria-label="Add event"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-accent active:bg-surface-2"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
+
+      {banner && (
+        <div className="mx-4 mt-1 mb-1 rounded-xl bg-accent-bg px-3.5 py-2 flex items-center justify-between gap-3">
+          <p className="text-[13px] text-accent font-medium">{banner}</p>
+          <button onClick={() => setBanner(null)} className="text-accent text-[13px] font-semibold active:opacity-60">Dismiss</button>
+        </div>
+      )}
 
       {/* Month header */}
       <header className="px-5 pt-1 pb-2 flex items-center justify-between">
@@ -292,9 +372,22 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
             })}
           </div>
         )}
-        <p className="px-1 pt-3 text-[12px] text-text-3 text-center">
-          Events from &ldquo;{calendarName}&rdquo; (read-only) · tasks shown in orange
-        </p>
+        {connected ? (
+          <p className="px-1 pt-3 text-[12px] text-text-3 text-center">
+            Synced with &ldquo;{calendarName}&rdquo;{connectedEmail ? ` · ${connectedEmail}` : ''} · tasks shown in orange
+          </p>
+        ) : (
+          <div className="mt-4 bg-surface rounded-2xl px-4 py-5 text-center">
+            <p className="text-[14px] font-semibold text-text-1">Connect Google Calendar</p>
+            <p className="text-[12.5px] text-text-3 mt-1 mb-3">Link your Google account to see and add events on the shared &ldquo;{calendarName}&rdquo; calendar.</p>
+            <a
+              href="/api/google/connect"
+              className="inline-flex items-center justify-center rounded-full bg-accent text-white text-[15px] font-semibold px-5 py-2.5 active:opacity-80"
+            >
+              Connect Google
+            </a>
+          </div>
+        )}
       </section>
 
       <div className="h-4" />
@@ -305,7 +398,11 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
           <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border safe-top">
             <button onClick={() => setDetail(null)} className="text-accent text-[16px] active:opacity-60">Done</button>
             <span className="text-[16px] font-semibold text-text-1">Event</span>
-            <span className="w-12" />
+            {connected ? (
+              <button onClick={() => openEdit(detail)} className="text-accent text-[16px] font-semibold active:opacity-60">Edit</button>
+            ) : (
+              <span className="w-12" />
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-4">
@@ -334,8 +431,27 @@ export function CalendarView({ events, tasks, calendarName }: { events: CalEvent
                 <p className="text-[14px] text-text-1 whitespace-pre-wrap leading-relaxed">{detail.description}</p>
               </div>
             )}
+
+            {connected && (
+              <button
+                onClick={() => deleteEvent(detail)}
+                disabled={deleting}
+                className="mt-2 w-full bg-surface rounded-2xl px-4 py-3 text-[15px] font-semibold text-red active:bg-surface-2 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete event'}
+              </button>
+            )}
           </div>
         </div>
+      )}
+
+      {editorOpen && (
+        <EventEditor
+          initialDate={selectedDate}
+          event={editingEvent}
+          onClose={() => { setEditorOpen(false); setEditingEvent(null) }}
+          onSaved={onEditorSaved}
+        />
       )}
     </div>
   )

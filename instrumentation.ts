@@ -20,7 +20,7 @@ export async function register() {
     ingestEpg().catch(err => console.error('[cron] EPG ingest failed:', err))
   })
 
-  cron.default.schedule('*/5 * * * *', () => {
+  cron.default.schedule('*/2 * * * *', () => {
     syncCalendar().catch(err => console.error('[cron] Calendar sync failed:', err))
   })
 
@@ -49,7 +49,7 @@ export async function register() {
     dispatchTvNotifications().catch(err => console.error('[cron] TV notifications failed:', err))
   })
 
-  console.log('[startup] Calendar sync job registered (every 5 min)')
+  console.log('[startup] Google Calendar sync job registered (every 2 min)')
   console.log('[startup] Push notification jobs registered')
   console.log('[startup] TV notification job registered (3pm daily)')
   console.log('[startup] EPG ingest job registered (4:30am & 4:30pm)')

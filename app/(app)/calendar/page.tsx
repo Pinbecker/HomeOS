@@ -2,10 +2,18 @@ import { db } from '@/lib/db'
 import { calendarEvents, items } from '@/lib/db/schema'
 import { and, asc, eq, isNull, isNotNull } from 'drizzle-orm'
 import { CalendarView } from './calendar-view'
+import { getSession } from '@/lib/auth/session'
+import { getConnection } from '@/lib/google/oauth'
 
-export default async function CalendarPage() {
-  // Both queries are independent — run in parallel
-  const [rows, taskRows] = await Promise.all([
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ google?: string }>
+}) {
+  const session = await getSession()
+  const [{ google }, connection, rows, taskRows] = await Promise.all([
+    searchParams,
+    session ? getConnection(session.user.id) : Promise.resolve(undefined),
     db.query.calendarEvents.findMany({
       orderBy: [asc(calendarEvents.startsAt)],
       columns: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, location: true, description: true },
@@ -35,5 +43,14 @@ export default async function CalendarPage() {
     completed: t.status === 'completed',
   }))
 
-  return <CalendarView events={events} tasks={tasks} calendarName={process.env.CALDAV_CALENDAR_NAME ?? 'Family'} />
+  return (
+    <CalendarView
+      events={events}
+      tasks={tasks}
+      calendarName={process.env.GOOGLE_CALENDAR_NAME ?? 'Family'}
+      connected={Boolean(connection)}
+      connectedEmail={connection?.googleEmail ?? null}
+      notice={google ?? null}
+    />
+  )
 }

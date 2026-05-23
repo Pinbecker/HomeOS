@@ -71,6 +71,13 @@
       "when": 1779450033839,
       "tag": "0009_breezy_blacklash",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1779527191067,
+      "tag": "0010_mixed_rictor",
+      "breakpoints": true
     }
   ]
 }
