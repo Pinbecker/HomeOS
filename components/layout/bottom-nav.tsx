@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function NavIcon({ children }: { children: React.ReactNode }) {
   return (
@@ -13,17 +13,17 @@ function NavIcon({ children }: { children: React.ReactNode }) {
   )
 }
 
-function RadialIcon({ children }: { children: React.ReactNode }) {
+function MenuIcon({ children }: { children: React.ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8}
-      strokeLinecap="round" strokeLinejoin="round" className="w-[21px] h-[21px]">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}
+      strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
       {children}
     </svg>
   )
 }
 
 type Tab = { href: string; label: string; exact?: boolean; icon: React.ReactNode }
-type RadialItem = { href: string; label: string; angle: number; bg: string; icon: React.ReactNode }
+type MenuItem = { href: string; label: string; color: string; icon: React.ReactNode }
 
 const leftTabs: Tab[] = [
   {
@@ -38,19 +38,6 @@ const leftTabs: Tab[] = [
     ),
   },
   {
-    href: '/household/tasks',
-    label: 'Tasks',
-    icon: (
-      <NavIcon>
-        <polyline points="9 11 12 14 22 4" />
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-      </NavIcon>
-    ),
-  },
-]
-
-const rightTabs: Tab[] = [
-  {
     href: '/household/shopping',
     label: 'Shopping',
     icon: (
@@ -58,6 +45,19 @@ const rightTabs: Tab[] = [
         <circle cx="9" cy="21" r="1" />
         <circle cx="20" cy="21" r="1" />
         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+      </NavIcon>
+    ),
+  },
+]
+
+const rightTabs: Tab[] = [
+  {
+    href: '/household/tasks',
+    label: 'Tasks',
+    icon: (
+      <NavIcon>
+        <polyline points="9 11 12 14 22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
       </NavIcon>
     ),
   },
@@ -72,96 +72,125 @@ const rightTabs: Tab[] = [
   },
 ]
 
-// Angles: standard math trig (270° = straight up in screen).
-// Spread 205°→335° at R=145 gives 81px centre-to-centre between adjacent items —
-// enough clearance for 48px circles and their labels at the varying heights.
-const radialItems: RadialItem[] = [
+const menuItems: MenuItem[] = [
   {
     href: '/watch',
     label: 'Watch',
-    angle: 205,
-    bg: '#FF3B30',
+    color: 'var(--red)',
     icon: (
-      <RadialIcon>
+      <MenuIcon>
         <polygon points="23 7 16 12 23 17 23 7" />
         <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-      </RadialIcon>
+      </MenuIcon>
     ),
   },
   {
     href: '/household',
     label: 'Household',
-    angle: 238,
-    bg: '#34C759',
+    color: 'var(--sage)',
     icon: (
-      <RadialIcon>
+      <MenuIcon>
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         <polyline points="9 22 9 12 15 12 15 22" />
-      </RadialIcon>
+      </MenuIcon>
     ),
   },
   {
     href: '/inbox',
     label: 'Inbox',
-    angle: 270,
-    bg: '#007AFF',
+    color: 'var(--accent)',
     icon: (
-      <RadialIcon>
+      <MenuIcon>
         <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
         <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
-      </RadialIcon>
+      </MenuIcon>
     ),
   },
   {
-    href: '/calendar',
-    label: 'Calendar',
-    angle: 302,
-    bg: '#FF9500',
+    href: '/reminders',
+    label: 'Reminders',
+    color: 'var(--amber)',
     icon: (
-      <RadialIcon>
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8" y1="2" x2="8" y2="6" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-      </RadialIcon>
+      <MenuIcon>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </MenuIcon>
     ),
   },
   {
     href: '/notes',
     label: 'Notes',
-    angle: 335,
-    bg: '#5856D6',
+    color: '#5856D6',
     icon: (
-      <RadialIcon>
+      <MenuIcon>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
         <line x1="16" y1="13" x2="8" y2="13" />
         <line x1="16" y1="17" x2="8" y2="17" />
         <polyline points="10 9 9 9 8 9" />
-      </RadialIcon>
+      </MenuIcon>
     ),
   },
 ]
 
-// Open stagger: center item (Inbox) first, outer items last
-const OPEN_DELAYS = [50, 25, 0, 25, 50]
-const RADIUS = 145
-
-function radialPos(angleDeg: number, r: number) {
-  const rad = (angleDeg * Math.PI) / 180
-  return {
-    x: Math.round(Math.cos(rad) * r),
-    y: Math.round(Math.sin(rad) * r),
-  }
-}
+// iOS sheet easing — fast out, gentle settle. Matches UISheetPresentationController.
+const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const CLOSE_THRESHOLD = 90 // px dragged down before release dismisses
 
 export function BottomNav() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [dragY, setDragY] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const dragStartRef = useRef<number | null>(null)
 
   function isActive(href: string, exact = false) {
     if (exact) return pathname === href
     return pathname.startsWith(href)
+  }
+
+  function close() {
+    setOpen(false)
+    setDragY(0)
+    setDragging(false)
+    dragStartRef.current = null
+  }
+
+  // Lock background scroll + close on Escape while the sheet is open.
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  function onTouchStart(e: React.TouchEvent) {
+    dragStartRef.current = e.touches[0].clientY
+    setDragging(true)
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    if (dragStartRef.current === null) return
+    const delta = e.touches[0].clientY - dragStartRef.current
+    // Only follow downward drags; a touch of resistance on the upward edge.
+    setDragY(delta > 0 ? delta : delta * 0.25)
+  }
+
+  function onTouchEnd() {
+    if (dragY > CLOSE_THRESHOLD) {
+      close()
+    } else {
+      setDragY(0)
+      setDragging(false)
+      dragStartRef.current = null
+    }
   }
 
   return (
@@ -170,15 +199,113 @@ export function BottomNav() {
       <div
         className="fixed inset-0 z-40"
         style={{
-          background: 'rgba(0,0,0,0.48)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          opacity: open ? 1 : 0,
+          background: 'rgba(0,0,0,0.45)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
+          opacity: open ? Math.max(0, 1 - dragY / 320) : 0,
           pointerEvents: open ? 'auto' : 'none',
-          transition: 'opacity 0.22s ease',
+          transition: dragging ? 'none' : 'opacity 0.4s ease',
         }}
-        onClick={() => setOpen(false)}
+        onClick={close}
       />
+
+      {/* Bottom sheet */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quick menu"
+        className="fixed inset-x-0 bottom-0 z-[60]"
+        style={{
+          transform: open ? `translateY(${dragY}px)` : 'translateY(110%)',
+          transition: dragging ? 'none' : `transform 0.46s ${SHEET_EASE}`,
+          pointerEvents: open ? 'auto' : 'none',
+          willChange: 'transform',
+        }}
+      >
+        <div
+          className="mx-auto max-w-md bg-surface border-t border-border"
+          style={{
+            borderTopLeftRadius: 26,
+            borderTopRightRadius: 26,
+            boxShadow: '0 -10px 40px rgba(0,0,0,0.18)',
+            paddingBottom: 'calc(env(safe-area-inset-bottom) + 22px)',
+          }}
+        >
+          {/* Grabber — drag down to dismiss */}
+          <div
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}
+          >
+            <div
+              style={{
+                width: 38,
+                height: 5,
+                borderRadius: 3,
+                background: 'var(--text-3)',
+                opacity: 0.4,
+                margin: '0 auto',
+              }}
+            />
+          </div>
+
+          <p
+            className="text-center text-text-3"
+            style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}
+          >
+            Jump to
+          </p>
+
+          <div
+            className="grid grid-cols-3 gap-y-5 px-5"
+            style={{ justifyItems: 'center' }}
+          >
+            {menuItems.map((item, idx) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={close}
+                aria-label={item.label}
+                className="flex flex-col items-center gap-2 active:scale-90"
+                style={{
+                  width: 84,
+                  // Staggered rise-and-fade as the sheet settles.
+                  opacity: open ? 1 : 0,
+                  transform: open ? 'translateY(0)' : 'translateY(14px)',
+                  transition: `transform 0.5s ${SHEET_EASE} ${idx * 35 + 60}ms, opacity 0.4s ease ${idx * 35 + 60}ms`,
+                }}
+              >
+                <div
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 19,
+                    background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: item.color,
+                    transition: 'transform 0.15s ease',
+                  }}
+                >
+                  {item.icon}
+                </div>
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: 'var(--text-1)',
+                    letterSpacing: '0.01em',
+                  }}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <nav
         className="fixed bottom-0 inset-x-0 z-50 bg-nav-bg backdrop-blur-2xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+10px)]"
@@ -186,12 +313,12 @@ export function BottomNav() {
       >
         <div className="flex items-start pt-2 pb-1 px-1" style={{ overflow: 'visible' }}>
 
-          {/* Left tabs: Home, Tasks */}
+          {/* Left tabs */}
           {leftTabs.map(tab => (
             <Link
               key={tab.href}
               href={tab.href}
-              onClick={() => setOpen(false)}
+              onClick={close}
               className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
                 isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
               }`}
@@ -201,100 +328,31 @@ export function BottomNav() {
             </Link>
           ))}
 
-          {/* Centre: radial menu button */}
+          {/* Centre: menu button */}
           <div className="flex-1 flex flex-col items-center" style={{ overflow: 'visible' }}>
-            <div
-              style={{
-                position: 'relative',
-                width: 46,
-                height: 46,
-                marginTop: -18,
-                overflow: 'visible',
-                flexShrink: 0,
-              }}
-            >
-              {/* Radial items fan out from button center.
-                  Using <Link> (not router.push) so Next.js prefetches these routes
-                  on mount — the links are in the DOM even when visually hidden. */}
-              {radialItems.map((item, idx) => {
-                const { x, y } = radialPos(item.angle, RADIUS)
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    aria-label={item.label}
-                    style={{
-                      position: 'absolute',
-                      left: '50%',
-                      top: '50%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 3,
-                      transform: open
-                        ? `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(1)`
-                        : `translate(-50%, -50%) scale(0.25)`,
-                      opacity: open ? 1 : 0,
-                      transition: open
-                        ? `transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) ${OPEN_DELAYS[idx]}ms, opacity 0.18s ease ${OPEN_DELAYS[idx]}ms`
-                        : 'transform 0.18s ease, opacity 0.14s ease',
-                      pointerEvents: open ? 'auto' : 'none',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: '50%',
-                        background: item.bg,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        boxShadow: `0 3px 10px ${item.bg}4D`,
-                      }}
-                    >
-                      {item.icon}
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: '#fff',
-                        textShadow: '0 1px 4px rgba(0,0,0,0.55)',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1,
-                        letterSpacing: '0.01em',
-                      }}
-                    >
-                      {item.label}
-                    </span>
-                  </Link>
-                )
-              })}
-
-              {/* The center button itself */}
+            <div style={{ position: 'relative', width: 46, height: 46, marginTop: -18, flexShrink: 0 }}>
               <button
-                onClick={() => setOpen(o => !o)}
+                onClick={() => (open ? close() : setOpen(true))}
                 aria-label={open ? 'Close menu' : 'Open menu'}
+                aria-expanded={open}
                 style={{
                   position: 'absolute',
                   inset: 0,
                   borderRadius: 14,
-                  background: open ? '#3A3A3C' : '#007AFF',
+                  background: open ? 'var(--surface-2)' : 'var(--accent)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxShadow: open
-                    ? '0 2px 8px rgba(0,0,0,0.35)'
-                    : '0 3px 12px rgba(0,122,255,0.45)',
+                    ? '0 2px 8px rgba(0,0,0,0.15)'
+                    : '0 4px 14px rgba(0,122,255,0.35)',
                   transition: 'background 0.22s ease, box-shadow 0.22s ease',
                 }}
               >
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="white"
+                  stroke={open ? 'var(--text-1)' : 'white'}
                   strokeWidth={2.2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -302,7 +360,7 @@ export function BottomNav() {
                     width: 20,
                     height: 20,
                     transform: open ? 'rotate(45deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
                   }}
                 >
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -313,18 +371,18 @@ export function BottomNav() {
 
             <span
               className="text-[9.5px] font-semibold tracking-wide"
-              style={{ color: open ? '#007AFF' : '#8E8E93', transition: 'color 0.2s ease' }}
+              style={{ color: open ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s ease' }}
             >
               More
             </span>
           </div>
 
-          {/* Right tabs: Shopping, Life */}
+          {/* Right tabs */}
           {rightTabs.map(tab => (
             <Link
               key={tab.href}
               href={tab.href}
-              onClick={() => setOpen(false)}
+              onClick={close}
               className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
                 isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
               }`}

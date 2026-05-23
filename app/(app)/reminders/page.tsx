@@ -2,17 +2,6 @@ import Link from 'next/link'
 import { requireSession } from '@/lib/auth/session'
 import { daysUntil, formatShortDate, getRecordsReminderViewData } from '@/lib/entities/records'
 
-function BackLink() {
-  return (
-    <Link href="/life/admin" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-        <path d="M10 3L5 8l5 5" />
-      </svg>
-      <span className="text-[16px]">Vault</span>
-    </Link>
-  )
-}
-
 function DueBadge({ timestamp }: { timestamp: number }) {
   const days = daysUntil(timestamp)
   const label = days < 0 ? 'Overdue' : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days}d`
@@ -25,17 +14,13 @@ function DueBadge({ timestamp }: { timestamp: number }) {
   )
 }
 
-export default async function RecordsRemindersPage() {
+export default async function RemindersPage() {
   await requireSession()
   const data = await getRecordsReminderViewData()
 
   return (
     <div className="flex flex-col max-w-lg mx-auto pb-4">
-      <div className="px-3 pt-3 pb-2">
-        <BackLink />
-      </div>
-
-      <header className="px-5 pt-1 pb-5">
+      <header className="px-5 pt-5 pb-5">
         <h1 className="text-[34px] leading-tight font-extrabold text-text-1 tracking-tight">Reminders</h1>
         <p className="text-[16px] text-text-2 mt-1">Life admin dates and household follow-ups.</p>
       </header>

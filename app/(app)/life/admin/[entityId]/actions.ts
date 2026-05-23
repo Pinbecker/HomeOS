@@ -75,9 +75,23 @@ export async function updateEntityDetails(entityId: string, formData: FormData) 
       title: String(formData.get('title') ?? '').trim(),
       subtitle: String(formData.get('subtitle') ?? '').trim() || null,
       fields: cleanFieldsFromForm(formData),
+      notes: String(formData.get('notes') ?? '').trim() || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(records.id, entityId))
+
+  await revalidateEntity(entityId, existing.category)
+}
+
+export async function updateEntityRenewal(entityId: string, formData: FormData) {
+  await requireSession()
+  const existing = await db.query.records.findFirst({ where: eq(records.id, entityId) })
+  if (!existing) return
+
+  await db.update(records)
+    .set({
       renewalLabel: String(formData.get('renewalLabel') ?? '').trim() || null,
       renewalDate: dateFromInput(formData.get('renewalDate')),
-      notes: String(formData.get('notes') ?? '').trim() || null,
       updatedAt: new Date(),
     })
     .where(eq(records.id, entityId))

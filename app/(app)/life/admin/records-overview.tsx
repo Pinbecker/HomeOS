@@ -159,7 +159,7 @@ function CategoryEditor({ initial, onClose, onSaved }: {
       label: label.trim(),
       icon: icon.trim() || '📁',
       color,
-      desc: desc.trim() || 'Household records',
+      desc: desc.trim() || 'Household things',
       href: `/life/${key}`,
       count: initial?.count ?? 0,
     })
@@ -290,7 +290,7 @@ function DeleteConfirm({ category, onCancel, onConfirm }: {
           <p className="text-[17px] font-bold text-text-1">Delete “{category.label}”?</p>
           <p className="text-[13.5px] text-text-2 mt-1.5">
             {category.count > 0
-              ? `This category has ${category.count} ${category.count === 1 ? 'record' : 'records'}. They won’t be deleted, but you’ll need another category to find them.`
+              ? `This category has ${category.count} ${category.count === 1 ? 'item' : 'items'}. They will not be deleted, but you will need another category to find them.`
               : 'This category will be removed.'}
           </p>
         </div>
@@ -357,8 +357,8 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
       </div>
 
       <header className="px-5 pt-1 pb-5">
-        <h1 className="text-[40px] leading-[0.95] font-extrabold text-text-1 tracking-tight">Records</h1>
-        <p className="text-[18px] text-text-2 mt-2">The important bits of home, connected.</p>
+        <h1 className="text-[34px] leading-tight font-extrabold text-text-1 tracking-tight">Vault</h1>
+        <p className="text-[16px] text-text-2 mt-1">The important bits, all in one place.</p>
       </header>
 
       <section className="mx-4 mb-4">
@@ -407,45 +407,37 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
         </section>
       ) : (
         <>
-          <section className="mx-4 mb-5">
-            <div className="bg-surface border border-border rounded-[26px] shadow-[0_12px_28px_rgba(0,0,0,0.04)] p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="w-3.5 h-3.5 rounded-full bg-amber shadow-[0_0_0_6px_rgba(255,149,0,0.14)]" />
-                <h2 className="text-[21px] font-extrabold text-text-1">Needs attention</h2>
+          {data.attention.length > 0 && (
+            <section className="mx-4 mb-5">
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <span className="w-2 h-2 rounded-full bg-amber" />
+                <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">Needs attention</p>
               </div>
-
-              {data.attention.length > 0 ? (
-                <div>
-                  {data.attention.map((item, index) => (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      className={`grid grid-cols-[1fr_auto] gap-3 py-3 active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[16px] font-semibold text-text-1 truncate">{item.title}</p>
-                        <p className="text-[13px] text-text-2 mt-0.5 truncate">{item.subtitle}</p>
-                      </div>
-                      <span className={`text-[12px] font-bold px-2.5 py-1 rounded-full self-start ${
-                        item.tone === 'red'
-                          ? 'bg-red-bg text-red'
-                          : item.tone === 'orange'
-                            ? 'bg-amber-bg text-amber'
-                            : 'bg-accent-bg text-accent'
-                      }`}>
-                        {item.label}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-3">
-                  <p className="text-[15px] font-semibold text-text-1">All calm</p>
-                  <p className="text-[13px] text-text-2 mt-0.5">No renewals or due dates need attention right now.</p>
-                </div>
-              )}
-            </div>
-          </section>
+              <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                {data.attention.map((item, index) => (
+                  <Link
+                    key={item.id}
+                    href={item.href}
+                    className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14.5px] font-semibold text-text-1 truncate">{item.title}</p>
+                      <p className="text-[12px] text-text-2 mt-0.5 truncate">{item.subtitle}</p>
+                    </div>
+                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                      item.tone === 'red'
+                        ? 'bg-red-bg text-red'
+                        : item.tone === 'orange'
+                          ? 'bg-amber-bg text-amber'
+                          : 'bg-accent-bg text-accent'
+                    }`}>
+                      {item.label}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="mx-4 mb-6">
             <div className="flex items-center justify-between mb-2.5 px-1">

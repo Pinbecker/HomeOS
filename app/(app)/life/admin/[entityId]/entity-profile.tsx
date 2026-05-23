@@ -1,34 +1,19 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
-import Link from 'next/link'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { EntityProfileData, HouseholdEntity } from '@/lib/entities/records'
+import type { EntityProfileData } from '@/lib/entities/records'
 import { SwipeRow } from '@/components/ui/swipe-row'
 import { createPin } from '@/app/(app)/pins/actions'
-import { toggleTask } from '@/app/(app)/household/tasks/actions'
 import {
   addEntityReminder,
   deleteEntityReminder,
   updateEntityReminder,
-  addLinkedTask,
-  addRelatedEntity,
-  removeRelatedEntity,
-  attachEntityDocument,
   updateEntityDetails,
+  updateEntityRenewal,
 } from './actions'
 
 type Field = { label: string; value: string }
-type RelatedOption = Pick<HouseholdEntity, 'id' | 'title' | 'subtitle' | 'icon' | 'color' | 'kindLabel'>
-
-function startOfToday() {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-}
-
-function daysUntil(timestamp: number) {
-  return Math.round((timestamp - startOfToday()) / 86400000)
-}
 
 function formatShortDate(timestamp: number) {
   const d = new Date(timestamp)
@@ -129,30 +114,17 @@ function SubmitButton({ label, pending }: { label: string; pending: boolean }) {
 
 export function EntityProfile({
   profile,
-  relatedOptions,
 }: {
   profile: EntityProfileData
-  relatedOptions: RelatedOption[]
 }) {
   const router = useRouter()
   const { entity } = profile
   const [editing, setEditing] = useState(false)
-  const [openPanel, setOpenPanel] = useState<null | 'task' | 'reminder' | 'document' | 'related'>(null)
+  const [openPanel, setOpenPanel] = useState<null | 'reminder' | 'renewal'>(null)
   const [editingReminderId, setEditingReminderId] = useState<string | null>(null)
   const [fields, setFields] = useState<Field[]>(profile.facts.length ? profile.facts : [{ label: '', value: '' }])
   const [pending, startTransition] = useTransition()
   const [pinnedFlash, setPinnedFlash] = useState<string | null>(null)
-  const [doneTasks, setDoneTasks] = useState<Set<string>>(new Set())
-
-  function toggleLinkedTask(id: string) {
-    setDoneTasks(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-    startTransition(() => { toggleTask(id) })
-  }
 
   function pinFact(fact: Field) {
     if (!fact.value.trim()) return
@@ -167,9 +139,6 @@ export function EntityProfile({
       setTimeout(() => setPinnedFlash(null), 2200)
     })
   }
-
-  const relatedIds = useMemo(() => new Set(profile.relatedEntities.map(related => related.id)), [profile.relatedEntities])
-  const availableRelated = relatedOptions.filter(option => !relatedIds.has(option.id))
 
   function submitAction(action: (formData: FormData) => Promise<void>, formData: FormData, closePanel = true) {
     formData.set('timezoneOffset', String(new Date().getTimezoneOffset()))
@@ -187,6 +156,17 @@ export function EntityProfile({
       await updateEntityReminder(reminderId, entity.id, formData)
       router.refresh()
       setEditingReminderId(null)
+    })
+  }
+
+  function clearRenewal() {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('renewalLabel', '')
+      fd.set('renewalDate', '')
+      await updateEntityRenewal(entity.id, fd)
+      router.refresh()
+      setOpenPanel(null)
     })
   }
 
@@ -270,17 +250,6 @@ export function EntityProfile({
               </button>
             </div>
 
-            <div>
-              <p className="text-[12px] font-bold uppercase tracking-wide text-text-3 mb-2">Renewal or due date</p>
-              <div className="bg-surface-2 rounded-2xl overflow-hidden">
-                <input name="renewalLabel" defaultValue={entity.renewalLabel ?? ''} placeholder="Label, e.g. Renews" className="w-full px-4 py-3 bg-transparent outline-none text-[15px] text-text-1" />
-                <label className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border">
-                  <span className="text-[14px] font-medium text-text-2">Pick a date</span>
-                  <input name="renewalDate" type="date" defaultValue={toInputDate(entity.renewalDate)} className="min-w-0 bg-transparent outline-none text-[15px] text-text-1 text-right" />
-                </label>
-              </div>
-            </div>
-
             <textarea name="notes" defaultValue={entity.notes ?? ''} placeholder="Notes" rows={3} className="w-full bg-surface-2 rounded-2xl px-4 py-3 text-[15px] text-text-1 outline-none resize-none" />
             <SubmitButton label="Done" pending={pending} />
           </form>
@@ -319,22 +288,8 @@ export function EntityProfile({
         {profile.facts.length > 0 || entity.renewalDate ? (
           <>
             <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-              {entity.renewalDate && (
-                <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-bg">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-[10px] bg-amber/15 flex items-center justify-center text-amber shrink-0">
-                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                        <rect x="3" y="3.5" width="10" height="9.5" rx="2" />
-                        <path d="M5.5 2.5v2M10.5 2.5v2M3 6.5h10" />
-                      </svg>
-                    </div>
-                    <p className="text-[13.5px] font-semibold text-amber truncate">{entity.renewalLabel || 'Due date'}</p>
-                  </div>
-                  <p className="text-[14.5px] font-bold text-text-1 text-right shrink-0">{formatDateWithYear(entity.renewalDate)}</p>
-                </div>
-              )}
               {profile.facts.map((fact, index) => {
-                const showBorder = index > 0 || !!entity.renewalDate
+                const showBorder = index > 0
                 const row = (
                   <div className="flex items-baseline justify-between gap-4 px-4 py-3">
                     <p className="text-[13.5px] text-text-2 shrink-0">{fact.label || 'Detail'}</p>
@@ -375,54 +330,61 @@ export function EntityProfile({
         </Section>
       )}
 
-      <Section title="Tasks" action={<button onClick={() => setOpenPanel('task')} className="text-[12px] font-semibold text-accent">Add task</button>}>
-        {openPanel === 'task' && (
+      <Section
+        title="Renewal"
+        action={
+          <button
+            onClick={() => setOpenPanel(prev => prev === 'renewal' ? null : 'renewal')}
+            className="text-[12px] font-semibold text-accent"
+          >
+            {entity.renewalDate ? 'Edit' : 'Add renewal'}
+          </button>
+        }
+      >
+        {openPanel === 'renewal' && (
           <InlinePanel onCancel={() => setOpenPanel(null)}>
-            <form action={formData => submitAction(formDataForTask => addLinkedTask(entity.id, formDataForTask), formData)} className="flex flex-col gap-3">
-              <input name="title" required placeholder={`Task for ${entity.title}`} className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none" />
+            <form action={formData => submitAction(fd => updateEntityRenewal(entity.id, fd), formData)} className="flex flex-col gap-3">
+              <input
+                name="renewalLabel"
+                defaultValue={entity.renewalLabel ?? ''}
+                placeholder="Label, e.g. Renews, Expires"
+                className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none"
+              />
               <label className="bg-surface-2 rounded-xl px-3 py-2">
-                <span className="block text-[12px] font-semibold text-text-2 mb-1">Due date</span>
-                <input name="dueDate" type="date" className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+                <span className="block text-[12px] font-semibold text-text-2 mb-1">Date</span>
+                <input name="renewalDate" type="date" defaultValue={toInputDate(entity.renewalDate)} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
               </label>
-              <SubmitButton label="Add task" pending={pending} />
+              <SubmitButton label="Save renewal" pending={pending} />
             </form>
           </InlinePanel>
         )}
-        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'task' ? 'mt-3' : ''}`}>
-          {profile.linkedTasks.length > 0 ? (
-            profile.linkedTasks.map((task, index) => {
-              const done = doneTasks.has(task.id)
-              return (
-                <div key={task.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-                  <button
-                    onClick={() => toggleLinkedTask(task.id)}
-                    className={`w-[20px] h-[20px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform ${done ? 'bg-sage' : 'border-2 border-border'}`}
-                    aria-label={done ? `Mark "${task.title}" incomplete` : `Mark "${task.title}" complete`}
-                  >
-                    {done && (
-                      <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                        <path d="M3 8l3.5 3.5L13 4.5" />
-                      </svg>
-                    )}
-                  </button>
-                  <Link href={task.href} className="flex-1 min-w-0 flex items-center gap-3 active:opacity-70">
-                    <p className={`flex-1 text-[14.5px] font-medium truncate ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
-                    {task.dueDate && !done && (
-                      <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${daysUntil(task.dueDate) <= 0 ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'}`}>
-                        {formatShortDate(task.dueDate)}
-                      </span>
-                    )}
-                  </Link>
+        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'renewal' ? 'mt-3' : ''}`}>
+          {entity.renewalDate ? (
+            <SwipeRow
+              onDelete={clearRenewal}
+              deleteLabel="Clear"
+              onEdit={() => setOpenPanel(prev => prev === 'renewal' ? null : 'renewal')}
+            >
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-[10px] bg-amber/15 flex items-center justify-center text-amber shrink-0">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <rect x="3" y="3.5" width="10" height="9.5" rx="2" />
+                      <path d="M5.5 2.5v2M10.5 2.5v2M3 6.5h10" />
+                    </svg>
+                  </div>
+                  <p className="text-[13.5px] font-semibold text-amber truncate">{entity.renewalLabel || 'Due date'}</p>
                 </div>
-              )
-            })
+                <p className="text-[14.5px] font-bold text-text-1 text-right shrink-0">{formatDateWithYear(entity.renewalDate)}</p>
+              </div>
+            </SwipeRow>
           ) : (
-            <EmptyRow icon="✓" title="No linked tasks" subtitle="Add a job that belongs with this." />
+            <EmptyRow icon="📅" title="No renewal set" subtitle="Add a due date or renewal date for this record." />
           )}
         </div>
       </Section>
 
-      <Section title="Reminders" action={<button onClick={() => setOpenPanel('reminder')} className="text-[12px] font-semibold text-accent">Add reminder</button>}>
+      <Section title="Reminders" action={<button onClick={() => setOpenPanel(prev => prev === 'reminder' ? null : 'reminder')} className="text-[12px] font-semibold text-accent">Add reminder</button>}>
         {openPanel === 'reminder' && (
           <InlinePanel onCancel={() => setOpenPanel(null)}>
             <form action={formData => submitAction(formDataForReminder => addEntityReminder(entity.id, formDataForReminder), formData)} className="flex flex-col gap-3">
@@ -483,78 +445,6 @@ export function EntityProfile({
             ))
           ) : (
             <EmptyRow icon="⏱" title="No reminders yet" subtitle="Add renewals, services and follow-ups here." />
-          )}
-        </div>
-      </Section>
-
-      <Section title="Documents" action={<button onClick={() => setOpenPanel('document')} className="text-[12px] font-semibold text-accent">Add document</button>}>
-        {openPanel === 'document' && (
-          <InlinePanel onCancel={() => setOpenPanel(null)}>
-            <form action={formData => submitAction(formDataForDocument => attachEntityDocument(entity.id, formDataForDocument), formData)} className="flex flex-col gap-3">
-              <input name="file" type="file" required className="w-full bg-surface-2 rounded-xl px-3 py-3 text-[14px] text-text-1 outline-none" />
-              <SubmitButton label="Attach document" pending={pending} />
-            </form>
-          </InlinePanel>
-        )}
-        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'document' ? 'mt-3' : ''}`}>
-          {profile.linkedDocuments.length > 0 ? (
-            profile.linkedDocuments.map((document, index) => (
-              <div key={document.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <div className="w-9 h-9 rounded-[11px] bg-accent-bg flex items-center justify-center text-accent text-[17px] shrink-0">□</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14.5px] font-semibold text-text-1 truncate">{document.name}</p>
-                  <p className="text-[12px] text-text-2 mt-0.5">{document.mimeType}</p>
-                </div>
-              </div>
-            ))
-          ) : (
-            <EmptyRow icon="□" title="No documents attached" subtitle="Attach policies, warranties and PDFs here." />
-          )}
-        </div>
-      </Section>
-
-      <Section title="Related" action={<button onClick={() => setOpenPanel('related')} className="text-[12px] font-semibold text-accent">Add related</button>}>
-        {openPanel === 'related' && (
-          <InlinePanel onCancel={() => setOpenPanel(null)}>
-            {availableRelated.length > 0 ? (
-              <form action={formData => submitAction(formDataForRelated => addRelatedEntity(entity.id, formDataForRelated), formData)} className="flex flex-col gap-3">
-                <select name="relatedId" required className="h-11 bg-surface-2 rounded-xl px-3 text-[15px] text-text-1 outline-none">
-                  <option value="">Choose something</option>
-                  {availableRelated.map(option => (
-                    <option key={option.id} value={option.id}>
-                      {option.title}
-                    </option>
-                  ))}
-                </select>
-                <SubmitButton label="Link" pending={pending} />
-              </form>
-            ) : (
-              <p className="text-[14px] text-text-2">Everything else is already linked.</p>
-            )}
-          </InlinePanel>
-        )}
-        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'related' ? 'mt-3' : ''}`}>
-          {profile.relatedEntities.length > 0 ? (
-            profile.relatedEntities.map((related, index) => (
-              <SwipeRow
-                key={related.id}
-                wrapClassName={index > 0 ? 'border-t border-border' : ''}
-                onDelete={() => startTransition(async () => { await removeRelatedEntity(entity.id, related.id); router.refresh() })}
-                deleteLabel="Unlink"
-              >
-                <Link href={related.href} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
-                  <div className="w-9 h-9 rounded-[11px] flex items-center justify-center text-[18px] shrink-0" style={{ background: `${related.color}1F` }}>
-                    {related.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14.5px] font-semibold text-text-1 truncate">{related.title}</p>
-                    <p className="text-[12px] text-text-2 mt-0.5 truncate">{related.subtitle || related.kindLabel}</p>
-                  </div>
-                </Link>
-              </SwipeRow>
-            ))
-          ) : (
-            <EmptyRow icon="↔" title="Nothing connected yet" subtitle="Link providers, policies and household things." />
           )}
         </div>
       </Section>

@@ -10,7 +10,7 @@ function BackLink() {
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
         <path d="M10 3L5 8l5 5" />
       </svg>
-      <span className="text-[16px]">Records</span>
+      <span className="text-[16px]">Vault</span>
     </Link>
   )
 }

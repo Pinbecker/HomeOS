@@ -31,21 +31,12 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
 
   return (
     <div className="flex flex-col max-w-lg mx-auto">
-      <div className="px-3 pt-3 pb-1">
-        <Link href="/household" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1 w-fit">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M10 3L5 8l5 5" />
-          </svg>
-          <span className="text-[16px]">Household</span>
-        </Link>
-      </div>
-
-      <header className="px-5 pt-1 pb-3">
+      <header className="px-5 pt-5 pb-3">
         <h1 className="text-[28px] font-bold text-text-1 tracking-tight">Shopping</h1>
       </header>
 
-      {/* All — smart list */}
-      <div className="mx-4 mb-5">
+      {/* Smart lists */}
+      <div className="mx-4 mb-5 flex flex-col gap-2">
         <Link
           href="/household/shopping/all"
           className="bg-surface rounded-xl px-3.5 py-3 flex items-center gap-3 active:opacity-60 transition-opacity"
@@ -60,10 +51,8 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
           <span className="flex-1 text-[16px] font-medium text-text-1">All Items</span>
           <span className="text-[16px] font-medium text-text-2">{totalActive}</span>
         </Link>
-      </div>
 
-      {general && (
-        <div className="mx-4 mb-5">
+        {general && (
           <Link
             href={`/household/shopping/${general.id}`}
             className="bg-surface rounded-xl px-3.5 py-3 flex items-center gap-3 active:opacity-60 transition-opacity"
@@ -76,8 +65,8 @@ export function ShoppingOverview({ shops, totalActive }: { shops: ShopCard[]; to
             <span className="flex-1 text-[16px] font-medium text-text-1">General</span>
             <span className="text-[16px] font-medium text-text-2">{general.count}</span>
           </Link>
-        </div>
-      )}
+        )}
+      </div>
 
       <p className="px-5 mb-2 text-[13px] font-semibold text-text-2">Shops</p>
 
