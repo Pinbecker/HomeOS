@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { allDayAsLocal, localDayKey } from '@/lib/utils/calendar'
@@ -127,6 +127,11 @@ export function CalendarView({
   const [detail, setDetail] = useState<CalEvent | null>(null)
   const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
   const [, startTransition] = useTransition()
+
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 60_000)
+    return () => clearInterval(id)
+  }, [router])
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
