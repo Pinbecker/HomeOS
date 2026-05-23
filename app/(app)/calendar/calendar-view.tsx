@@ -475,6 +475,15 @@ export function CalendarView({
                     {maxPills > 0 && overflow > 0 && (
                       <span className="text-[8px] text-text-3 px-0.5 flex-shrink-0">+{overflow}</span>
                     )}
+
+                    {/* Compact zoom: no room for pills — show coloured dots instead */}
+                    {maxPills === 0 && allItems.length > 0 && (
+                      <div className="flex items-center gap-[3px] px-0.5 flex-shrink-0">
+                        {allItems.slice(0, 4).map(item => (
+                          <div key={item.id} className="w-[5px] h-[5px] rounded-full" style={{ background: item.color }} />
+                        ))}
+                      </div>
+                    )}
                   </button>
                 )
               })}
@@ -484,16 +493,16 @@ export function CalendarView({
         <div className="h-3" />
       </div>
 
-      {/* ── Selected day panel ── */}
-      <div className="flex-shrink-0 border-t border-border bg-bg">
-        <div className="flex items-center justify-between px-4 pt-2 pb-0.5">
+      {/* ── Selected day panel — capped at 35% of screen, scrolls beyond ── */}
+      <div className="flex-shrink-0 flex flex-col border-t border-border bg-bg" style={{ maxHeight: '35vh' }}>
+        <div className="flex items-center justify-between px-4 pt-2 pb-0.5 flex-shrink-0">
           <p className="text-[13px] font-semibold text-text-2">{fullDate(selectedDate)}</p>
           {connected && (
             <button onClick={openCreate} className="text-accent text-[14px] font-medium active:opacity-60">+ Add</button>
           )}
         </div>
 
-        <div className="overflow-y-auto px-4 pb-2" style={{ maxHeight: 'min(38vh, 260px)' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-2">
           {selectedEvents.length === 0 && selectedTasks.length === 0 ? (
             <p className="text-[14px] text-text-3 py-3 text-center">Nothing on</p>
           ) : (
