@@ -162,12 +162,25 @@ export function CalendarView({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinchRef = useRef<{ dist: number; height: number } | null>(null)
+  const scrollAdjustRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
 
   // Scroll to today's month on mount
   useEffect(() => {
+    const container = scrollRef.current
     const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
-    el?.scrollIntoView({ behavior: 'instant', block: 'start' })
+    if (container && el) {
+      container.scrollTop = el.offsetTop
+    }
   }, [today])
+
+  // Restore scroll ratio after rowHeight changes (prevents jump during pinch zoom)
+  useEffect(() => {
+    const adj = scrollAdjustRef.current
+    const container = scrollRef.current
+    if (!adj || !container || adj.scrollHeight === 0) return
+    container.scrollTop = (adj.scrollTop / adj.scrollHeight) * container.scrollHeight
+    scrollAdjustRef.current = null
+  }, [rowHeight])
 
   // Lock page-level scroll — the calendar manages its own internal scroll
   useEffect(() => {
@@ -226,8 +239,12 @@ export function CalendarView({
       const dist = Math.sqrt(dx * dx + dy * dy)
       const ratio = dist / pinchRef.current.dist
       const newH = Math.min(MAX_ROW_H, Math.max(MIN_ROW_H, Math.round(pinchRef.current.height * ratio)))
-      rowHeightRef.current = newH
-      setRowHeight(newH)
+      if (newH !== rowHeightRef.current) {
+        // Snapshot scroll position before the height change so we can restore it
+        scrollAdjustRef.current = { scrollTop: el!.scrollTop, scrollHeight: el!.scrollHeight }
+        rowHeightRef.current = newH
+        setRowHeight(newH)
+      }
     }
 
     function onTouchEnd() {
@@ -295,8 +312,11 @@ export function CalendarView({
 
   function goToday() {
     setSelectedKey(todayKey)
-    document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const container = scrollRef.current
+    const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    if (container && el) {
+      container.scrollTo({ top: el.offsetTop, behavior: 'smooth' })
+    }
   }
 
   function openCreate() { setEditingEvent(null); setEditorOpen(true) }
@@ -411,10 +431,13 @@ export function CalendarView({
                     {maxPills > 0 && displayItems.map(item => (
                       <div
                         key={item.id}
-                        className="w-full rounded text-[9px] font-medium px-1 py-[1.5px] mb-[1.5px] truncate leading-tight flex-shrink-0"
+                        className="w-full rounded px-1 pt-[1.5px] pb-[1.5px] mb-[1.5px] overflow-hidden flex-shrink-0"
                         style={{ background: item.color, color: 'white' }}
                       >
-                        {item.time !== null ? `${cellTime(item.time)} ${item.title}` : item.title}
+                        <p className="text-[9px] font-semibold truncate leading-tight">{item.title}</p>
+                        {rowHeight >= 90 && item.time !== null && (
+                          <p className="text-[8px] opacity-90 truncate leading-tight">{cellTime(item.time)}</p>
+                        )}
                       </div>
                     ))}
 
