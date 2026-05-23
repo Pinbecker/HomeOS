@@ -162,9 +162,10 @@ export function CalendarView({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinchRef = useRef<{ dist: number; height: number } | null>(null)
-  const scrollAdjustRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
+  // Anchor captured at pinch start: which month + how many of its rows are scrolled past the top
+  const zoomAnchorRef = useRef<{ key: string; offsetAboveGrid: number; rowsScrolled: number } | null>(null)
 
-  // Scroll to today's month on mount
+  // Scroll to today's month on mount (container is position:relative, so offsetTop is container-relative)
   useEffect(() => {
     const container = scrollRef.current
     const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
@@ -173,13 +174,14 @@ export function CalendarView({
     }
   }, [today])
 
-  // Restore scroll ratio after rowHeight changes (prevents jump during pinch zoom)
+  // After rowHeight changes during a pinch, re-anchor so the same row stays under the fingers
   useEffect(() => {
-    const adj = scrollAdjustRef.current
+    const anchor = zoomAnchorRef.current
     const container = scrollRef.current
-    if (!adj || !container || adj.scrollHeight === 0) return
-    container.scrollTop = (adj.scrollTop / adj.scrollHeight) * container.scrollHeight
-    scrollAdjustRef.current = null
+    if (!anchor || !container) return
+    const el = document.getElementById(anchor.key)
+    if (!el) return
+    container.scrollTop = el.offsetTop + anchor.offsetAboveGrid + anchor.rowsScrolled * rowHeight
   }, [rowHeight])
 
   // Lock page-level scroll — the calendar manages its own internal scroll
@@ -223,11 +225,37 @@ export function CalendarView({
     const el = scrollRef.current
     if (!el) return
 
+    // Find the month section currently at the top of the viewport and record how far
+    // its rows are scrolled past the top — the fixed reference point for the whole pinch.
+    function captureZoomAnchor() {
+      const container = el!
+      const scrollTop = container.scrollTop
+      const sections = Array.from(container.querySelectorAll<HTMLElement>('[data-monthkey]'))
+      let anchor: HTMLElement | null = null
+      for (const s of sections) {
+        if (s.offsetTop <= scrollTop + 0.5) anchor = s
+        else break
+      }
+      if (!anchor) anchor = sections[0] ?? null
+      if (!anchor) return
+      const gridEl = anchor.querySelector<HTMLElement>('[data-cal-grid]')
+      const headerH = gridEl ? gridEl.offsetTop - anchor.offsetTop : 0
+      const offsetIntoSection = scrollTop - anchor.offsetTop
+      const offsetAboveGrid = Math.min(Math.max(offsetIntoSection, 0), headerH)
+      const offsetIntoGrid = Math.max(0, offsetIntoSection - headerH)
+      zoomAnchorRef.current = {
+        key: anchor.id,
+        offsetAboveGrid,
+        rowsScrolled: offsetIntoGrid / rowHeightRef.current,
+      }
+    }
+
     function onTouchStart(e: TouchEvent) {
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
         const dy = e.touches[0].clientY - e.touches[1].clientY
         pinchRef.current = { dist: Math.sqrt(dx * dx + dy * dy), height: rowHeightRef.current }
+        captureZoomAnchor()
       }
     }
 
@@ -240,15 +268,13 @@ export function CalendarView({
       const ratio = dist / pinchRef.current.dist
       const newH = Math.min(MAX_ROW_H, Math.max(MIN_ROW_H, Math.round(pinchRef.current.height * ratio)))
       if (newH !== rowHeightRef.current) {
-        // Snapshot scroll position before the height change so we can restore it
-        scrollAdjustRef.current = { scrollTop: el!.scrollTop, scrollHeight: el!.scrollHeight }
         rowHeightRef.current = newH
         setRowHeight(newH)
       }
     }
 
-    function onTouchEnd() {
-      pinchRef.current = null
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length < 2) pinchRef.current = null
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -377,7 +403,7 @@ export function CalendarView({
       </div>
 
       {/* ── Scrollable months ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain">
         {monthList.map(({ year, month, grid }) => (
           <section
             key={`${year}-${month}`}
@@ -392,7 +418,7 @@ export function CalendarView({
             </div>
 
             {/* 6-week grid */}
-            <div className="px-2 grid grid-cols-7">
+            <div data-cal-grid className="px-2 grid grid-cols-7">
               {grid.map(d => {
                 const key = localDayKey(d)
                 const inMonth = d.getMonth() === month
