@@ -138,4 +138,12 @@ body {
 
 /* Scrollbar hide */
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* One-shot flash highlight (used when arriving at the calendar from a schedule link) */
+@keyframes flash-highlight {
+  0%   { background-color: var(--accent-bg); }
+  70%  { background-color: var(--accent-bg); }
+  100% { background-color: transparent; }
+}
+.flash-highlight { animation: flash-highlight 1.4s ease-out; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -119,6 +119,7 @@ export function CalendarView({
   connected,
   connectedEmail,
   notice,
+  focusEventId,
 }: {
   events: CalEvent[]
   tasks: CalTask[]
@@ -126,6 +127,7 @@ export function CalendarView({
   connected: boolean
   connectedEmail: string | null
   notice: string | null
+  focusEventId: string | null
 }) {
   const router = useRouter()
   const [today] = useState(() => new Date())
@@ -136,6 +138,7 @@ export function CalendarView({
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
 
   const [selectedKey, setSelectedKey] = useState(todayKey)
+  const [flashEventId, setFlashEventId] = useState<string | null>(null)
   const [visibleMonthKey, setVisibleMonthKey] = useState(`${today.getFullYear()}-${today.getMonth()}`)
   const [detail, setDetail] = useState<CalEvent | null>(null)
   const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
@@ -165,14 +168,36 @@ export function CalendarView({
   // Anchor captured at pinch start: which month + how many of its rows are scrolled past the top
   const zoomAnchorRef = useRef<{ key: string; offsetAboveGrid: number; rowsScrolled: number } | null>(null)
 
-  // Scroll to today's month on mount (container is position:relative, so offsetTop is container-relative)
+  // On mount: jump to today, or — if arriving from a schedule link — to that event's day
+  // with a brief flash highlight on the event row. Runs once (guarded), so the 60s data
+  // refresh doesn't re-trigger it.
+  const didInitScroll = useRef(false)
   useEffect(() => {
+    if (didInitScroll.current) return
     const container = scrollRef.current
-    const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
-    if (container && el) {
-      container.scrollTop = el.offsetTop
+    if (!container) return
+    didInitScroll.current = true
+
+    const focusEvent = focusEventId ? events.find(e => e.id === focusEventId) : null
+    if (focusEvent) {
+      const dayKey = eventDayKeys(focusEvent)[0]
+      setSelectedKey(dayKey)
+      setFlashEventId(focusEvent.id)
+      const cell = container.querySelector<HTMLElement>(`[data-daykey="${dayKey}"]`)
+      if (cell) {
+        container.scrollTop = Math.max(0, cell.offsetTop - rowHeightRef.current)
+      } else {
+        const d = new Date(focusEvent.start)
+        const monthEl = document.getElementById(`cal-month-${d.getFullYear()}-${d.getMonth()}`)
+        if (monthEl) container.scrollTop = monthEl.offsetTop
+      }
+      const t = setTimeout(() => setFlashEventId(null), 1600)
+      return () => clearTimeout(t)
     }
-  }, [today])
+
+    const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    if (el) container.scrollTop = el.offsetTop
+  }, [today, focusEventId, events])
 
   // After rowHeight changes during a pinch, re-anchor so the same row stays under the fingers.
   // useLayoutEffect runs before paint, so the correction happens in the same frame — no flicker.
@@ -345,7 +370,7 @@ export function CalendarView({
     const monthEl = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
     const target = todayCell ?? monthEl
     if (container && target) {
-      container.scrollTo({ top: Math.max(0, target.offsetTop - 8), behavior: 'smooth' })
+      container.scrollTo({ top: Math.max(0, target.offsetTop - rowHeight), behavior: 'smooth' })
     }
   }
 
@@ -447,6 +472,7 @@ export function CalendarView({
                   <button
                     key={key}
                     id={isToday ? 'cal-today' : undefined}
+                    data-daykey={key}
                     onClick={() => setSelectedKey(key)}
                     className="flex flex-col items-start px-0.5 pt-1 pb-0.5 overflow-hidden border-t border-border active:opacity-70"
                     style={{ height: rowHeight }}
@@ -511,7 +537,7 @@ export function CalendarView({
                 <button
                   key={ev.id}
                   onClick={() => setDetail(ev)}
-                  className={`w-full flex items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''}`}
+                  className={`w-full flex items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''} ${flashEventId === ev.id ? 'flash-highlight' : ''}`}
                 >
                   <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: EVENT_COLOR }} />
                   <div className="flex-1 min-w-0">

@@ -77,7 +77,7 @@ function greeting(name: string) {
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; title: string; sortMs: number; timeLabel: string; sub: string | null }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null }
   | { kind: 'task';     id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean }
   | { kind: 'renewal';  id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean }
 
@@ -101,6 +101,7 @@ function buildTimeline(
     entries.push({
       kind: 'calendar',
       id: `cal-${ev.id}`,
+      eventId: ev.id,
       title: ev.title,
       sortMs: ev.startsAt.getTime(),
       timeLabel: ev.allDay ? 'All day' : eventTimeLabel(ev.startsAt, false),
@@ -184,7 +185,7 @@ function TimelineRow({
 
   if (entry.kind === 'calendar') {
     return (
-      <Link href="/calendar" className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${borderCls}`}>
+      <Link href={`/calendar?event=${entry.eventId}`} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${borderCls}`}>
         {/* Calendar icon — accent blue */}
         <div className="w-8 h-8 rounded-[9px] bg-accent-bg flex items-center justify-center shrink-0">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-[15px] h-[15px] text-accent">

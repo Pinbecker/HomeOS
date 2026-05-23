@@ -8,10 +8,10 @@ import { getConnection } from '@/lib/google/oauth'
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ google?: string }>
+  searchParams: Promise<{ google?: string; event?: string }>
 }) {
   const session = await getSession()
-  const [{ google }, connection, rows, taskRows] = await Promise.all([
+  const [{ google, event }, connection, rows, taskRows] = await Promise.all([
     searchParams,
     session ? getConnection(session.user.id) : Promise.resolve(undefined),
     db.query.calendarEvents.findMany({
@@ -51,6 +51,7 @@ export default async function CalendarPage({
       connected={Boolean(connection)}
       connectedEmail={connection?.googleEmail ?? null}
       notice={google ?? null}
+      focusEventId={event ?? null}
     />
   )
 }
