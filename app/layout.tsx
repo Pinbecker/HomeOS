@@ -41,14 +41,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   )
 }
 
-// Runs before paint to restore theme class + accent colour — prevents flash of wrong theme
+// Runs before paint to restore theme + accent — prevents flash of wrong theme.
+// theme can be 'light' | 'dark' | 'auto' (default: auto = follow system).
 function ThemeScript() {
   const script = `
     (function() {
       var theme  = localStorage.getItem('theme');
       var accent = localStorage.getItem('accent');
-      if (theme  === 'dark')  document.documentElement.classList.add('dark');
-      if (accent && accent !== 'blue') document.documentElement.setAttribute('data-accent', accent);
+      var html   = document.documentElement;
+      if (theme === 'dark') {
+        html.classList.add('dark');
+      } else if (!theme || theme === 'auto') {
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) html.classList.add('dark');
+      }
+      // 'light': no class needed
+      if (accent && accent !== 'blue') html.setAttribute('data-accent', accent);
     })();
   `
   return <script dangerouslySetInnerHTML={{ __html: script }} />
