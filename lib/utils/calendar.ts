@@ -45,10 +45,13 @@ export function relativeDayLabel(date: Date, allDay: boolean): string {
 export function eventTimeLabel(date: Date, allDay: boolean): string {
   if (allDay) return 'All day'
   // Explicit timezone so server-side renders are always UK local time, not UTC.
+  // hourCycle: 'h12' is pinned explicitly — the looser `hour12: true` lets Node's
+  // ICU (server) pick the h11 cycle (noon -> "0:00 pm") while the browser picks
+  // h12 (noon -> "12:00 pm"), which causes a React hydration mismatch.
   return date.toLocaleTimeString('en-GB', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h12',
     timeZone: 'Europe/London',
   })
 }

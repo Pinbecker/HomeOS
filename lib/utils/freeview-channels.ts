@@ -185,7 +185,7 @@ export function formatAirtime(date: Date): string {
   const str = date.toLocaleTimeString('en-GB', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h12',
     timeZone: 'Europe/London',
   })
   // en-GB returns e.g. "9:00 pm" — strip :00 for whole hours, collapse the space

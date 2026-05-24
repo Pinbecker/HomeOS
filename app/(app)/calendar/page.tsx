@@ -52,6 +52,7 @@ export default async function CalendarPage({
       connectedEmail={connection?.googleEmail ?? null}
       notice={google ?? null}
       focusEventId={event ?? null}
+      todayMs={Date.now()}
     />
   )
 }

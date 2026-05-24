@@ -56,7 +56,7 @@ function formatDue(due: Date): { label: string; overdue: boolean } {
   const days = dayDiff(due)
   const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
   const timeSuffix = hasTime
-    ? ` · ${due.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    ? ` · ${due.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })}`
     : ''
   if (days < 0) {
     const label = due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + timeSuffix

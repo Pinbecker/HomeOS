@@ -19,7 +19,7 @@ function formatShortDate(timestamp: number) {
   const d = new Date(timestamp)
   const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   if (d.getHours() === 0 && d.getMinutes() === 0) return datePart
-  const timePart = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  const timePart = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
   return `${datePart} · ${timePart}`
 }
 

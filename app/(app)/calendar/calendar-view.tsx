@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useState, useMemo, useTransition, useEffect, useLayoutEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { allDayAsLocal, localDayKey } from '@/lib/utils/calendar'
@@ -29,17 +29,31 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const TASK_COLOR = '#FF9500'
-const EVENT_COLOR = '#007AFF'
 
 const DEFAULT_ROW_H = 86
 const MIN_ROW_H = 40
 const MAX_ROW_H = 140
 
-// ── Event-bar layout constants ───────────────────────────────────────────────
-const BAR_H  = 15  // event bar height in px
-const BAR_GAP = 2  // vertical gap between lanes in px
-const LANE_H = BAR_H + BAR_GAP  // 17 px per lane
-const DATE_H = 26  // px reserved for the date-number at top of each cell
+// ── Calendar colour swatches ─────────────────────────────────────────────────
+const CAL_COLORS = [
+  '#007AFF', // Blue (default — matches iOS Calendar)
+  '#34C759', // Green
+  '#FF3B30', // Red
+  '#FF9500', // Orange
+  '#FF2D55', // Pink
+  '#AF52DE', // Purple
+  '#5856D6', // Indigo
+  '#00C7BE', // Teal
+  '#FFCC00', // Yellow
+  '#8E8E93', // Grey
+]
+const DEFAULT_CAL_COLOR = '#007AFF'
+
+// ── Bar layout constants ─────────────────────────────────────────────────────
+const BAR_GAP         = 2   // vertical gap between stacked bars in px
+const MIN_BAR_H       = 13  // minimum bar height before we hide bars and show dots
+const DATE_H          = 30  // px reserved for the date-number circle per cell
+const MULTI_DAY_BAR_H = 15  // compact fixed height for all-day / multi-day overlay bars
 
 function buildGrid(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
@@ -117,7 +131,7 @@ function fullDate(d: Date) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-// ── Week-bar computation ────────────────────────────────────────────────────
+// ── Week layout computation ─────────────────────────────────────────────────
 
 type WeekBarItem = {
   id: string
@@ -132,16 +146,35 @@ type WeekBarItem = {
   event: CalEvent | null
 }
 
+type SingleDayItem = {
+  id: string
+  title: string
+  color: string
+  time: number | null
+  event: CalEvent | null
+}
+
+/** Per-week layout: multi-day bars in a shared overlay + per-column single-day items. */
+type WeekLayout = {
+  multiDayBars:      WeekBarItem[]       // spanning bars for the absolute overlay
+  singleDayCols:     SingleDayItem[][]   // [col 0–6] single-day events / tasks per column
+  colMultiDayLanes:  number[]            // # overlay lanes occupied in each column
+}
+
 /**
- * Compute which event/task bars to render for a single 7-day week row.
- * Assigns vertical lanes so overlapping events don't stack on top of each other.
+ * Compute the full layout for a single 7-day week row.
+ *
+ * All-day and multi-day events go into `multiDayBars` (compact fixed-height overlay).
+ * Single-day timed events and tasks go into `singleDayCols` so each column can
+ * independently fill its remaining height.
  */
-function computeWeekBars(
+function computeWeekLayout(
   weekDays: Date[],
   month: number,
   events: CalEvent[],
   tasks: CalTask[],
-): WeekBarItem[] {
+  eventColor: string,
+): WeekLayout {
   const weekKeys = weekDays.map(d => localDayKey(d))
 
   type Candidate = {
@@ -149,15 +182,14 @@ function computeWeekBars(
     startCol: number; endCol: number
     roundLeft: boolean; roundRight: boolean
     event: CalEvent | null
-    // 0 = all-day or multi-day (render first), 1 = single-day timed
-    priority: number
+    isMulti: boolean  // true → overlay; false → per-cell column
   }
 
   const candidates: Candidate[] = []
 
   for (const ev of events) {
     const evKeys = eventDayKeys(ev)
-    const evSet = new Set(evKeys)
+    const evSet  = new Set(evKeys)
     let startCol = -1, endCol = -1
     for (let c = 0; c < 7; c++) {
       if (evSet.has(weekKeys[c])) {
@@ -166,20 +198,22 @@ function computeWeekBars(
       }
     }
     if (startCol === -1) continue
-    // Skip if no part of the event falls in this calendar-month (adjacent-month spacers)
+    // Skip if no part of the event is in this calendar month
     if (!weekDays.some((d, c) => d.getMonth() === month && evSet.has(weekKeys[c]))) continue
 
+    const spanCols = endCol - startCol + 1
     candidates.push({
-      id: ev.id,
-      title: ev.title,
-      color: EVENT_COLOR,
-      time: ev.allDay ? null : ev.start,
+      id:         ev.id,
+      title:      ev.title,
+      color:      eventColor,
+      time:       ev.allDay ? null : ev.start,
       startCol,
       endCol,
       roundLeft:  evKeys[0] === weekKeys[startCol],
       roundRight: evKeys[evKeys.length - 1] === weekKeys[endCol],
-      event: ev,
-      priority: (ev.allDay || isMultiDay(ev)) ? 0 : 1,
+      event:      ev,
+      // All-day events (even single-day) and multi-day timed events → overlay
+      isMulti:    ev.allDay || spanCols > 1,
     })
   }
 
@@ -188,57 +222,54 @@ function computeWeekBars(
     const col = weekKeys.indexOf(key)
     if (col === -1 || weekDays[col].getMonth() !== month) continue
     candidates.push({
-      id: t.id,
-      title: t.title,
-      color: TASK_COLOR,
-      time: t.due,
-      startCol: col,
-      endCol: col,
-      roundLeft: true,
-      roundRight: true,
-      event: null,
-      priority: 1,
+      id: t.id, title: t.title, color: TASK_COLOR, time: t.due,
+      startCol: col, endCol: col, roundLeft: true, roundRight: true,
+      event: null, isMulti: false,
     })
   }
 
-  // Sort: all-day / multi-day first → longer spans first → leftmost first
-  candidates.sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority
+  // ── Multi-day overlay: greedy lane assignment ───────────────────────────
+  const multiCandidates = candidates.filter(c => c.isMulti)
+  multiCandidates.sort((a, b) => {
     const diff = (b.endCol - b.startCol) - (a.endCol - a.startCol)
-    if (diff !== 0) return diff
-    return a.startCol - b.startCol
+    return diff !== 0 ? diff : a.startCol - b.startCol
   })
 
-  // Greedy lane assignment
   const laneRanges: Array<Array<{ s: number; e: number }>> = []
-  const result: WeekBarItem[] = []
+  const multiDayBars: WeekBarItem[] = []
 
-  for (const c of candidates) {
+  for (const c of multiCandidates) {
     let lane = 0
-    while (true) {
+    for (;;) {
       if (!laneRanges[lane]) laneRanges[lane] = []
       const blocked = laneRanges[lane].some(r => !(c.endCol < r.s || c.startCol > r.e))
-      if (!blocked) {
-        laneRanges[lane].push({ s: c.startCol, e: c.endCol })
-        break
-      }
+      if (!blocked) { laneRanges[lane].push({ s: c.startCol, e: c.endCol }); break }
       lane++
     }
-    result.push({
-      id:         c.id,
-      title:      c.title,
-      color:      c.color,
-      time:       c.time,
-      startCol:   c.startCol,
-      spanCols:   c.endCol - c.startCol + 1,
-      lane,
-      roundLeft:  c.roundLeft,
-      roundRight: c.roundRight,
-      event:      c.event,
+    multiDayBars.push({
+      id: c.id, title: c.title, color: c.color, time: c.time,
+      startCol: c.startCol, spanCols: c.endCol - c.startCol + 1,
+      lane, roundLeft: c.roundLeft, roundRight: c.roundRight, event: c.event,
     })
   }
 
-  return result
+  // Per-column: max overlay lane index + 1 (= number of compact rows occupying that col)
+  const colMultiDayLanes = Array<number>(7).fill(0)
+  for (const bar of multiDayBars) {
+    for (let c = bar.startCol; c < bar.startCol + bar.spanCols; c++) {
+      colMultiDayLanes[c] = Math.max(colMultiDayLanes[c], bar.lane + 1)
+    }
+  }
+
+  // ── Per-column single-day items (sorted by time) ───────────────────────
+  const singleDayCols: SingleDayItem[][] = Array.from({ length: 7 }, () => [])
+  const singleCandidates = candidates.filter(c => !c.isMulti)
+  singleCandidates.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+  for (const c of singleCandidates) {
+    singleDayCols[c.startCol].push({ id: c.id, title: c.title, color: c.color, time: c.time, event: c.event })
+  }
+
+  return { multiDayBars, singleDayCols, colMultiDayLanes }
 }
 
 export function CalendarView({
@@ -249,6 +280,7 @@ export function CalendarView({
   connectedEmail,
   notice,
   focusEventId,
+  todayMs,
 }: {
   events: CalEvent[]
   tasks: CalTask[]
@@ -257,9 +289,11 @@ export function CalendarView({
   connectedEmail: string | null
   notice: string | null
   focusEventId: string | null
+  todayMs: number
 }) {
   const router = useRouter()
-  const [today] = useState(() => new Date())
+  // todayMs comes from the server so server and client always agree on "today"
+  const today = useMemo(() => new Date(todayMs), [todayMs])
   const todayKey = localDayKey(today)
 
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_H)
@@ -275,6 +309,13 @@ export function CalendarView({
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  // Calendar event colour — persisted to localStorage, hydrated on mount
+  const [calColor, setCalColor] = useState(DEFAULT_CAL_COLOR)
+  useEffect(() => {
+    const saved = localStorage.getItem('homeos:cal-color')
+    if (saved && CAL_COLORS.includes(saved)) setCalColor(saved)
+  }, [])
   const [banner, setBanner] = useState<string | null>(
     notice === 'connected' ? 'Google Calendar connected.'
     : notice === 'denied' ? 'Google connection cancelled.'
@@ -470,20 +511,20 @@ export function CalendarView({
     return map
   }, [tasks])
 
-  // Pre-computed week bars for every week in the visible month range.
+  // Pre-computed week layouts for every week in the visible month range.
   // Keyed by "{year}-{month}-w{weekIndex}" so we can look them up during render.
-  const weekBarsData = useMemo(() => {
-    const map = new Map<string, WeekBarItem[]>()
+  const weekLayoutData = useMemo(() => {
+    const map = new Map<string, WeekLayout>()
     for (const { year, month, grid } of monthList) {
       for (let i = 0; i < grid.length; i += 7) {
         map.set(
           `${year}-${month}-w${Math.floor(i / 7)}`,
-          computeWeekBars(grid.slice(i, i + 7), month, events, tasks),
+          computeWeekLayout(grid.slice(i, i + 7), month, events, tasks, calColor),
         )
       }
     }
     return map
-  }, [monthList, events, tasks])
+  }, [monthList, events, tasks, calColor])
 
   // ── Derived state ───────────────────────────────────────────────────────
 
@@ -496,8 +537,12 @@ export function CalendarView({
   const selectedEvents = eventsByDay.get(selectedKey) ?? []
   const selectedTasks = tasksByDay.get(selectedKey) ?? []
 
-  // How many event bar lanes fit in a cell at the current row height
-  const maxLanes = Math.max(0, Math.floor((rowHeight - DATE_H) / LANE_H))
+  // Bar visibility metrics — uniform across the grid (depends only on row height)
+  const avail                  = rowHeight - DATE_H
+  const showBars               = avail >= MIN_BAR_H
+  const mLaneH                 = MULTI_DAY_BAR_H + BAR_GAP   // 17 px per multi-day lane
+  // Max multi-day lanes we can fit; single-day items will use the remaining space
+  const maxMultiDayLanesVisible = showBars ? Math.max(1, Math.floor(avail / mLaneH)) : 0
 
   // ── Actions ─────────────────────────────────────────────────────────────
 
@@ -549,7 +594,14 @@ export function CalendarView({
         <span className="text-[17px] font-bold text-text-1">
           {MONTHS[vm_month]} <span className="text-text-2 font-semibold text-[15px]">{vm_year}</span>
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {/* Calendar colour indicator — tap to change */}
+          <button
+            onClick={() => setColorPickerOpen(true)}
+            className="w-[18px] h-[18px] rounded-full shrink-0 active:opacity-60 transition-opacity"
+            style={{ background: calColor }}
+            aria-label="Change calendar colour"
+          ></button>
           <button onClick={goToday} className="text-accent text-[16px] font-medium active:opacity-60 px-1">Today</button>
           {connected && (
             <button onClick={openCreate} aria-label="Add event" className="w-9 h-9 rounded-full flex items-center justify-center text-accent active:bg-surface-2">
@@ -598,7 +650,9 @@ export function CalendarView({
                 for (let i = 0; i < grid.length; i += 7) weeks.push(grid.slice(i, i + 7))
 
                 return weeks.map((weekDays, wi) => {
-                  const bars = weekBarsData.get(`${year}-${month}-w${wi}`) ?? []
+                  const layout = weekLayoutData.get(`${year}-${month}-w${wi}`) ?? {
+                    multiDayBars: [], singleDayCols: Array.from({ length: 7 }, (): SingleDayItem[] => []), colMultiDayLanes: Array<number>(7).fill(0),
+                  }
 
                   return (
                     <div
@@ -637,16 +691,18 @@ export function CalendarView({
                                 {d.getDate()}
                               </span>
 
-                              {/* Compact: coloured dots when no room for bars */}
-                              {maxLanes === 0 && (() => {
-                                const dots = bars.filter(
-                                  b => b.startCol <= col && col < b.startCol + b.spanCols,
-                                ).slice(0, 3)
+                              {/* Compact: coloured dots when the row is too short for bars */}
+                              {!showBars && (() => {
+                                const multiColors  = layout.multiDayBars
+                                  .filter(b => b.startCol <= col && col < b.startCol + b.spanCols)
+                                  .map(b => b.color)
+                                const singleColors = layout.singleDayCols[col].map(i => i.color)
+                                const dots = [...multiColors, ...singleColors].slice(0, 3)
                                 if (!dots.length) return null
                                 return (
                                   <div className="flex gap-[3px] px-0.5 flex-shrink-0">
-                                    {dots.map(b => (
-                                      <div key={b.id} className="w-[5px] h-[5px] rounded-full" style={{ background: b.color }} />
+                                    {dots.map((color, ci) => (
+                                      <div key={ci} className="w-[5px] h-[5px] rounded-full" style={{ background: color }} />
                                     ))}
                                   </div>
                                 )
@@ -656,64 +712,119 @@ export function CalendarView({
                         })}
                       </div>
 
-                      {/* ── Event bar overlay — absolutely positioned over the week row ── */}
-                      {maxLanes > 0 && (
+                      {/* ── Event bar overlay — absolutely positioned, starts at DATE_H ── */}
+                      {showBars && (
                         <div
-                          className="absolute inset-x-0 pointer-events-none"
+                          className="absolute inset-x-0 pointer-events-none z-10"
                           style={{ top: DATE_H }}
                         >
-                          {bars.filter(b => b.lane < maxLanes).map(bar => {
+                          {/* ── Multi-day / all-day bars — compact fixed height ── */}
+                          {layout.multiDayBars.filter(b => b.lane < maxMultiDayLanesVisible).map(bar => {
                             const leftPct  = (bar.startCol / 7) * 100
                             const widthPct = (bar.spanCols  / 7) * 100
-                            // Inset 1 px from week-edge when the event starts/ends here
                             const insetL = bar.roundLeft  ? 1 : 0
                             const insetR = bar.roundRight ? 1 : 0
-
-                            const handleTap = (e: React.MouseEvent) => {
-                              e.stopPropagation()
-                              if (bar.event) setDetail(bar.event)
-                              else setSelectedKey(localDayKey(weekDays[bar.startCol]))
-                            }
 
                             return (
                               <button
                                 key={bar.id}
-                                onClick={handleTap}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (bar.event) setDetail(bar.event)
+                                  else setSelectedKey(localDayKey(weekDays[bar.startCol]))
+                                }}
                                 className="absolute pointer-events-auto overflow-hidden flex items-center"
                                 style={{
-                                  left:   `calc(${leftPct}%  + ${insetL}px)`,
-                                  width:  `calc(${widthPct}% - ${insetL + insetR}px)`,
-                                  top:    bar.lane * LANE_H,
-                                  height: BAR_H,
-                                  background: bar.color,
+                                  left:         `calc(${leftPct}%  + ${insetL}px)`,
+                                  width:        `calc(${widthPct}% - ${insetL + insetR}px)`,
+                                  top:          bar.lane * mLaneH,
+                                  height:       MULTI_DAY_BAR_H,
+                                  background:   bar.color,
                                   borderRadius: `${bar.roundLeft ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundLeft ? 4 : 1}px`,
-                                  paddingLeft:  bar.roundLeft  ? 5 : 3,
-                                  paddingRight: bar.roundRight ? 5 : 3,
+                                  paddingLeft:  bar.roundLeft  ? 4 : 2,
+                                  paddingRight: bar.roundRight ? 4 : 2,
                                 }}
                               >
-                                {/* Show title only at the start of each week segment */}
-                                {bar.roundLeft ? (
-                                  <p className="text-[9.5px] font-semibold leading-none text-white truncate">
+                                {bar.roundLeft && (
+                                  <p className="font-semibold text-white leading-tight truncate w-full" style={{ fontSize: 10 }}>
                                     {bar.title}
-                                    {bar.time !== null && bar.spanCols === 1 && (
-                                      <span className="opacity-80 font-normal ml-[3px]">{cellTime(bar.time)}</span>
-                                    )}
-                                  </p>
-                                ) : (
-                                  /* Continuation segment — solid bar, title at left edge */
-                                  <p className="text-[9.5px] font-semibold leading-none text-white truncate opacity-0 select-none">
-                                    {bar.title}
+                                    {bar.time !== null && <span className="opacity-75 font-normal ml-[3px]">{cellTime(bar.time)}</span>}
                                   </p>
                                 )}
                               </button>
                             )
                           })}
 
-                          {/* "+N more" per column for hidden (overflow) bars */}
+                          {/* ── Single-day pills — uniform compact height, iOS-style ── */}
                           {weekDays.map((d, col) => {
                             if (d.getMonth() !== month) return null
-                            const overflow = bars.filter(
-                              b => b.lane >= maxLanes &&
+                            const colItems = layout.singleDayCols[col]
+                            if (colItems.length === 0) return null
+
+                            const singleOffset = layout.colMultiDayLanes[col] * mLaneH
+                            const singleAvail  = avail - singleOffset
+                            // How many fixed-height pills fit in the space left below any multi-day lanes
+                            const maxFit = Math.floor((singleAvail + BAR_GAP) / mLaneH)
+                            if (maxFit < 1) return null
+
+                            // When there are more events than slots, give up the last slot to "+N more"
+                            const overflow      = colItems.length > maxFit
+                            const visibleCount  = overflow ? maxFit - 1 : colItems.length
+                            const visible       = colItems.slice(0, visibleCount)
+                            const hiddenCount   = colItems.length - visibleCount
+
+                            return (
+                              <React.Fragment key={`sd-${col}`}>
+                                {visible.map((item, idx) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (item.event) setDetail(item.event)
+                                      else setSelectedKey(localDayKey(d))
+                                    }}
+                                    className="absolute pointer-events-auto overflow-hidden flex items-center"
+                                    style={{
+                                      left:         `calc(${(col / 7) * 100}% + 1px)`,
+                                      width:        `calc(${(1   / 7) * 100}% - 2px)`,
+                                      top:          singleOffset + idx * mLaneH,
+                                      height:       MULTI_DAY_BAR_H,
+                                      background:   item.color,
+                                      borderRadius: 4,
+                                      paddingLeft:  4,
+                                      paddingRight: 3,
+                                    }}
+                                  >
+                                    <p className="font-semibold text-white leading-none truncate w-full" style={{ fontSize: 10 }}>
+                                      {item.title}
+                                    </p>
+                                  </button>
+                                ))}
+                                {hiddenCount > 0 && (
+                                  <div
+                                    className="absolute pointer-events-none flex items-center"
+                                    style={{
+                                      left:   `calc(${(col / 7) * 100}% + 1px)`,
+                                      width:  `calc(${(1   / 7) * 100}% - 2px)`,
+                                      top:    singleOffset + visibleCount * mLaneH,
+                                      height: MULTI_DAY_BAR_H,
+                                    }}
+                                  >
+                                    <span className="text-[9.5px] font-semibold text-text-3 leading-none pl-1 truncate">
+                                      +{hiddenCount} more
+                                    </span>
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            )
+                          })}
+
+                          {/* "+N more" per column for hidden multi-day overflow */}
+                          {weekDays.map((d, col) => {
+                            if (d.getMonth() !== month) return null
+                            const overflow = layout.multiDayBars.filter(
+                              b => b.lane >= maxMultiDayLanesVisible &&
                                    b.startCol <= col &&
                                    col < b.startCol + b.spanCols,
                             ).length
@@ -725,7 +836,7 @@ export function CalendarView({
                                 style={{
                                   left:  `${(col / 7) * 100}%`,
                                   width: `${(1  / 7) * 100}%`,
-                                  top:   maxLanes * LANE_H + 1,
+                                  top:   maxMultiDayLanesVisible * mLaneH + 1,
                                 }}
                               >
                                 <span className="text-[8px] text-text-3 px-1 leading-none">+{overflow}</span>
@@ -764,7 +875,7 @@ export function CalendarView({
                   onClick={() => setDetail(ev)}
                   className={`w-full flex items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''} ${flashEventId === ev.id ? 'flash-highlight' : ''}`}
                 >
-                  <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: EVENT_COLOR }} />
+                  <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: calColor }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-[15px] font-semibold text-text-1">{ev.title}</p>
                     {ev.location && <p className="text-[12.5px] text-text-2 truncate mt-0.5">{ev.location}</p>}
@@ -841,7 +952,7 @@ export function CalendarView({
 
           <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-4">
             <div className="flex items-start gap-3">
-              <div className="w-1.5 self-stretch rounded-full shrink-0" style={{ background: EVENT_COLOR }} />
+              <div className="w-1.5 self-stretch rounded-full shrink-0" style={{ background: calColor }} />
               <h2 className="text-[22px] font-bold text-text-1 leading-tight">{detail.title}</h2>
             </div>
 
@@ -882,6 +993,57 @@ export function CalendarView({
                 {deleting ? 'Deleting…' : 'Delete event'}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Calendar colour picker bottom sheet ── */}
+      {colorPickerOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col justify-end max-w-lg mx-auto"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setColorPickerOpen(false)}
+        >
+          <div
+            className="bg-surface rounded-t-2xl shadow-xl"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            <p className="text-[13px] font-semibold text-text-3 uppercase tracking-wider px-5 pt-2 pb-3">
+              Calendar colour
+            </p>
+            <div className="grid grid-cols-5 gap-4 px-6 pb-4">
+              {CAL_COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    setCalColor(c)
+                    localStorage.setItem('homeos:cal-color', c)
+                    setColorPickerOpen(false)
+                  }}
+                  className="flex flex-col items-center gap-1.5 active:opacity-70 transition-opacity"
+                  aria-label={`Calendar colour ${c}`}
+                >
+                  <div
+                    className="w-11 h-11 rounded-full flex items-center justify-center transition-transform active:scale-90"
+                    style={{
+                      background: c,
+                      boxShadow: calColor === c ? `0 0 0 2.5px var(--bg), 0 0 0 4.5px ${c}` : 'none',
+                    }}
+                  >
+                    {calColor === c && (
+                      <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4">
+                        <path d="M3 8l3.5 3.5L13 5" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
