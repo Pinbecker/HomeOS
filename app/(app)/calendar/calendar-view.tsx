@@ -327,8 +327,9 @@ export function CalendarView({
   const sheetDragRef = useRef<{ startY: number; startTime: number } | null>(null)
   const latestSheetDragY = useRef(0)
   const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
-  // 'detail' | 'edit' | 'create' — which pane is visible inside the sheet
-  const [sheetPane, setSheetPane] = useState<'detail' | 'edit' | 'create'>('detail')
+  // 'detail' | 'edit' | 'create' | 'task' — which pane is visible inside the sheet
+  const [sheetPane, setSheetPane] = useState<'detail' | 'edit' | 'create' | 'task'>('detail')
+  const [sheetTask, setSheetTask] = useState<CalTask | null>(null)
   const [, startTransition] = useTransition()
   const [deleting, setDeleting] = useState(false)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
@@ -608,7 +609,13 @@ export function CalendarView({
     setSheetState('closed')
     setSheetDragY(0)
     latestSheetDragY.current = 0
-    setTimeout(() => { setDetail(null); setSheetPane('detail') }, 320)
+    setTimeout(() => { setDetail(null); setSheetTask(null); setSheetPane('detail') }, 320)
+  }
+
+  function openTask(t: CalTask) {
+    setSheetTask(t)
+    setSheetPane('task')
+    animateSheetIn()
   }
 
   function openCreate() {
@@ -643,7 +650,7 @@ export function CalendarView({
     <div className="flex flex-col max-w-lg mx-auto" style={{ height: 'calc(100dvh - calc(96px + env(safe-area-inset-bottom)))' }}>
 
       {/* ── Top bar ── */}
-      <div className="px-3 pt-3 pb-2 flex items-center justify-between flex-shrink-0">
+      <div className="px-3 pt-3 pb-2 flex items-center justify-between flex-shrink-0 bg-bg">
         <Link href="/" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M10 3L5 8l5 5" />
@@ -680,14 +687,14 @@ export function CalendarView({
       )}
 
       {/* ── Sticky weekday labels ── */}
-      <div className="px-2 grid grid-cols-7 border-b border-border flex-shrink-0">
+      <div className="px-2 grid grid-cols-7 border-b border-border flex-shrink-0 bg-bg">
         {WEEKDAYS.map(d => (
           <div key={d} className="text-center text-[11px] font-semibold text-text-3 py-1">{d}</div>
         ))}
       </div>
 
       {/* ── Scrollable months ── */}
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain" style={{ overflowAnchor: 'none' }}>
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain bg-bg" style={{ overflowAnchor: 'none' }}>
         {monthList.map(({ year, month, grid }) => (
           <section
             key={`${year}-${month}`}
@@ -1004,10 +1011,11 @@ export function CalendarView({
                 return (
                   <div
                     key={t.id}
-                    className={`w-full flex items-center gap-3 px-4 py-1.5 ${(selectedEvents.length + i) > 0 ? 'border-t border-border' : ''}`}
+                    onClick={() => openTask(t)}
+                    className={`flex items-center gap-3 px-4 py-1.5 cursor-pointer active:bg-surface-2 ${(selectedEvents.length + i) > 0 ? 'border-t border-border' : ''}`}
                   >
                     <button
-                      onClick={() => toggleCalTask(t.id, completed)}
+                      onClick={e => { e.stopPropagation(); toggleCalTask(t.id, completed) }}
                       className="w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
                       style={completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
                       aria-label={completed ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`}
@@ -1042,8 +1050,8 @@ export function CalendarView({
         </div>
       </div>
 
-      {/* ── Event / editor bottom sheet ── */}
-      {(detail !== null || sheetPane === 'create') && (
+      {/* ── Event / task / editor bottom sheet ── */}
+      {(detail !== null || sheetTask !== null || sheetPane === 'create') && (
         <>
           {/* Backdrop */}
           <div
@@ -1160,6 +1168,61 @@ export function CalendarView({
                 </>
               )}
 
+              {/* ── Task detail pane ── */}
+              {sheetPane === 'task' && sheetTask && (() => {
+                const t = sheetTask
+                const completed = taskOverrides[t.id] ?? t.completed
+                return (
+                  <>
+                    {/* Title + orange dot */}
+                    <div className="flex items-start justify-between gap-3 px-5 pt-2 pb-3 shrink-0">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: TASK_COLOR }} />
+                        <h2 className="text-[22px] font-bold text-text-1 leading-tight">{t.title}</h2>
+                      </div>
+                      {t.listId && (
+                        <Link
+                          href={`/household/tasks/${t.listId}`}
+                          onClick={closeSheet}
+                          className="text-accent text-[15px] font-semibold active:opacity-60 shrink-0"
+                        >
+                          Open
+                        </Link>
+                      )}
+                    </div>
+
+                    {/* Scrollable content */}
+                    <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-2 flex flex-col gap-3">
+                      {/* Due date */}
+                      <div className="bg-surface rounded-2xl px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 mb-1">Due</p>
+                        <p className="text-[15px] text-text-1">{fullDate(new Date(t.due))}</p>
+                      </div>
+
+                      {/* Completion toggle */}
+                      <button
+                        onClick={() => toggleCalTask(t.id, completed)}
+                        className="w-full bg-surface rounded-2xl px-4 py-3.5 flex items-center gap-4 active:bg-surface-2 text-left"
+                      >
+                        <div
+                          className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center transition-all"
+                          style={completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
+                        >
+                          {completed && (
+                            <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                              <path d="M4 10.5l4 4 8-9" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className={`text-[15px] font-medium ${completed ? 'text-text-3 line-through' : 'text-text-1'}`}>
+                          {completed ? 'Marked as done' : 'Mark as done'}
+                        </span>
+                      </button>
+                    </div>
+                  </>
+                )
+              })()}
+
               {/* ── Edit / Create pane ── */}
               {(sheetPane === 'edit' || sheetPane === 'create') && (
                 <EventEditor
@@ -1225,6 +1288,16 @@ export function CalendarView({
           </div>
         </div>
       )}
+
+      {/* ── Surface-colour fill behind the nav-bar gap ──────────────────────
+          The main element has pb-[96px+safe-area] which creates a gap between
+          the calendar container's bottom edge and the actual nav bar. This fixed
+          div sits at z-1 (below the nav bar at z-50) and paints the gap with the
+          same surface colour as the selected-day panel so there's no bg-bg strip. */}
+      <div
+        className="fixed bottom-0 inset-x-0 bg-surface pointer-events-none"
+        style={{ height: 'calc(96px + env(safe-area-inset-bottom))', zIndex: 1 }}
+      />
 
     </div>
   )
