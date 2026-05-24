@@ -41,13 +41,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   )
 }
 
-// Runs before paint to set the theme class — prevents flash of wrong theme
-// Defaults to light; only goes dark if user has explicitly chosen it
+// Runs before paint to restore theme class + accent colour — prevents flash of wrong theme
 function ThemeScript() {
   const script = `
     (function() {
-      var stored = localStorage.getItem('theme');
-      if (stored === 'dark') document.documentElement.classList.add('dark');
+      var theme  = localStorage.getItem('theme');
+      var accent = localStorage.getItem('accent');
+      if (theme  === 'dark')  document.documentElement.classList.add('dark');
+      if (accent && accent !== 'blue') document.documentElement.setAttribute('data-accent', accent);
     })();
   `
   return <script dangerouslySetInnerHTML={{ __html: script }} />

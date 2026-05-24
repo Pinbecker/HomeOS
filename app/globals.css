@@ -111,6 +111,37 @@
 }
 
 /* ============================================================
+   ACCENT COLOUR VARIANTS
+   Overrides --accent / --accent-bg / --accent-border for each theme.
+   Applied via data-accent attribute on <html>.
+   Blue is the default (defined in :root/.dark above).
+   ============================================================ */
+
+/* Purple */
+[data-accent="purple"]       { --accent: #AF52DE; --accent-bg: rgba(175,82,222,0.10); --accent-border: rgba(175,82,222,0.22); }
+[data-accent="purple"].dark  { --accent: #BF5AF2; --accent-bg: rgba(191,90,242,0.16); --accent-border: rgba(191,90,242,0.28); }
+
+/* Pink */
+[data-accent="pink"]         { --accent: #FF2D55; --accent-bg: rgba(255,45,85,0.10);  --accent-border: rgba(255,45,85,0.22); }
+[data-accent="pink"].dark    { --accent: #FF375F; --accent-bg: rgba(255,55,95,0.16);  --accent-border: rgba(255,55,95,0.28); }
+
+/* Green */
+[data-accent="green"]        { --accent: #34C759; --accent-bg: rgba(52,199,89,0.10);  --accent-border: rgba(52,199,89,0.22); }
+[data-accent="green"].dark   { --accent: #30D158; --accent-bg: rgba(48,209,88,0.16);  --accent-border: rgba(48,209,88,0.28); }
+
+/* Orange */
+[data-accent="orange"]       { --accent: #FF9500; --accent-bg: rgba(255,149,0,0.10);  --accent-border: rgba(255,149,0,0.22); }
+[data-accent="orange"].dark  { --accent: #FF9F0A; --accent-bg: rgba(255,159,10,0.16); --accent-border: rgba(255,159,10,0.28); }
+
+/* Teal */
+[data-accent="teal"]         { --accent: #32ADE6; --accent-bg: rgba(50,173,230,0.10); --accent-border: rgba(50,173,230,0.22); }
+[data-accent="teal"].dark    { --accent: #64D2FF; --accent-bg: rgba(100,210,255,0.16); --accent-border: rgba(100,210,255,0.28); }
+
+/* Indigo */
+[data-accent="indigo"]       { --accent: #5856D6; --accent-bg: rgba(88,86,214,0.10);  --accent-border: rgba(88,86,214,0.22); }
+[data-accent="indigo"].dark  { --accent: #5E5CE6; --accent-bg: rgba(94,92,230,0.16);  --accent-border: rgba(94,92,230,0.28); }
+
+/* ============================================================
    BASE STYLES
    ============================================================ */
 
