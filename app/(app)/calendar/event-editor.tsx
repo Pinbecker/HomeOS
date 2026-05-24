@@ -301,7 +301,6 @@ export function EventEditor({
           {/* ── Title + Location ── */}
           <div className="bg-surface rounded-2xl overflow-hidden shadow-sm">
             <input
-              autoFocus={!editing}
               value={title}
               onChange={e => setTitle(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && save()}
