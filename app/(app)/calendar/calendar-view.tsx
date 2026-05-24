@@ -35,6 +35,12 @@ const DEFAULT_ROW_H = 86
 const MIN_ROW_H = 40
 const MAX_ROW_H = 140
 
+// ── Event-bar layout constants ───────────────────────────────────────────────
+const BAR_H  = 15  // event bar height in px
+const BAR_GAP = 2  // vertical gap between lanes in px
+const LANE_H = BAR_H + BAR_GAP  // 17 px per lane
+const DATE_H = 26  // px reserved for the date-number at top of each cell
+
 function buildGrid(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
   const offset = (first.getDay() + 6) % 7
@@ -92,7 +98,6 @@ function cellTime(ms: number): string {
   return m === 0 ? `${h}:00` : `${h}:${String(m).padStart(2, '0')}`
 }
 
-
 function eventDateLine(ev: CalEvent): string {
   if (ev.allDay) {
     const startLocal = allDayAsLocal(new Date(ev.start))
@@ -110,6 +115,130 @@ function eventDateLine(ev: CalEvent): string {
 
 function fullDate(d: Date) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// ── Week-bar computation ────────────────────────────────────────────────────
+
+type WeekBarItem = {
+  id: string
+  title: string
+  color: string
+  time: number | null    // null = all-day; else epoch ms
+  startCol: number       // 0–6 within this week
+  spanCols: number       // 1–7
+  lane: number
+  roundLeft: boolean     // true → event starts in this week segment (round left edge)
+  roundRight: boolean    // true → event ends in this week segment (round right edge)
+  event: CalEvent | null
+}
+
+/**
+ * Compute which event/task bars to render for a single 7-day week row.
+ * Assigns vertical lanes so overlapping events don't stack on top of each other.
+ */
+function computeWeekBars(
+  weekDays: Date[],
+  month: number,
+  events: CalEvent[],
+  tasks: CalTask[],
+): WeekBarItem[] {
+  const weekKeys = weekDays.map(d => localDayKey(d))
+
+  type Candidate = {
+    id: string; title: string; color: string; time: number | null
+    startCol: number; endCol: number
+    roundLeft: boolean; roundRight: boolean
+    event: CalEvent | null
+    // 0 = all-day or multi-day (render first), 1 = single-day timed
+    priority: number
+  }
+
+  const candidates: Candidate[] = []
+
+  for (const ev of events) {
+    const evKeys = eventDayKeys(ev)
+    const evSet = new Set(evKeys)
+    let startCol = -1, endCol = -1
+    for (let c = 0; c < 7; c++) {
+      if (evSet.has(weekKeys[c])) {
+        if (startCol === -1) startCol = c
+        endCol = c
+      }
+    }
+    if (startCol === -1) continue
+    // Skip if no part of the event falls in this calendar-month (adjacent-month spacers)
+    if (!weekDays.some((d, c) => d.getMonth() === month && evSet.has(weekKeys[c]))) continue
+
+    candidates.push({
+      id: ev.id,
+      title: ev.title,
+      color: EVENT_COLOR,
+      time: ev.allDay ? null : ev.start,
+      startCol,
+      endCol,
+      roundLeft:  evKeys[0] === weekKeys[startCol],
+      roundRight: evKeys[evKeys.length - 1] === weekKeys[endCol],
+      event: ev,
+      priority: (ev.allDay || isMultiDay(ev)) ? 0 : 1,
+    })
+  }
+
+  for (const t of tasks) {
+    const key = localDayKey(new Date(t.due))
+    const col = weekKeys.indexOf(key)
+    if (col === -1 || weekDays[col].getMonth() !== month) continue
+    candidates.push({
+      id: t.id,
+      title: t.title,
+      color: TASK_COLOR,
+      time: t.due,
+      startCol: col,
+      endCol: col,
+      roundLeft: true,
+      roundRight: true,
+      event: null,
+      priority: 1,
+    })
+  }
+
+  // Sort: all-day / multi-day first → longer spans first → leftmost first
+  candidates.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority
+    const diff = (b.endCol - b.startCol) - (a.endCol - a.startCol)
+    if (diff !== 0) return diff
+    return a.startCol - b.startCol
+  })
+
+  // Greedy lane assignment
+  const laneRanges: Array<Array<{ s: number; e: number }>> = []
+  const result: WeekBarItem[] = []
+
+  for (const c of candidates) {
+    let lane = 0
+    while (true) {
+      if (!laneRanges[lane]) laneRanges[lane] = []
+      const blocked = laneRanges[lane].some(r => !(c.endCol < r.s || c.startCol > r.e))
+      if (!blocked) {
+        laneRanges[lane].push({ s: c.startCol, e: c.endCol })
+        break
+      }
+      lane++
+    }
+    result.push({
+      id:         c.id,
+      title:      c.title,
+      color:      c.color,
+      time:       c.time,
+      startCol:   c.startCol,
+      spanCols:   c.endCol - c.startCol + 1,
+      lane,
+      roundLeft:  c.roundLeft,
+      roundRight: c.roundRight,
+      event:      c.event,
+    })
+  }
+
+  return result
 }
 
 export function CalendarView({
@@ -341,6 +470,21 @@ export function CalendarView({
     return map
   }, [tasks])
 
+  // Pre-computed week bars for every week in the visible month range.
+  // Keyed by "{year}-{month}-w{weekIndex}" so we can look them up during render.
+  const weekBarsData = useMemo(() => {
+    const map = new Map<string, WeekBarItem[]>()
+    for (const { year, month, grid } of monthList) {
+      for (let i = 0; i < grid.length; i += 7) {
+        map.set(
+          `${year}-${month}-w${Math.floor(i / 7)}`,
+          computeWeekBars(grid.slice(i, i + 7), month, events, tasks),
+        )
+      }
+    }
+    return map
+  }, [monthList, events, tasks])
+
   // ── Derived state ───────────────────────────────────────────────────────
 
   const [vm_year, vm_month] = visibleMonthKey.split('-').map(Number)
@@ -352,8 +496,8 @@ export function CalendarView({
   const selectedEvents = eventsByDay.get(selectedKey) ?? []
   const selectedTasks = tasksByDay.get(selectedKey) ?? []
 
-  // How many event pills fit in a cell at current row height
-  const maxPills = rowHeight >= 100 ? 3 : rowHeight >= 68 ? 2 : rowHeight >= 50 ? 1 : 0
+  // How many event bar lanes fit in a cell at the current row height
+  const maxLanes = Math.max(0, Math.floor((rowHeight - DATE_H) / LANE_H))
 
   // ── Actions ─────────────────────────────────────────────────────────────
 
@@ -446,73 +590,154 @@ export function CalendarView({
               </span>
             </div>
 
-            {/* 6-week grid */}
-            <div data-cal-grid className="px-2 grid grid-cols-7">
-              {grid.map(d => {
-                const key = localDayKey(d)
-                const inMonth = d.getMonth() === month
+            {/* 6-week grid — rendered as week rows so multi-day events span columns */}
+            <div data-cal-grid className="px-2">
+              {(() => {
+                // Split the flat 42-cell grid into week rows of 7
+                const weeks: Date[][] = []
+                for (let i = 0; i < grid.length; i += 7) weeks.push(grid.slice(i, i + 7))
 
-                // Cells outside this month are blank spacers — no date, no events
-                if (!inMonth) {
-                  return <div key={key} className="border-t border-border" style={{ height: rowHeight }} />
-                }
+                return weeks.map((weekDays, wi) => {
+                  const bars = weekBarsData.get(`${year}-${month}-w${wi}`) ?? []
 
-                const isToday = key === todayKey
-                const isSelected = key === selectedKey
-                const dayEvents = eventsByDay.get(key) ?? []
-                const dayTasks = tasksByDay.get(key) ?? []
-                const allItems = [
-                  ...dayEvents.map(e => ({ id: e.id, title: e.title, color: EVENT_COLOR, time: e.allDay ? null : e.start })),
-                  ...dayTasks.map(t => ({ id: t.id, title: t.title, color: TASK_COLOR, time: null })),
-                ]
-                const displayItems = allItems.slice(0, maxPills)
-                const overflow = allItems.length - displayItems.length
+                  return (
+                    <div
+                      key={localDayKey(weekDays[0])}
+                      className="relative overflow-hidden"
+                      style={{ height: rowHeight }}
+                    >
+                      {/* ── Day cells — click targets + date numbers ── */}
+                      <div className="grid grid-cols-7 h-full">
+                        {weekDays.map((d, col) => {
+                          const key = localDayKey(d)
+                          const inMonth = d.getMonth() === month
 
-                return (
-                  <button
-                    key={key}
-                    id={isToday ? 'cal-today' : undefined}
-                    data-daykey={key}
-                    onClick={() => setSelectedKey(key)}
-                    className="flex flex-col items-start px-0.5 pt-1 pb-0.5 overflow-hidden border-t border-border active:opacity-70"
-                    style={{ height: rowHeight }}
-                  >
-                    <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] mb-[2px] flex-shrink-0 ${
-                      isToday ? 'bg-accent text-white font-bold'
-                      : isSelected ? 'bg-accent-bg text-accent font-semibold'
-                      : 'text-text-1'
-                    }`}>
-                      {d.getDate()}
-                    </span>
+                          // Adjacent-month spacer
+                          if (!inMonth) {
+                            return <div key={key} className="border-t border-border" />
+                          }
 
-                    {maxPills > 0 && displayItems.map(item => (
-                      <div
-                        key={item.id}
-                        className="w-full rounded px-1 pt-[1.5px] pb-[1.5px] mb-[1.5px] overflow-hidden flex-shrink-0"
-                        style={{ background: item.color, color: 'white' }}
-                      >
-                        <p className="text-[9px] font-semibold truncate leading-tight">{item.title}</p>
-                        {rowHeight >= 90 && item.time !== null && (
-                          <p className="text-[8px] opacity-90 truncate leading-tight">{cellTime(item.time)}</p>
-                        )}
+                          const isToday    = key === todayKey
+                          const isSelected = key === selectedKey
+
+                          return (
+                            <button
+                              key={key}
+                              id={isToday ? 'cal-today' : undefined}
+                              data-daykey={key}
+                              onClick={() => setSelectedKey(key)}
+                              className="flex flex-col items-start px-0.5 pt-1 pb-0.5 border-t border-border active:opacity-70"
+                            >
+                              {/* Date number */}
+                              <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] mb-[2px] flex-shrink-0 font-${isToday ? 'bold' : isSelected ? 'semibold' : 'normal'} ${
+                                isToday    ? 'bg-accent text-white'
+                                : isSelected ? 'bg-accent-bg text-accent'
+                                : 'text-text-1'
+                              }`}>
+                                {d.getDate()}
+                              </span>
+
+                              {/* Compact: coloured dots when no room for bars */}
+                              {maxLanes === 0 && (() => {
+                                const dots = bars.filter(
+                                  b => b.startCol <= col && col < b.startCol + b.spanCols,
+                                ).slice(0, 3)
+                                if (!dots.length) return null
+                                return (
+                                  <div className="flex gap-[3px] px-0.5 flex-shrink-0">
+                                    {dots.map(b => (
+                                      <div key={b.id} className="w-[5px] h-[5px] rounded-full" style={{ background: b.color }} />
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </button>
+                          )
+                        })}
                       </div>
-                    ))}
 
-                    {maxPills > 0 && overflow > 0 && (
-                      <span className="text-[8px] text-text-3 px-0.5 flex-shrink-0">+{overflow}</span>
-                    )}
+                      {/* ── Event bar overlay — absolutely positioned over the week row ── */}
+                      {maxLanes > 0 && (
+                        <div
+                          className="absolute inset-x-0 pointer-events-none"
+                          style={{ top: DATE_H }}
+                        >
+                          {bars.filter(b => b.lane < maxLanes).map(bar => {
+                            const leftPct  = (bar.startCol / 7) * 100
+                            const widthPct = (bar.spanCols  / 7) * 100
+                            // Inset 1 px from week-edge when the event starts/ends here
+                            const insetL = bar.roundLeft  ? 1 : 0
+                            const insetR = bar.roundRight ? 1 : 0
 
-                    {/* Compact zoom: no room for pills — show coloured dots instead */}
-                    {maxPills === 0 && allItems.length > 0 && (
-                      <div className="flex items-center gap-[3px] px-0.5 flex-shrink-0">
-                        {allItems.slice(0, 4).map(item => (
-                          <div key={item.id} className="w-[5px] h-[5px] rounded-full" style={{ background: item.color }} />
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
+                            const handleTap = (e: React.MouseEvent) => {
+                              e.stopPropagation()
+                              if (bar.event) setDetail(bar.event)
+                              else setSelectedKey(localDayKey(weekDays[bar.startCol]))
+                            }
+
+                            return (
+                              <button
+                                key={bar.id}
+                                onClick={handleTap}
+                                className="absolute pointer-events-auto overflow-hidden flex items-center"
+                                style={{
+                                  left:   `calc(${leftPct}%  + ${insetL}px)`,
+                                  width:  `calc(${widthPct}% - ${insetL + insetR}px)`,
+                                  top:    bar.lane * LANE_H,
+                                  height: BAR_H,
+                                  background: bar.color,
+                                  borderRadius: `${bar.roundLeft ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundLeft ? 4 : 1}px`,
+                                  paddingLeft:  bar.roundLeft  ? 5 : 3,
+                                  paddingRight: bar.roundRight ? 5 : 3,
+                                }}
+                              >
+                                {/* Show title only at the start of each week segment */}
+                                {bar.roundLeft ? (
+                                  <p className="text-[9.5px] font-semibold leading-none text-white truncate">
+                                    {bar.title}
+                                    {bar.time !== null && bar.spanCols === 1 && (
+                                      <span className="opacity-80 font-normal ml-[3px]">{cellTime(bar.time)}</span>
+                                    )}
+                                  </p>
+                                ) : (
+                                  /* Continuation segment — solid bar, title at left edge */
+                                  <p className="text-[9.5px] font-semibold leading-none text-white truncate opacity-0 select-none">
+                                    {bar.title}
+                                  </p>
+                                )}
+                              </button>
+                            )
+                          })}
+
+                          {/* "+N more" per column for hidden (overflow) bars */}
+                          {weekDays.map((d, col) => {
+                            if (d.getMonth() !== month) return null
+                            const overflow = bars.filter(
+                              b => b.lane >= maxLanes &&
+                                   b.startCol <= col &&
+                                   col < b.startCol + b.spanCols,
+                            ).length
+                            if (!overflow) return null
+                            return (
+                              <div
+                                key={`ov-${col}`}
+                                className="absolute pointer-events-none"
+                                style={{
+                                  left:  `${(col / 7) * 100}%`,
+                                  width: `${(1  / 7) * 100}%`,
+                                  top:   maxLanes * LANE_H + 1,
+                                }}
+                              >
+                                <span className="text-[8px] text-text-3 px-1 leading-none">+{overflow}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </section>
         ))}
