@@ -146,7 +146,7 @@ const menuItems: MenuItem[] = [
   },
 ]
 
-// iOS sheet easing — fast out, gentle settle. Matches UISheetPresentationController.
+// iOS sheet easing — fast out, gentle settle.
 const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
 const CLOSE_THRESHOLD = 90 // px dragged down before release dismisses
 
@@ -174,9 +174,7 @@ export function BottomNav() {
     if (!open) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     window.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prev
@@ -192,7 +190,6 @@ export function BottomNav() {
   function onTouchMove(e: React.TouchEvent) {
     if (dragStartRef.current === null) return
     const delta = e.touches[0].clientY - dragStartRef.current
-    // Only follow downward drags; a touch of resistance on the upward edge.
     setDragY(delta > 0 ? delta : delta * 0.25)
   }
 
@@ -208,7 +205,7 @@ export function BottomNav() {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* ── More menu backdrop ── */}
       <div
         className="fixed inset-0 z-40"
         style={{
@@ -222,7 +219,7 @@ export function BottomNav() {
         onClick={close}
       />
 
-      {/* Bottom sheet */}
+      {/* ── More menu bottom sheet ── */}
       <div
         role="dialog"
         aria-modal="true"
@@ -244,36 +241,21 @@ export function BottomNav() {
             paddingBottom: 'calc(env(safe-area-inset-bottom) + 22px)',
           }}
         >
-          {/* Grabber — drag down to dismiss */}
+          {/* Grabber */}
           <div
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
             style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}
           >
-            <div
-              style={{
-                width: 38,
-                height: 5,
-                borderRadius: 3,
-                background: 'var(--text-3)',
-                opacity: 0.4,
-                margin: '0 auto',
-              }}
-            />
+            <div style={{ width: 38, height: 5, borderRadius: 3, background: 'var(--text-3)', opacity: 0.4, margin: '0 auto' }} />
           </div>
 
-          <p
-            className="text-center text-text-3"
-            style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}
-          >
+          <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}>
             Jump to
           </p>
 
-          <div
-            className="grid grid-cols-3 gap-y-5 px-5"
-            style={{ justifyItems: 'center' }}
-          >
+          <div className="grid grid-cols-3 gap-y-5 px-5" style={{ justifyItems: 'center' }}>
             {menuItems.map((item, idx) => (
               <Link
                 key={item.href}
@@ -283,35 +265,21 @@ export function BottomNav() {
                 className="flex flex-col items-center gap-2 active:scale-90"
                 style={{
                   width: 84,
-                  // Staggered rise-and-fade as the sheet settles.
                   opacity: open ? 1 : 0,
                   transform: open ? 'translateY(0)' : 'translateY(14px)',
                   transition: `transform 0.5s ${SHEET_EASE} ${idx * 35 + 60}ms, opacity 0.4s ease ${idx * 35 + 60}ms`,
                 }}
               >
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 19,
-                    background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: item.color,
-                    transition: 'transform 0.15s ease',
-                  }}
-                >
+                <div style={{
+                  width: 64, height: 64, borderRadius: 19,
+                  background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: item.color,
+                  transition: 'transform 0.15s ease',
+                }}>
                   {item.icon}
                 </div>
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: 'var(--text-1)',
-                    letterSpacing: '0.01em',
-                  }}
-                >
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', letterSpacing: '0.01em' }}>
                   {item.label}
                 </span>
               </Link>
@@ -320,30 +288,48 @@ export function BottomNav() {
         </div>
       </div>
 
+      {/* ── Nav bar ── */}
       <nav
-        className="fixed bottom-0 inset-x-0 z-50 bg-nav-bg backdrop-blur-2xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+10px)]"
-        style={{ overflow: 'visible' }}
+        className="fixed bottom-0 inset-x-0 z-50 bg-surface border-t border-border"
+        style={{
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 6px)',
+          overflow: 'visible',
+        }}
       >
-        <div className="flex items-start pt-2 pb-1 px-1" style={{ overflow: 'visible' }}>
+        <div className="flex items-start pt-1.5 px-1" style={{ overflow: 'visible' }}>
 
           {/* Left tabs */}
-          {leftTabs.map(tab => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              onClick={close}
-              className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
-                isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
-              }`}
-            >
-              {tab.icon}
-              <span className="text-[9.5px] font-semibold tracking-wide">{tab.label}</span>
-            </Link>
-          ))}
+          {leftTabs.map(tab => {
+            const active = isActive(tab.href, tab.exact)
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                onClick={close}
+                className="flex-1 flex flex-col items-center gap-0.5 py-1"
+              >
+                <div
+                  className="w-[44px] h-[32px] flex items-center justify-center rounded-[10px] transition-all"
+                  style={active ? {
+                    background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                    color: 'var(--accent)',
+                  } : { color: 'var(--text-3)' }}
+                >
+                  {tab.icon}
+                </div>
+                <span
+                  className="text-[10px] font-semibold tracking-wide transition-colors"
+                  style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }}
+                >
+                  {tab.label}
+                </span>
+              </Link>
+            )
+          })}
 
-          {/* Centre: menu button */}
+          {/* Centre: More button */}
           <div className="flex-1 flex flex-col items-center" style={{ overflow: 'visible' }}>
-            <div style={{ position: 'relative', width: 46, height: 46, marginTop: -18, flexShrink: 0 }}>
+            <div style={{ position: 'relative', width: 48, height: 48, marginTop: -20, flexShrink: 0 }}>
               <button
                 onClick={() => (open ? close() : setOpen(true))}
                 aria-label={open ? 'Close menu' : 'Open menu'}
@@ -351,21 +337,23 @@ export function BottomNav() {
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  borderRadius: 14,
-                  background: open ? 'var(--surface-2)' : 'var(--accent)',
+                  borderRadius: 16,
+                  background: open
+                    ? 'color-mix(in srgb, var(--accent) 14%, var(--surface))'
+                    : 'var(--accent)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxShadow: open
-                    ? '0 2px 8px rgba(0,0,0,0.15)'
-                    : '0 4px 14px rgba(0,122,255,0.35)',
+                    ? 'none'
+                    : '0 4px 16px rgba(0,122,255,0.38)',
                   transition: 'background 0.22s ease, box-shadow 0.22s ease',
                 }}
               >
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke={open ? 'var(--text-1)' : 'white'}
+                  stroke={open ? 'var(--accent)' : 'white'}
                   strokeWidth={2.2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -381,9 +369,8 @@ export function BottomNav() {
                 </svg>
               </button>
             </div>
-
             <span
-              className="text-[9.5px] font-semibold tracking-wide"
+              className="text-[10px] font-semibold tracking-wide mt-0.5"
               style={{ color: open ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s ease' }}
             >
               More
@@ -391,19 +378,33 @@ export function BottomNav() {
           </div>
 
           {/* Right tabs */}
-          {rightTabs.map(tab => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              onClick={close}
-              className={`flex-1 flex flex-col items-center gap-1 py-1 transition-colors ${
-                isActive(tab.href, tab.exact) ? 'text-accent' : 'text-text-3'
-              }`}
-            >
-              {tab.icon}
-              <span className="text-[9.5px] font-semibold tracking-wide">{tab.label}</span>
-            </Link>
-          ))}
+          {rightTabs.map(tab => {
+            const active = isActive(tab.href, tab.exact)
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                onClick={close}
+                className="flex-1 flex flex-col items-center gap-0.5 py-1"
+              >
+                <div
+                  className="w-[44px] h-[32px] flex items-center justify-center rounded-[10px] transition-all"
+                  style={active ? {
+                    background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                    color: 'var(--accent)',
+                  } : { color: 'var(--text-3)' }}
+                >
+                  {tab.icon}
+                </div>
+                <span
+                  className="text-[10px] font-semibold tracking-wide transition-colors"
+                  style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }}
+                >
+                  {tab.label}
+                </span>
+              </Link>
+            )
+          })}
 
         </div>
       </nav>

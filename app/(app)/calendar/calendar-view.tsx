@@ -169,6 +169,7 @@ type SingleDayItem = {
   color: string
   time: number | null
   event: CalEvent | null
+  task: CalTask | null
 }
 
 /** Per-week layout: multi-day bars in a shared overlay + per-column single-day items. */
@@ -199,6 +200,7 @@ function computeWeekLayout(
     startCol: number; endCol: number
     roundLeft: boolean; roundRight: boolean
     event: CalEvent | null
+    task: CalTask | null
     isMulti: boolean  // true → overlay; false → per-cell column
   }
 
@@ -229,6 +231,7 @@ function computeWeekLayout(
       roundLeft:  evKeys[0] === weekKeys[startCol],
       roundRight: evKeys[evKeys.length - 1] === weekKeys[endCol],
       event:      ev,
+      task:       null,
       // All-day events (even single-day) and multi-day timed events → overlay
       isMulti:    ev.allDay || spanCols > 1,
     })
@@ -241,7 +244,7 @@ function computeWeekLayout(
     candidates.push({
       id: t.id, title: t.title, color: TASK_COLOR, time: t.due,
       startCol: col, endCol: col, roundLeft: true, roundRight: true,
-      event: null, isMulti: false,
+      event: null, task: t, isMulti: false,
     })
   }
 
@@ -283,7 +286,7 @@ function computeWeekLayout(
   const singleCandidates = candidates.filter(c => !c.isMulti)
   singleCandidates.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
   for (const c of singleCandidates) {
-    singleDayCols[c.startCol].push({ id: c.id, title: c.title, color: c.color, time: c.time, event: c.event })
+    singleDayCols[c.startCol].push({ id: c.id, title: c.title, color: c.color, time: c.time, event: c.event, task: c.task })
   }
 
   return { multiDayBars, singleDayCols, colMultiDayLanes }
@@ -874,6 +877,7 @@ export function CalendarView({
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         if (item.event) openDetail(item.event)
+                                        else if (item.task) openTask(item.task)
                                         else setSelectedKey(localDayKey(d))
                                       }}
                                       className="absolute pointer-events-auto overflow-hidden flex flex-col items-start text-left"
