@@ -259,11 +259,9 @@ function TimelineRow({
 
 // User-selectable schedule windows
 const RANGE_OPTIONS: { days: number; label: string }[] = [
-  { days: 1,  label: 'Today' },
-  { days: 3,  label: '3 days' },
-  { days: 7,  label: '1 week' },
-  { days: 14, label: '2 weeks' },
-  { days: 30, label: 'Month' },
+  { days: 1, label: 'Today' },
+  { days: 3, label: '3 days' },
+  { days: 7, label: '1 week' },
 ]
 
 // Upper bound (epoch ms) for "rangeDays days from today", inclusive of the last day
@@ -494,12 +492,12 @@ export function DashboardClient({
 
   // Schedule preferences — range (days ahead) + combined/separate view, persisted locally.
   // Defaults match the server render to avoid hydration mismatch; restored on mount.
-  const [rangeDays, setRangeDaysState] = useState(14)
+  const [rangeDays, setRangeDaysState] = useState(7)
   const [scheduleMode, setScheduleModeState] = useState<'combined' | 'separate'>('combined')
 
   useEffect(() => {
     const r = Number(localStorage.getItem('homeos:schedule-range'))
-    if ([1, 3, 7, 14, 30].includes(r)) setRangeDaysState(r)
+    if ([1, 3, 7].includes(r)) setRangeDaysState(r)
     const m = localStorage.getItem('homeos:schedule-mode')
     if (m === 'combined' || m === 'separate') setScheduleModeState(m)
   }, [])
