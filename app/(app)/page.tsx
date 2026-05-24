@@ -6,6 +6,7 @@ import { DashboardClient } from '@/components/features/dashboard/dashboard-clien
 import { STATIC_BIN_SCHEDULES, daysUntil, getNextStaticBinCollection } from '@/lib/utils/bins'
 import { getTodayMatches } from '@/lib/services/epg'
 import { formatAirtime, channelName } from '@/lib/utils/freeview-channels'
+import { eventTimeLabel } from '@/lib/utils/calendar'
 
 const RECORD_ENTITY_TYPE = 'record'
 
@@ -147,6 +148,32 @@ export default async function DashboardPage() {
     }]
   })
 
+  // Format calendar event times once, here on the server, so the client renders
+  // them as plain strings and never re-formats a Date during hydration.
+  const calEvents = calRows.map(e => ({
+    id: e.id,
+    title: e.title,
+    startsAt: e.startsAt,
+    endsAt: e.endsAt,
+    allDay: e.allDay,
+    location: e.location,
+    timeLabel: e.allDay ? 'All day' : eventTimeLabel(e.startsAt, false),
+  }))
+
+  // Greeting + date computed once on the server (UK time) and passed down, so the
+  // client doesn't call new Date() during render — the source of hydration drift.
+  const firstName = session.user.name.split(' ')[0]
+  const ukHour = Number(
+    new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/London' }).format(now),
+  )
+  const greeting =
+    ukHour < 12 ? `Good morning, ${firstName}`
+    : ukHour < 17 ? `Good afternoon, ${firstName}`
+    : `Good evening, ${firstName}`
+  const dateStr = now.toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London',
+  })
+
   const nextBins = STATIC_BIN_SCHEDULES.map(bin => ({
     ...bin,
     nextCollection: getNextStaticBinCollection(bin),
@@ -180,10 +207,13 @@ export default async function DashboardPage() {
       inboxPreview={inboxPreview}
       bins={relevantBins}
       renewals={renewals}
-      calendarEvents={calRows}
+      calendarEvents={calEvents}
       pins={boardPins}
       tonightShows={tonightShows}
       shoppingTotal={shoppingTotal}
+      nowMs={now.getTime()}
+      greeting={greeting}
+      dateStr={dateStr}
     />
   )
 }

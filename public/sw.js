@@ -1,8 +1,8 @@
 // ── Cache names ────────────────────────────────────────────────────────────
 // Bump the version suffix to force all clients onto fresh caches on deploy.
-const SHELL_CACHE = 'homeos-shell-v2'   // app shell: static assets, icons, offline page, home
-const DATA_CACHE  = 'homeos-data-v2'    // /api GET responses
-const PAGE_CACHE  = 'homeos-pages-v2'   // navigations (HTML) + RSC payloads
+const SHELL_CACHE = 'homeos-shell-v3'   // app shell: static assets, icons, offline page, home
+const DATA_CACHE  = 'homeos-data-v3'    // /api GET responses
+const PAGE_CACHE  = 'homeos-pages-v3'   // navigations (HTML) + RSC payloads
 const KNOWN_CACHES = [SHELL_CACHE, DATA_CACHE, PAGE_CACHE]
 
 // ── Install ──────────────────────────────────────────────────────────────────

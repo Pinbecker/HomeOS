@@ -30,13 +30,26 @@ export function PushManager() {
   const [permission, setPermission] = useState<NotificationPermission | null>(null)
 
   useEffect(() => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return
+    if (!('serviceWorker' in navigator)) return
+
+    // The service worker caches /_next/static cache-first. In development those chunk
+    // URLs are stable but their contents change on every edit, so a cached bundle pins
+    // STALE JavaScript while the server keeps sending fresh HTML — a guaranteed hydration
+    // mismatch on every change. So only ever run the SW in production, and proactively
+    // tear down any SW (and its caches) left behind by a previous dev session so an
+    // already-broken client self-heals on the next load.
+    if (process.env.NODE_ENV !== 'production') {
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()))
+      if ('caches' in window) caches.keys().then(keys => keys.forEach(k => caches.delete(k)))
+      return
+    }
 
     // Register service worker
     navigator.serviceWorker.register('/sw.js').catch(err =>
       console.error('[push] SW registration failed:', err)
     )
 
+    if (!('Notification' in window)) return
     setPermission(Notification.permission)
 
     if (Notification.permission === 'granted') {

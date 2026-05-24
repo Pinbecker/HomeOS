@@ -30,9 +30,9 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 const TASK_COLOR = '#FF9500'
 
-const DEFAULT_ROW_H = 86
+const DEFAULT_ROW_H = 112
 const MIN_ROW_H = 40
-const MAX_ROW_H = 140
+const MAX_ROW_H = 170
 
 // ── Calendar colour swatches ─────────────────────────────────────────────────
 const CAL_COLORS = [
@@ -50,10 +50,20 @@ const CAL_COLORS = [
 const DEFAULT_CAL_COLOR = '#007AFF'
 
 // ── Bar layout constants ─────────────────────────────────────────────────────
-const BAR_GAP         = 2   // vertical gap between stacked bars in px
-const MIN_BAR_H       = 13  // minimum bar height before we hide bars and show dots
-const DATE_H          = 30  // px reserved for the date-number circle per cell
-const MULTI_DAY_BAR_H = 15  // compact fixed height for all-day / multi-day overlay bars
+const BAR_GAP         = 2    // vertical gap between stacked multi-day bars in px
+const MIN_BAR_H       = 13   // minimum bar height before we hide bars and show dots
+const DATE_H          = 30   // px reserved for the date-number circle per cell
+const MULTI_DAY_BAR_H = 16   // compact fixed height for all-day / multi-day overlay bars
+const PILL_GAP        = 3    // vertical gap between stacked single-day pills
+const MIN_PILL_H      = 16   // single-line title only
+const MAX_PILL_H      = 46   // roomy: 2-line title + time (iOS-style), never taller
+
+// ── iOS-style event tints ────────────────────────────────────────────────────
+// Soft fill = colour washed over the surface, so it stays pale in light mode and a
+// muted dark tint in dark mode. Text = colour nudged toward the label colour so it
+// keeps contrast against its own tint in either theme (the "coloured-on-pastel" look).
+const pillBg   = (color: string) => `color-mix(in srgb, ${color} 18%, var(--surface))`
+const pillText = (color: string) => `color-mix(in srgb, ${color} 72%, var(--text-1))`
 
 function buildGrid(year: number, month: number): Date[] {
   const first = new Date(year, month, 1)
@@ -739,23 +749,23 @@ export function CalendarView({
                                   width:        `calc(${widthPct}% - ${insetL + insetR}px)`,
                                   top:          bar.lane * mLaneH,
                                   height:       MULTI_DAY_BAR_H,
-                                  background:   bar.color,
-                                  borderRadius: `${bar.roundLeft ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundRight ? 4 : 1}px ${bar.roundLeft ? 4 : 1}px`,
-                                  paddingLeft:  bar.roundLeft  ? 4 : 2,
-                                  paddingRight: bar.roundRight ? 4 : 2,
+                                  background:   pillBg(bar.color),
+                                  borderRadius: `${bar.roundLeft ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundLeft ? 5 : 1}px`,
+                                  paddingLeft:  bar.roundLeft  ? 6 : 3,
+                                  paddingRight: bar.roundRight ? 6 : 3,
                                 }}
                               >
                                 {bar.roundLeft && (
-                                  <p className="font-semibold text-white leading-tight truncate w-full" style={{ fontSize: 10 }}>
+                                  <p className="font-semibold leading-tight truncate w-full" style={{ fontSize: 11, color: pillText(bar.color) }}>
                                     {bar.title}
-                                    {bar.time !== null && <span className="opacity-75 font-normal ml-[3px]">{cellTime(bar.time)}</span>}
+                                    {bar.time !== null && <span className="font-normal ml-[4px]" style={{ opacity: 0.6 }}>{cellTime(bar.time)}</span>}
                                   </p>
                                 )}
                               </button>
                             )
                           })}
 
-                          {/* ── Single-day pills — uniform compact height, iOS-style ── */}
+                          {/* ── Single-day pills — content-sized, iOS-style (title + time) ── */}
                           {weekDays.map((d, col) => {
                             if (d.getMonth() !== month) return null
                             const colItems = layout.singleDayCols[col]
@@ -763,56 +773,96 @@ export function CalendarView({
 
                             const singleOffset = layout.colMultiDayLanes[col] * mLaneH
                             const singleAvail  = avail - singleOffset
-                            // How many fixed-height pills fit in the space left below any multi-day lanes
-                            const maxFit = Math.floor((singleAvail + BAR_GAP) / mLaneH)
-                            if (maxFit < 1) return null
 
-                            // When there are more events than slots, give up the last slot to "+N more"
-                            const overflow      = colItems.length > maxFit
-                            const visibleCount  = overflow ? maxFit - 1 : colItems.length
-                            const visible       = colItems.slice(0, visibleCount)
-                            const hiddenCount   = colItems.length - visibleCount
+                            // How many pills fit at their compact minimum height
+                            const fit = Math.floor((singleAvail + PILL_GAP) / (MIN_PILL_H + PILL_GAP))
+                            if (fit < 1) return null
+
+                            const showMore     = colItems.length > fit
+                            const visibleCount = showMore ? fit - 1 : colItems.length
+                            const hiddenCount  = colItems.length - visibleCount
+
+                            // Only one slot fits but there's overflow → just show the count
+                            if (visibleCount < 1) {
+                              return (
+                                <div
+                                  key={`sd-${col}`}
+                                  className="absolute pointer-events-none flex items-center"
+                                  style={{ left: `calc(${(col / 7) * 100}% + 1px)`, width: `calc(${(1 / 7) * 100}% - 2px)`, top: singleOffset, height: MIN_PILL_H }}
+                                >
+                                  <span className="text-[10.5px] font-semibold text-text-2 leading-none pl-1.5 truncate">{colItems.length} more</span>
+                                </div>
+                              )
+                            }
+
+                            // Share remaining space between visible pills (reserving a compact slot
+                            // for "+more"), capped so a lone event never balloons to fill the cell.
+                            const moreReserve = showMore ? MIN_PILL_H + PILL_GAP : 0
+                            const pillArea    = singleAvail - moreReserve
+                            const pillH       = Math.min(
+                              MAX_PILL_H,
+                              Math.floor((pillArea - (visibleCount - 1) * PILL_GAP) / visibleCount),
+                            )
+                            const visible = colItems.slice(0, visibleCount)
 
                             return (
                               <React.Fragment key={`sd-${col}`}>
-                                {visible.map((item, idx) => (
-                                  <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      if (item.event) setDetail(item.event)
-                                      else setSelectedKey(localDayKey(d))
-                                    }}
-                                    className="absolute pointer-events-auto overflow-hidden flex items-center"
-                                    style={{
-                                      left:         `calc(${(col / 7) * 100}% + 1px)`,
-                                      width:        `calc(${(1   / 7) * 100}% - 2px)`,
-                                      top:          singleOffset + idx * mLaneH,
-                                      height:       MULTI_DAY_BAR_H,
-                                      background:   item.color,
-                                      borderRadius: 4,
-                                      paddingLeft:  4,
-                                      paddingRight: 3,
-                                    }}
-                                  >
-                                    <p className="font-semibold text-white leading-none truncate w-full" style={{ fontSize: 10 }}>
-                                      {item.title}
-                                    </p>
-                                  </button>
-                                ))}
+                                {visible.map((item, idx) => {
+                                  const showTime  = item.time !== null && pillH >= 32
+                                  const twoLine   = pillH >= (showTime ? 44 : 30)
+                                  const titleFont = pillH >= 24 ? 12 : 11
+                                  return (
+                                    <button
+                                      key={item.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (item.event) setDetail(item.event)
+                                        else setSelectedKey(localDayKey(d))
+                                      }}
+                                      className="absolute pointer-events-auto overflow-hidden flex flex-col items-start text-left"
+                                      style={{
+                                        left:          `calc(${(col / 7) * 100}% + 1px)`,
+                                        width:         `calc(${(1   / 7) * 100}% - 2px)`,
+                                        top:           singleOffset + idx * (pillH + PILL_GAP),
+                                        height:        pillH,
+                                        background:    pillBg(item.color),
+                                        borderRadius:  5,
+                                        paddingTop:    3,
+                                        paddingBottom: 2,
+                                        paddingLeft:   6,
+                                        paddingRight:  5,
+                                      }}
+                                    >
+                                      <p
+                                        className={`font-semibold leading-tight w-full ${twoLine ? 'line-clamp-2' : 'truncate'}`}
+                                        style={{ fontSize: titleFont, color: pillText(item.color) }}
+                                      >
+                                        {item.title}
+                                      </p>
+                                      {showTime && (
+                                        <p
+                                          className="font-normal leading-tight truncate w-full mt-[1px]"
+                                          style={{ fontSize: 10.5, color: pillText(item.color), opacity: 0.6 }}
+                                        >
+                                          {cellTime(item.time!)}
+                                        </p>
+                                      )}
+                                    </button>
+                                  )
+                                })}
                                 {hiddenCount > 0 && (
                                   <div
                                     className="absolute pointer-events-none flex items-center"
                                     style={{
                                       left:   `calc(${(col / 7) * 100}% + 1px)`,
                                       width:  `calc(${(1   / 7) * 100}% - 2px)`,
-                                      top:    singleOffset + visibleCount * mLaneH,
-                                      height: MULTI_DAY_BAR_H,
+                                      top:    singleOffset + visibleCount * (pillH + PILL_GAP),
+                                      height: MIN_PILL_H,
                                     }}
                                   >
-                                    <span className="text-[9.5px] font-semibold text-text-3 leading-none pl-1 truncate">
-                                      +{hiddenCount} more
+                                    <span className="text-[10.5px] font-semibold text-text-2 leading-none pl-1.5 truncate">
+                                      {hiddenCount} more
                                     </span>
                                   </div>
                                 )}

@@ -3,8 +3,7 @@
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { daysUntil } from '@/lib/utils/bins'
-import { eventTimeLabel, allDayAsLocal, startOfLocalDay } from '@/lib/utils/calendar'
+import { allDayAsLocal, startOfLocalDay } from '@/lib/utils/calendar'
 import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
 import { AiCapture } from '@/components/features/ai/ai-capture'
@@ -39,6 +38,9 @@ type CalEvent = {
   endsAt: Date | null
   allDay: boolean
   location: string | null
+  // Pre-formatted on the server so the client never re-formats a time during render
+  // (avoids server/client ICU hour-cycle hydration mismatches). 'All day' for all-day events.
+  timeLabel: string
 }
 type Pin = BoardPin
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
@@ -55,6 +57,10 @@ interface Props {
   pins: Pin[]
   tonightShows: TonightShow[]
   shoppingTotal: number
+  // Computed on the server so the client never calls new Date() during render.
+  nowMs: number
+  greeting: string
+  dateStr: string
 }
 
 const BIN_DOT: Record<string, string> = {
@@ -66,20 +72,12 @@ const BIN_DOT: Record<string, string> = {
   pink:  '#EC4899',
 }
 
-function greeting(name: string) {
-  const hour = new Date().getHours()
-  const first = name.split(' ')[0]
-  if (hour < 12) return `Good morning, ${first}`
-  if (hour < 17) return `Good afternoon, ${first}`
-  return `Good evening, ${first}`
-}
-
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 
 type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null }
   | { kind: 'task';     id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean }
-  | { kind: 'renewal';  id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean }
+  | { kind: 'renewal';  id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 
 type DayGroup = {
   key: string
@@ -87,6 +85,15 @@ type DayGroup = {
   isToday: boolean
   isOverdue: boolean
   entries: TimelineEntry[]
+}
+
+// Whole-day difference between a target instant and `now`, both floored to local
+// midnight. Uses the passed `now` (server-provided) rather than a live clock, so the
+// result is identical on the server and during client hydration.
+function dayDiffFrom(targetMs: number, now: Date): number {
+  const today  = startOfLocalDay(now).getTime()
+  const target = startOfLocalDay(new Date(targetMs)).getTime()
+  return Math.round((target - today) / 86_400_000)
 }
 
 function buildTimeline(
@@ -104,7 +111,7 @@ function buildTimeline(
       eventId: ev.id,
       title: ev.title,
       sortMs: ev.startsAt.getTime(),
-      timeLabel: ev.allDay ? 'All day' : eventTimeLabel(ev.startsAt, false),
+      timeLabel: ev.timeLabel,
       sub: ev.location,
     })
   }
@@ -119,11 +126,12 @@ function buildTimeline(
       taskId: task.id,
       listId: task.listId,
       assignee: task.assignee?.name ?? null,
-      overdue: daysUntil(task.dueDate) < 0,
+      overdue: dayDiffFrom(task.dueDate.getTime(), now) < 0,
     })
   }
 
   for (const r of renewals) {
+    const days = dayDiffFrom(r.date.getTime(), now)
     entries.push({
       kind: 'renewal',
       id: `renewal-${r.id}`,
@@ -131,7 +139,8 @@ function buildTimeline(
       sortMs: r.date.getTime(),
       sub: r.label,
       href: r.href,
-      overdue: daysUntil(r.date) < 0,
+      overdue: days < 0,
+      days,
     })
   }
 
@@ -232,8 +241,8 @@ function TimelineRow({
     )
   }
 
-  // renewal — amber clock
-  const days = daysUntil(new Date(entry.sortMs))
+  // renewal — amber clock. `days` is precomputed against the server clock in buildTimeline.
+  const days = entry.days
   return (
     <Link href={entry.href} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${borderCls}`}>
       <div className={`w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 ${entry.overdue ? 'bg-red-bg' : 'bg-amber-bg'}`}>
@@ -307,6 +316,7 @@ function ScheduleBlock({
   setRangeDays,
   mode,
   setMode,
+  nowMs,
 }: {
   calendarEvents: CalEvent[]
   tasks: Task[]
@@ -317,8 +327,11 @@ function ScheduleBlock({
   setRangeDays: (d: number) => void
   mode: 'combined' | 'separate'
   setMode: (m: 'combined' | 'separate') => void
+  nowMs: number
 }) {
-  const now = new Date()
+  // Server-provided instant — never new Date() here, or the initial render's day
+  // grouping (Today/Tomorrow/Overdue) would diverge between server and client.
+  const now = new Date(nowMs)
   const cutoff = rangeCutoffMs(now, rangeDays)
 
   // Filter to the chosen window (overdue items have dates before today, so they're always included)
@@ -476,10 +489,10 @@ function OnTonightCard({ shows }: { shows: TonightShow[] }) {
 
 export function DashboardClient({
   user, shoppingItems, tasks, inboxCount, inboxPreview, bins, renewals, calendarEvents, pins, tonightShows, shoppingTotal,
+  nowMs, greeting, dateStr,
 }: Props) {
-  const now = new Date()
-  const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-
+  // Single server-provided instant for all "current time" math in this render tree.
+  const now = new Date(nowMs)
   const router = useRouter()
   const { enqueue } = useSyncQueue()
 
@@ -548,7 +561,7 @@ export function DashboardClient({
         <div>
           <p className="text-[11.5px] font-semibold text-text-3 mb-1 tracking-wide uppercase">{dateStr}</p>
           <h1 className="text-[22px] font-extrabold text-text-1 leading-tight tracking-tight">
-            {greeting(user.name)}
+            {greeting}
           </h1>
         </div>
         <UserMenu user={user} />
@@ -565,7 +578,7 @@ export function DashboardClient({
           <div className="bg-surface border border-border rounded-2xl overflow-hidden">
 
             {bins.map((bin, i) => {
-              const days = daysUntil(bin.nextCollection)
+              const days = dayDiffFrom(bin.nextCollection.getTime(), now)
               const dot = BIN_DOT[bin.colour] ?? '#6B7280'
               return (
                 <div key={bin.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
@@ -622,6 +635,7 @@ export function DashboardClient({
         setRangeDays={setRangeDays}
         mode={scheduleMode}
         setMode={setScheduleMode}
+        nowMs={nowMs}
       />
 
       {/* Shopping — always shown */}
