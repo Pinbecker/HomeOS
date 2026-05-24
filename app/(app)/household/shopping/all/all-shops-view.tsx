@@ -1,50 +1,73 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { addShoppingItem, toggleShoppingItem, clearAllChecked, deleteShoppingItem } from '../actions'
+import { useRouter } from 'next/navigation'
+import { ulid } from 'ulid'
 import { SwipeRow } from '@/components/ui/swipe-row'
+import { useSyncQueue } from '@/lib/hooks/use-sync-queue'
+import { SyncBanner } from '@/components/features/offline/sync-banner'
 
 type Item = { id: string; title: string; checked: boolean; shopId: string }
 type Shop = { id: string; name: string; color: string; items: Item[] }
 
+const SYNC_URL = '/api/sync/shopping'
+
 export function AllShopsView({ shops }: { shops: Shop[] }) {
+  const router = useRouter()
   const [items, setItems] = useState<Item[]>(shops.flatMap(s => s.items))
   const [text, setText] = useState('')
+  const textRef = useRef('')   // mirrors `text` for race-free commits (blur + submit)
   const [targetShop, setTargetShop] = useState(shops[0]?.id ?? '')
-  const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const { pending, isSyncing, enqueue } = useSyncQueue()
+
+  useEffect(() => {
+    const handler = () => router.refresh()
+    window.addEventListener('homeos:sync-complete', handler)
+    return () => window.removeEventListener('homeos:sync-complete', handler)
+  }, [router])
 
   const shopMeta = new Map(shops.map(s => [s.id, { name: s.name, color: s.color }]))
   const checked = items.filter(i => i.checked)
 
+  // refocus only on Enter/submit — not on blur (blur means the user tapped away).
+  // Reads/clears textRef synchronously so a blur+submit pair can't double-add.
+  function commitAdd(refocus: boolean) {
+    const title = textRef.current.trim()
+    if (!title || !targetShop) return
+    textRef.current = ''
+    const id = ulid()
+    setText('')
+    setItems(prev => [...prev, { id, title, checked: false, shopId: targetShop }])
+    enqueue(SYNC_URL, { op: 'add', id, listId: targetShop, title })
+    if (refocus) inputRef.current?.focus()
+  }
+
   function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    const title = text.trim()
-    if (!title || !targetShop) return
-    setText('')
-    const optimistic: Item = { id: `tmp-${Date.now()}`, title, checked: false, shopId: targetShop }
-    setItems(prev => [...prev, optimistic])
-    startTransition(async () => {
-      const result = await addShoppingItem(targetShop, title)
-      if (result.item) setItems(prev => prev.map(i => i.id === optimistic.id ? { ...result.item!, shopId: targetShop } : i))
-    })
-    inputRef.current?.focus()
+    commitAdd(true)
   }
 
   function handleToggle(id: string) {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, checked: !i.checked } : i))
-    startTransition(() => toggleShoppingItem(id))
+    setItems(prev => prev.map(i => {
+      if (i.id !== id) return i
+      const nextChecked = !i.checked
+      enqueue(SYNC_URL, { op: 'set_checked', id, checked: nextChecked })
+      return { ...i, checked: nextChecked }
+    }))
   }
 
   function handleClearAll() {
+    // Queue an individual delete for each checked item — works offline and per-item
+    checked.forEach(item => enqueue(SYNC_URL, { op: 'delete', id: item.id }))
     setItems(prev => prev.filter(i => !i.checked))
-    startTransition(() => clearAllChecked())
   }
 
   function handleDelete(id: string) {
     setItems(prev => prev.filter(i => i.id !== id))
-    startTransition(() => deleteShoppingItem(id))
+    enqueue(SYNC_URL, { op: 'delete', id })
   }
 
   return (
@@ -66,6 +89,9 @@ export function AllShopsView({ shops }: { shops: Shop[] }) {
           </button>
         )}
       </header>
+
+      {/* Offline / sync status */}
+      <SyncBanner pending={pending} isSyncing={isSyncing} />
 
       {/* Quick add with shop picker */}
       <div className="mx-4 mb-4">
@@ -90,14 +116,15 @@ export function AllShopsView({ shops }: { shops: Shop[] }) {
             ref={inputRef}
             type="text"
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => { setText(e.target.value); textRef.current = e.target.value }}
+            onBlur={() => commitAdd(false)}
             placeholder={targetShop ? `Add to ${shopMeta.get(targetShop)?.name ?? 'shop'}…` : 'Add item…'}
             autoComplete="off"
             className="flex-1 h-12 bg-surface border border-border rounded-xl px-4 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none focus:border-accent transition-colors"
           />
           <button
             type="submit"
-            disabled={!text.trim() || isPending}
+            disabled={!text.trim()}
             className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center disabled:opacity-40 active:opacity-80 transition-opacity shrink-0"
             aria-label="Add"
           >

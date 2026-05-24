@@ -1,14 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useTransition } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { daysUntil } from '@/lib/utils/bins'
 import { eventTimeLabel, allDayAsLocal, startOfLocalDay } from '@/lib/utils/calendar'
 import { PinnedBoard, type BoardPin } from './pinned-board'
 import { UserMenu } from './user-menu'
 import { AiCapture } from '@/components/features/ai/ai-capture'
-import { toggleTask } from '@/app/(app)/household/tasks/actions'
-import { toggleShoppingItem } from '@/app/(app)/household/shopping/actions'
+import { useSyncQueue } from '@/lib/hooks/use-sync-queue'
 
 type ShoppingItem = { id: string; title: string; checked: boolean; shopName: string; shopColor: string }
 type Task = {
@@ -257,20 +257,85 @@ function TimelineRow({
   )
 }
 
+// User-selectable schedule windows
+const RANGE_OPTIONS: { days: number; label: string }[] = [
+  { days: 1,  label: 'Today' },
+  { days: 3,  label: '3 days' },
+  { days: 7,  label: '1 week' },
+  { days: 14, label: '2 weeks' },
+  { days: 30, label: 'Month' },
+]
+
+// Upper bound (epoch ms) for "rangeDays days from today", inclusive of the last day
+function rangeCutoffMs(now: Date, rangeDays: number) {
+  return startOfLocalDay(now).getTime() + rangeDays * 86_400_000 - 1
+}
+
+// A single card of day-grouped timeline rows — reused for combined + each separate section
+function GroupedTimeline({
+  groups, doneIds, onToggle,
+}: {
+  groups: DayGroup[]
+  doneIds: Set<string>
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+      {groups.map((group, gi) => (
+        <div key={group.key}>
+          <div className={`px-4 py-[7px] bg-surface-2 ${gi > 0 ? 'border-t border-border' : ''}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-[0.09em] ${
+              group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'
+            }`}>
+              {group.label}
+            </p>
+          </div>
+          {group.entries.map((entry, ei) => (
+            <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} hasBorder={ei > 0} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ScheduleBlock({
   calendarEvents,
   tasks,
   renewals,
   doneIds,
   onToggle,
+  rangeDays,
+  setRangeDays,
+  mode,
+  setMode,
 }: {
   calendarEvents: CalEvent[]
   tasks: Task[]
   renewals: Renewal[]
   doneIds: Set<string>
   onToggle: (id: string) => void
+  rangeDays: number
+  setRangeDays: (d: number) => void
+  mode: 'combined' | 'separate'
+  setMode: (m: 'combined' | 'separate') => void
 }) {
-  const groups = buildTimeline(calendarEvents, tasks, renewals, new Date())
+  const now = new Date()
+  const cutoff = rangeCutoffMs(now, rangeDays)
+
+  // Filter to the chosen window (overdue items have dates before today, so they're always included)
+  const calIn    = calendarEvents.filter(e => e.startsAt.getTime() <= cutoff)
+  const taskIn   = tasks.filter(t => t.dueDate != null && new Date(t.dueDate).getTime() <= cutoff)
+  const renewIn  = renewals.filter(r => r.date.getTime() <= cutoff)
+
+  const combinedGroups = buildTimeline(calIn, taskIn, renewIn, now)
+  const eventGroups    = buildTimeline(calIn, [], [], now)
+  const taskGroups     = buildTimeline([], taskIn, [], now)
+  const renewalGroups  = buildTimeline([], [], renewIn, now)
+
+  const isEmpty = mode === 'combined'
+    ? combinedGroups.length === 0
+    : eventGroups.length === 0 && taskGroups.length === 0 && renewalGroups.length === 0
 
   return (
     <section className="mx-4 mb-4">
@@ -279,41 +344,75 @@ function ScheduleBlock({
         <Link href="/calendar" className="text-[11.5px] font-semibold text-accent">Calendar</Link>
       </div>
 
-      {groups.length === 0 ? (
+      {/* Controls: range chips (left) + combined/separate toggle (right) */}
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="flex-1 min-w-0 flex gap-1.5 overflow-x-auto no-scrollbar">
+          {RANGE_OPTIONS.map(o => (
+            <button
+              key={o.days}
+              onClick={() => setRangeDays(o.days)}
+              className={`px-3 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap transition-colors ${
+                rangeDays === o.days ? 'bg-accent text-white' : 'bg-surface border border-border text-text-2'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex bg-surface-2 rounded-lg p-0.5 shrink-0">
+          <button
+            onClick={() => setMode('combined')}
+            aria-label="Combined view"
+            className={`px-2 py-1 rounded-[7px] transition-colors ${mode === 'combined' ? 'bg-surface shadow-sm text-text-1' : 'text-text-3'}`}
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="w-4 h-4">
+              <line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="10" x2="16" y2="10" /><line x1="4" y1="14" x2="16" y2="14" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setMode('separate')}
+            aria-label="Separate view"
+            className={`px-2 py-1 rounded-[7px] transition-colors ${mode === 'separate' ? 'bg-surface shadow-sm text-text-1' : 'text-text-3'}`}
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <rect x="3" y="3.5" width="14" height="5" rx="1.5" /><rect x="3" y="11.5" width="14" height="5" rx="1.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {isEmpty ? (
         <Link href="/calendar" className="flex items-center gap-3 bg-surface border border-border rounded-2xl px-4 py-3 active:bg-bg">
           <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
             <div className="w-[7px] h-[7px] rounded-full bg-accent" />
           </div>
-          <span className="flex-1 text-[13.5px] text-text-2">Nothing in the next two weeks</span>
+          <span className="flex-1 text-[13.5px] text-text-2">Nothing scheduled in this range</span>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3 shrink-0">
             <path d="M6 4l4 4-4 4" />
           </svg>
         </Link>
+      ) : mode === 'combined' ? (
+        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={onToggle} />
       ) : (
-        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-          {groups.map((group, gi) => (
-            <div key={group.key}>
-              {/* Day header */}
-              <div className={`px-4 py-[7px] bg-surface-2 ${gi > 0 ? 'border-t border-border' : ''}`}>
-                <p className={`text-[10px] font-bold uppercase tracking-[0.09em] ${
-                  group.isOverdue ? 'text-red'
-                  : group.isToday  ? 'text-accent'
-                  : 'text-text-3'
-                }`}>
-                  {group.label}
-                </p>
-              </div>
-              {group.entries.map((entry, ei) => (
-                <TimelineRow
-                  key={entry.id}
-                  entry={entry}
-                  doneIds={doneIds}
-                  onToggle={onToggle}
-                  hasBorder={ei > 0}
-                />
-              ))}
+        <div className="flex flex-col gap-4">
+          {eventGroups.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-1.5 px-1">Events</p>
+              <GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={onToggle} />
             </div>
-          ))}
+          )}
+          {taskGroups.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-1.5 px-1">Tasks</p>
+              <GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={onToggle} />
+            </div>
+          )}
+          {renewalGroups.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3 mb-1.5 px-1">Renewals</p>
+              <GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={onToggle} />
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -383,29 +482,62 @@ export function DashboardClient({
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 
+  const router = useRouter()
+  const { enqueue } = useSyncQueue()
+
+  // Pull fresh data once queued offline changes have synced
+  useEffect(() => {
+    const handler = () => router.refresh()
+    window.addEventListener('homeos:sync-complete', handler)
+    return () => window.removeEventListener('homeos:sync-complete', handler)
+  }, [router])
+
+  // Schedule preferences — range (days ahead) + combined/separate view, persisted locally.
+  // Defaults match the server render to avoid hydration mismatch; restored on mount.
+  const [rangeDays, setRangeDaysState] = useState(14)
+  const [scheduleMode, setScheduleModeState] = useState<'combined' | 'separate'>('combined')
+
+  useEffect(() => {
+    const r = Number(localStorage.getItem('homeos:schedule-range'))
+    if ([1, 3, 7, 14, 30].includes(r)) setRangeDaysState(r)
+    const m = localStorage.getItem('homeos:schedule-mode')
+    if (m === 'combined' || m === 'separate') setScheduleModeState(m)
+  }, [])
+
+  function setRangeDays(d: number) {
+    setRangeDaysState(d)
+    localStorage.setItem('homeos:schedule-range', String(d))
+  }
+  function setScheduleMode(m: 'combined' | 'separate') {
+    setScheduleModeState(m)
+    localStorage.setItem('homeos:schedule-mode', m)
+  }
+
   const [doneTaskIds, setDoneTaskIds] = useState<Set<string>>(new Set())
-  const [, startTransition] = useTransition()
 
   function toggleDashTask(id: string) {
+    const willComplete = !doneTaskIds.has(id)
     setDoneTaskIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (willComplete) next.add(id)
+      else next.delete(id)
       return next
     })
-    startTransition(() => { toggleTask(id) })
+    // Send explicit final state (conflict-safe) through the offline sync queue
+    enqueue('/api/sync/tasks', { op: 'set_status', id, status: willComplete ? 'completed' : 'active' })
   }
 
   const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
 
   function toggleShopItem(id: string) {
+    const willCheck = !checkedShopIds.has(id)
     setCheckedShopIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (willCheck) next.add(id)
+      else next.delete(id)
       return next
     })
-    startTransition(() => { toggleShoppingItem(id) })
+    enqueue('/api/sync/shopping', { op: 'set_checked', id, checked: willCheck })
   }
 
   const hasAlerts = bins.length > 0 || inboxCount > 0
@@ -488,6 +620,10 @@ export function DashboardClient({
         renewals={renewals}
         doneIds={doneTaskIds}
         onToggle={toggleDashTask}
+        rangeDays={rangeDays}
+        setRangeDays={setRangeDays}
+        mode={scheduleMode}
+        setMode={setScheduleMode}
       />
 
       {/* Shopping — always shown */}

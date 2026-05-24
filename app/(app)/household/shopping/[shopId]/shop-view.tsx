@@ -20,6 +20,7 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
   const router = useRouter()
   const [items, setItems] = useState(shop.items)
   const [text, setText] = useState('')
+  const textRef = useRef('')   // mirrors `text` for race-free commits (blur + submit)
   // useTransition only for shop-level ops (rename/delete) that need a server round-trip
   const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -40,15 +41,22 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
   }, [router])
 
   // ── Item mutations — optimistic-first, queued for offline ─────────────────
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    const title = text.trim()
+  // refocus only on Enter/submit — not on blur (blur means the user tapped away).
+  // Reads/clears textRef synchronously so a blur+submit pair can't double-add.
+  function commitAdd(refocus: boolean) {
+    const title = textRef.current.trim()
     if (!title) return
+    textRef.current = ''
     const id = ulid()   // permanent ID generated client-side
     setText('')
     setItems(prev => [...prev, { id, title, checked: false, checkedAt: null }])
     enqueue(SYNC_URL, { op: 'add', id, listId: shop.id, title })
-    inputRef.current?.focus()
+    if (refocus) inputRef.current?.focus()
+  }
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    commitAdd(true)
   }
 
   function handleToggle(id: string) {
@@ -172,7 +180,8 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
               ref={inputRef}
               type="text"
               value={text}
-              onChange={e => setText(e.target.value)}
+              onChange={e => { setText(e.target.value); textRef.current = e.target.value }}
+              onBlur={() => commitAdd(false)}
               placeholder="Add item…"
               autoComplete="off"
               className="flex-1 h-12 bg-surface border border-border rounded-xl px-4 text-[14px] text-text-1 placeholder:text-text-3 font-medium outline-none focus:border-accent transition-colors"

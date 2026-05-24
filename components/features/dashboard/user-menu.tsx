@@ -283,7 +283,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
                       </div>
                       {themeMode === 'auto' && (
                         <p className="text-[12px] text-text-3 text-center mt-2">
-                          Follows your phone's display setting
+                          Follows your phone&rsquo;s display setting
                         </p>
                       )}
                     </div>

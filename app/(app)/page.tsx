@@ -15,7 +15,9 @@ export default async function DashboardPage() {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
-  const calWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14, 23, 59, 59)
+  // Schedule window covers the widest user-selectable range (30 days). The
+  // dashboard filters this down client-side to the user's chosen range.
+  const scheduleWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 31, 23, 59, 59)
 
   // These queries are independent — run in parallel
   const [shoppingLists, tasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows, followedTvShows] =
@@ -35,10 +37,10 @@ export default async function DashboardPage() {
           eq(items.status, 'active'),
           isNull(items.deletedAt),
           isNotNull(items.dueDate),
-          lte(items.dueDate, calWindow)
+          lte(items.dueDate, scheduleWindow)
         ),
         orderBy: [asc(items.dueDate), asc(items.createdAt)],
-        limit: 20,
+        limit: 120,
         with: { assignee: true, createdBy: true },
       }),
       db.$count(items, and(eq(items.type, 'inbox'), eq(items.status, 'active'), isNull(items.deletedAt))),
@@ -63,10 +65,10 @@ export default async function DashboardPage() {
         columns: { id: true, entityId: true, message: true, triggerAt: true },
       }),
       db.query.calendarEvents.findMany({
-        where: and(gte(calendarEvents.startsAt, startOfToday), lte(calendarEvents.startsAt, calWindow)),
+        where: and(gte(calendarEvents.startsAt, startOfToday), lte(calendarEvents.startsAt, scheduleWindow)),
         orderBy: [asc(calendarEvents.startsAt)],
         columns: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, location: true },
-        limit: 8,
+        limit: 60,
       }),
       db.query.pins.findMany({
         where: isNotNull(pins.linkHref),

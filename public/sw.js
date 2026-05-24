@@ -1,66 +1,76 @@
 // ── Cache names ────────────────────────────────────────────────────────────
-// Bump the version suffix to force all clients to pick up a new cache on deploy.
-const SHELL_CACHE   = 'homeos-shell-v1'
-const DATA_CACHE    = 'homeos-data-v1'
-const KNOWN_CACHES  = [SHELL_CACHE, DATA_CACHE]
+// Bump the version suffix to force all clients onto fresh caches on deploy.
+const SHELL_CACHE = 'homeos-shell-v2'   // app shell: static assets, icons, offline page, home
+const DATA_CACHE  = 'homeos-data-v2'    // /api GET responses
+const PAGE_CACHE  = 'homeos-pages-v2'   // navigations (HTML) + RSC payloads
+const KNOWN_CACHES = [SHELL_CACHE, DATA_CACHE, PAGE_CACHE]
 
-// ── Install ────────────────────────────────────────────────────────────────
-// Cache the offline fallback + key static assets immediately.
-// skipWaiting so the new SW activates without waiting for tabs to close.
+// ── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   self.skipWaiting()
-  event.waitUntil(
-    caches.open(SHELL_CACHE).then(cache =>
-      cache.addAll(['/offline.html', '/icons/icon-192.png', '/manifest.json'])
-    )
-  )
+  event.waitUntil((async () => {
+    const cache = await caches.open(SHELL_CACHE)
+    await cache.addAll(['/offline.html', '/icons/icon-192.png', '/manifest.json'])
+    // Best-effort precache of the home shell so the installed PWA + "Go to Home"
+    // work offline even before the user has browsed. May be a login redirect if
+    // not yet authenticated — that's fine, it gets refreshed on the next online nav.
+    try { await cache.add('/') } catch { /* ignore */ }
+  })())
 })
 
 // ── Activate ───────────────────────────────────────────────────────────────
-// Purge any old caches from previous versions, then claim open clients.
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(k => !KNOWN_CACHES.includes(k)).map(k => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
-  )
+  event.waitUntil((async () => {
+    const keys = await caches.keys()
+    await Promise.all(keys.filter(k => !KNOWN_CACHES.includes(k)).map(k => caches.delete(k)))
+    await self.clients.claim()
+  })())
 })
+
+// A request is for React Server Component data (client-side nav / link prefetch)
+function isRSC(req, url) {
+  return req.headers.get('RSC') === '1' || url.searchParams.has('_rsc')
+}
 
 // ── Fetch ──────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
   const req = event.request
   const url = new URL(req.url)
 
-  // Only intercept same-origin GET requests
   if (url.origin !== self.location.origin) return
   if (req.method !== 'GET') return
 
-  // 1. Next.js static assets (content-addressed, hashed filenames) — cache first.
-  //    Once cached they never change, so we never need to revalidate.
+  // 1. Next.js static assets (hashed, immutable) → cache first
   if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(cacheFirst(req, SHELL_CACHE))
     return
   }
 
-  // 2. Static public files (icons, images, manifest, offline page) — cache first.
-  if (url.pathname.match(/\.(png|jpg|jpeg|svg|ico|webp|json|html)$/) &&
-      !url.pathname.startsWith('/api/')) {
+  // 2. Static public files (icons, fonts, manifest, offline page) → cache first
+  if (/\.(png|jpe?g|svg|ico|webp|gif|json|html|woff2?)$/.test(url.pathname) && !url.pathname.startsWith('/api/')) {
     event.respondWith(cacheFirst(req, SHELL_CACHE))
     return
   }
 
-  // 3. API GET requests — network first, fall back to last cached response.
-  //    This means data is readable offline (read-only) after first visit.
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirst(req, DATA_CACHE, null))
+  // 3. RSC payloads (the data behind client-side navigation) → network first, cache fallback.
+  //    Caching these is what makes tapping links work offline for visited/prefetched pages.
+  if (isRSC(req, url)) {
+    event.respondWith(networkFirst(req, PAGE_CACHE))
     return
   }
 
-  // 4. Page navigations — network first, cache a copy, fall back to cached or offline page.
+  // Never cache auth — always go straight to network
+  if (url.pathname.startsWith('/api/auth/')) return
+
+  // 4. API GET requests → network first, last-known data fallback
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(networkFirst(req, DATA_CACHE))
+    return
+  }
+
+  // 5. Page navigations (hard loads) → network first, cached page → home shell → offline page
   if (req.mode === 'navigate') {
-    event.respondWith(navigateWithFallback(req))
+    event.respondWith(handleNavigation(req))
     return
   }
 })
@@ -71,10 +81,7 @@ async function cacheFirst(req, cacheName) {
   if (cached) return cached
   try {
     const res = await fetch(req)
-    if (res.ok) {
-      const cache = await caches.open(cacheName)
-      cache.put(req, res.clone())
-    }
+    if (res && res.ok) (await caches.open(cacheName)).put(req, res.clone())
     return res
   } catch {
     return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } })
@@ -82,47 +89,41 @@ async function cacheFirst(req, cacheName) {
 }
 
 // ── Strategy: network first ───────────────────────────────────────────────
-async function networkFirst(req, cacheName, fallbackUrl) {
+async function networkFirst(req, cacheName) {
   try {
     const res = await fetch(req)
-    if (res.ok) {
-      const cache = await caches.open(cacheName)
-      cache.put(req, res.clone())
-    }
+    if (res && res.ok) (await caches.open(cacheName)).put(req, res.clone())
     return res
   } catch {
     const cached = await caches.match(req)
     if (cached) return cached
-    if (fallbackUrl) {
-      const fallback = await caches.match(fallbackUrl)
-      if (fallback) return fallback
-    }
-    return new Response(
-      JSON.stringify({ error: 'offline', message: 'You are offline. Showing cached data.' }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    )
+    // No cached copy — let the caller (Next router / fetch) see a failure
+    return new Response('', { status: 503, statusText: 'Offline' })
   }
 }
 
-// ── Strategy: navigate with offline fallback ──────────────────────────────
-async function navigateWithFallback(req) {
+// ── Navigation: network first with layered offline fallback ───────────────
+async function handleNavigation(req) {
   try {
     const res = await fetch(req)
-    if (res.ok) {
-      // Cache visited pages so they load offline next time
-      const cache = await caches.open(SHELL_CACHE)
-      cache.put(req, res.clone())
-    }
+    if (res && res.ok) (await caches.open(PAGE_CACHE)).put(req, res.clone())
     return res
   } catch {
-    // Try exact cached URL first, then the root (app shell), then offline page
-    const cached = await caches.match(req)
-      ?? await caches.match('/')
-      ?? await caches.match('/offline.html')
-    return cached ?? new Response('<h1>Offline</h1>', {
-      status: 503,
-      headers: { 'Content-Type': 'text/html' },
-    })
+    const url = new URL(req.url)
+    // Exact cached page (was hard-loaded online before)
+    const exact = await caches.match(req)
+    if (exact) return exact
+    // Same path without query string
+    const bare = await caches.match(url.pathname)
+    if (bare) return bare
+    // Home shell — lets the app boot and client-route to cached pages
+    if (url.pathname === '/') {
+      const home = await caches.match('/')
+      if (home) return home
+    }
+    // Last resort: friendly offline page
+    return (await caches.match('/offline.html'))
+      ?? new Response('<h1>Offline</h1>', { status: 503, headers: { 'Content-Type': 'text/html' } })
   }
 }
 

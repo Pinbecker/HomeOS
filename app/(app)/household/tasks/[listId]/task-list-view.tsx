@@ -117,15 +117,16 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
   }
 
   // ── Item mutations — optimistic-first, queued for offline ──────────────────
-  function addTask() {
+  // refocus only on Enter/submit — not on blur (blur means the user tapped away)
+  function addTask(refocus = true) {
     const t = newTitle.trim()
     if (!t || isAll) return
     const id = ulid()   // permanent client-generated ID
     const targetListId = isInbox ? null : listId
     setActive(prev => [...prev, { id, title: t, dueDate: null, status: 'active', listId: targetListId, assigneeId: null }])
     setNewTitle('')
-    inputRef.current?.focus()
     enqueue(SYNC_URL, { op: 'add', id, listId: targetListId, title: t })
+    if (refocus) inputRef.current?.focus()
   }
 
   function complete(task: Task) {
@@ -456,6 +457,7 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
                 value={newTitle}
                 onChange={e => setNewTitle(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') addTask() }}
+                onBlur={() => addTask(false)}
                 placeholder={isInbox ? 'Add a task to inbox' : 'Add a reminder'}
                 className="flex-1 bg-transparent text-[16px] text-text-1 placeholder:text-text-3 outline-none"
               />
