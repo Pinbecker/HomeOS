@@ -141,6 +141,13 @@ function fullDate(d: Date) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+// Scroll offset of `el` within `container`. Computed from bounding rects so it's
+// correct regardless of nesting — day cells live inside a `position: relative` week
+// row, so `el.offsetTop` is relative to that row, NOT the scroll container.
+function scrollOffsetWithin(container: HTMLElement, el: HTMLElement): number {
+  return container.scrollTop + el.getBoundingClientRect().top - container.getBoundingClientRect().top
+}
+
 // ── Week layout computation ─────────────────────────────────────────────────
 
 type WeekBarItem = {
@@ -365,7 +372,7 @@ export function CalendarView({
       setFlashEventId(focusEvent.id)
       const cell = container.querySelector<HTMLElement>(`[data-daykey="${dayKey}"]`)
       if (cell) {
-        container.scrollTop = Math.max(0, cell.offsetTop - rowHeightRef.current)
+        container.scrollTop = Math.max(0, scrollOffsetWithin(container, cell) - rowHeightRef.current)
       } else {
         const d = new Date(focusEvent.start)
         const monthEl = document.getElementById(`cal-month-${d.getFullYear()}-${d.getMonth()}`)
@@ -569,7 +576,8 @@ export function CalendarView({
     const monthEl = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
     const target = todayCell ?? monthEl
     if (container && target) {
-      container.scrollTo({ top: Math.max(0, target.offsetTop - rowHeight), behavior: 'smooth' })
+      const top = scrollOffsetWithin(container, target) - rowHeight
+      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
     }
   }
 
