@@ -1,20 +1,26 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { addShoppingItem, toggleShoppingItem, clearChecked, renameShop, deleteShop, deleteShoppingItem, moveShoppingItem } from '../actions'
+import { ulid } from 'ulid'
+import { renameShop, deleteShop, moveShoppingItem } from '../actions'
 import { LIST_COLORS } from '../../tasks/colors'
 import { SwipeRow } from '@/components/ui/swipe-row'
+import { useSyncQueue } from '@/lib/hooks/use-sync-queue'
+import { SyncBanner } from '@/components/features/offline/sync-banner'
 
 type ListItem = { id: string; title: string; checked: boolean; checkedAt: Date | null }
 type Shop = { id: string; name: string; color: string; isGeneral: boolean; items: ListItem[] }
 type OtherShop = { id: string; name: string; color: string }
 
+const SYNC_URL = '/api/sync/shopping'
+
 export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherShop[] }) {
   const router = useRouter()
   const [items, setItems] = useState(shop.items)
   const [text, setText] = useState('')
+  // useTransition only for shop-level ops (rename/delete) that need a server round-trip
   const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -23,40 +29,51 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
   const [color, setColor] = useState(shop.color)
   const [movingItemId, setMovingItemId] = useState<string | null>(null)
 
-  const unchecked = items.filter(i => !i.checked)
-  const checked   = items.filter(i => i.checked)
+  // ── Offline sync ──────────────────────────────────────────────────────────
+  const { pending, isSyncing, enqueue } = useSyncQueue()
 
+  // After a full sync completes, refresh to pull in any changes from the other user
+  useEffect(() => {
+    const handler = () => router.refresh()
+    window.addEventListener('homeos:sync-complete', handler)
+    return () => window.removeEventListener('homeos:sync-complete', handler)
+  }, [router])
+
+  // ── Item mutations — optimistic-first, queued for offline ─────────────────
   function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    if (!text.trim()) return
     const title = text.trim()
+    if (!title) return
+    const id = ulid()   // permanent ID generated client-side
     setText('')
-    const optimistic: ListItem = { id: `tmp-${Date.now()}`, title, checked: false, checkedAt: null }
-    setItems(prev => [...prev, optimistic])
-    startTransition(async () => {
-      const result = await addShoppingItem(shop.id, title)
-      if (result.item) setItems(prev => prev.map(i => i.id === optimistic.id ? result.item! : i))
-    })
+    setItems(prev => [...prev, { id, title, checked: false, checkedAt: null }])
+    enqueue(SYNC_URL, { op: 'add', id, listId: shop.id, title })
     inputRef.current?.focus()
   }
 
   function handleToggle(id: string) {
-    setItems(prev => prev.map(i =>
-      i.id === id ? { ...i, checked: !i.checked, checkedAt: !i.checked ? new Date() : null } : i
-    ))
-    startTransition(() => toggleShoppingItem(id))
-  }
-
-  function handleClearChecked() {
-    setItems(prev => prev.filter(i => !i.checked))
-    startTransition(() => clearChecked(shop.id))
+    // Compute the intended next state locally first, then send that exact value.
+    // Sending the final state (not a blind "flip") means two users checking the
+    // same item offline both enqueue { checked: true } — the second sync is a no-op.
+    setItems(prev => prev.map(i => {
+      if (i.id !== id) return i
+      const nextChecked = !i.checked
+      enqueue(SYNC_URL, { op: 'set_checked', id, checked: nextChecked })
+      return { ...i, checked: nextChecked, checkedAt: nextChecked ? new Date() : null }
+    }))
   }
 
   function handleDeleteItem(id: string) {
     setItems(prev => prev.filter(i => i.id !== id))
-    startTransition(() => deleteShoppingItem(id))
+    enqueue(SYNC_URL, { op: 'delete', id })
   }
 
+  function handleClearChecked() {
+    setItems(prev => prev.filter(i => !i.checked))
+    enqueue(SYNC_URL, { op: 'clear_checked', listId: shop.id })
+  }
+
+  // ── Shop-level ops — still use server actions (need server response) ───────
   function handleMove(itemId: string, targetListId: string) {
     setMovingItemId(null)
     setItems(prev => prev.filter(i => i.id !== itemId))
@@ -79,6 +96,9 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
       router.refresh()
     })
   }
+
+  const unchecked = items.filter(i => !i.checked)
+  const checked   = items.filter(i => i.checked)
 
   return (
     <div className="flex flex-col max-w-lg mx-auto">
@@ -141,6 +161,9 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
         </header>
       )}
 
+      {/* Offline / sync status */}
+      {!editing && <SyncBanner pending={pending} isSyncing={isSyncing} />}
+
       {/* Quick add */}
       {!editing && (
         <div className="mx-4 mb-4">
@@ -156,7 +179,7 @@ export function ShopView({ shop, otherShops }: { shop: Shop; otherShops: OtherSh
             />
             <button
               type="submit"
-              disabled={!text.trim() || isPending}
+              disabled={!text.trim()}
               className="w-12 h-12 bg-accent rounded-xl flex items-center justify-center disabled:opacity-40 active:opacity-80 transition-opacity shrink-0"
               aria-label="Add"
             >

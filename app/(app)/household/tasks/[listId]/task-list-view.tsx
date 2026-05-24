@@ -4,9 +4,11 @@ import { useState, useRef, useEffect, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ulid } from 'ulid'
-import { createTask, toggleTask, deleteTask, updateTask, renameTaskList, deleteTaskList } from '../actions'
+import { updateTask, renameTaskList, deleteTaskList } from '../actions'
 import { LIST_COLORS } from '../colors'
 import { SwipeRow } from '@/components/ui/swipe-row'
+import { useSyncQueue } from '@/lib/hooks/use-sync-queue'
+import { SyncBanner } from '@/components/features/offline/sync-banner'
 
 type Task = {
   id: string
@@ -33,6 +35,7 @@ interface Props {
   initialCompleted: Task[]
 }
 
+const SYNC_URL = '/api/sync/tasks'
 const AVATAR_COLORS = ['#007AFF', '#FF2D55', '#34C759', '#AF52DE']
 
 function startOfDay(d: Date) {
@@ -77,11 +80,22 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // useTransition only for list-level ops (rename/delete list)
   const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
   const canEditList = !isAll && !isInbox
+
+  // ── Offline sync ────────────────────────────────────────────────────────────
+  const { pending, isSyncing, enqueue } = useSyncQueue()
+
+  // Refresh server data after a full sync completes
+  useEffect(() => {
+    const handler = () => router.refresh()
+    window.addEventListener('homeos:sync-complete', handler)
+    return () => window.removeEventListener('homeos:sync-complete', handler)
+  }, [router])
 
   useEffect(() => {
     if (renamingId) renameRef.current?.focus()
@@ -102,36 +116,39 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     setCompleted(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)))
   }
 
+  // ── Item mutations — optimistic-first, queued for offline ──────────────────
   function addTask() {
     const t = newTitle.trim()
     if (!t || isAll) return
-    const tempId = ulid()
+    const id = ulid()   // permanent client-generated ID
     const targetListId = isInbox ? null : listId
-    setActive(prev => [...prev, { id: tempId, title: t, dueDate: null, status: 'active', listId: targetListId, assigneeId: null }])
+    setActive(prev => [...prev, { id, title: t, dueDate: null, status: 'active', listId: targetListId, assigneeId: null }])
     setNewTitle('')
     inputRef.current?.focus()
-    createTask(targetListId, t).then(res => {
-      if (res?.id) patchTask(tempId, { id: res.id } as Partial<Task>)
-    })
+    enqueue(SYNC_URL, { op: 'add', id, listId: targetListId, title: t })
   }
 
   function complete(task: Task) {
     setActive(prev => prev.filter(x => x.id !== task.id))
     setCompleted(prev => [{ ...task, status: 'completed' }, ...prev])
     setExpandedId(null)
-    toggleTask(task.id)
+    // Send the intended final state, not a blind toggle — conflict-safe
+    enqueue(SYNC_URL, { op: 'set_status', id: task.id, status: 'completed' })
   }
+
   function uncomplete(task: Task) {
     setCompleted(prev => prev.filter(x => x.id !== task.id))
     setActive(prev => [...prev, { ...task, status: 'active' }])
-    toggleTask(task.id)
+    enqueue(SYNC_URL, { op: 'set_status', id: task.id, status: 'active' })
   }
+
   function remove(task: Task, from: 'active' | 'completed') {
     if (from === 'active') setActive(prev => prev.filter(x => x.id !== task.id))
     else setCompleted(prev => prev.filter(x => x.id !== task.id))
-    deleteTask(task.id)
+    enqueue(SYNC_URL, { op: 'delete', id: task.id })
   }
 
+  // ── Detail ops that still use server actions (not offline-critical) ─────────
   function setDueDate(task: Task, dateStr: string) {
     if (!dateStr) { patchTask(task.id, { dueDate: null }); updateTask(task.id, { dueDate: null }); return }
     const [y, m, d] = dateStr.split('-').map(Number)
@@ -176,21 +193,18 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     setRenamingId(null)
   }
 
+  // ── List-level ops ──────────────────────────────────────────────────────────
   function toggleEditing() {
     setEditing(e => !e)
     setExpandedId(null)
     setRenamingId(null)
-    if (canEditList) {
-      setListName(title)
-      setListColor(color)
-    }
+    if (canEditList) { setListName(title); setListColor(color) }
   }
 
   function saveListEdit() {
     if (!canEditList || !listName.trim()) return
-    const nextName = listName.trim()
     startTransition(async () => {
-      await renameTaskList(listId, nextName, listColor)
+      await renameTaskList(listId, listName.trim(), listColor)
       setEditing(false)
       router.refresh()
     })
@@ -212,94 +226,92 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     const source = taskSources[task.id]
     return (
       <div key={task.id} className={i > 0 ? 'border-t border-border' : ''}>
-       <SwipeRow onDelete={() => remove(task, section)}>
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          {editing ? (
-            <button onClick={() => remove(task, section)} className="shrink-0 active:opacity-60" aria-label="Delete">
-              <span className="w-[22px] h-[22px] rounded-full bg-red flex items-center justify-center">
-                <span className="block w-[11px] h-[2.5px] bg-white rounded-full" />
-              </span>
-            </button>
-          ) : section === 'active' ? (
-            <button
-              onClick={() => complete(task)}
-              className="w-[22px] h-[22px] rounded-full border-2 border-border shrink-0 active:scale-90 transition-transform"
-              aria-label="Complete"
-            />
-          ) : (
-            <button
-              onClick={() => uncomplete(task)}
-              className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: color }}
-              aria-label="Mark incomplete"
-            >
-              <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                <path d="M4 10.5l4 4 8-9" />
-              </svg>
-            </button>
-          )}
-
-          <div className="flex-1 min-w-0">
-            {isRenaming ? (
-              <input
-                ref={renameRef}
-                value={renameValue}
-                onChange={e => setRenameValue(e.target.value)}
-                onBlur={() => commitRename(task)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitRename(task) }
-                  if (e.key === 'Escape') { e.preventDefault(); setRenamingId(null) }
-                }}
-                className="w-full bg-transparent text-[16px] text-text-1 outline-none py-0.5"
+        <SwipeRow onDelete={() => remove(task, section)}>
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            {editing ? (
+              <button onClick={() => remove(task, section)} className="shrink-0 active:opacity-60" aria-label="Delete">
+                <span className="w-[22px] h-[22px] rounded-full bg-red flex items-center justify-center">
+                  <span className="block w-[11px] h-[2.5px] bg-white rounded-full" />
+                </span>
+              </button>
+            ) : section === 'active' ? (
+              <button
+                onClick={() => complete(task)}
+                className="w-[22px] h-[22px] rounded-full border-2 border-border shrink-0 active:scale-90 transition-transform"
+                aria-label="Complete"
               />
             ) : (
               <button
-                onClick={() => {
-                  if (editing) return
-                  if (section === 'active') startRename(task)
-                }}
-                className="w-full min-w-0 text-left"
+                onClick={() => uncomplete(task)}
+                className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
+                style={{ background: color }}
+                aria-label="Mark incomplete"
               >
-                <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
-                  {task.title}
-                </p>
-                {due && (
-                  <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
-                )}
+                <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                  <path d="M4 10.5l4 4 8-9" />
+                </svg>
               </button>
             )}
-            {source && (
-              <Link
-                href={source.href}
-                className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[12px] font-medium text-accent active:opacity-60"
+
+            <div className="flex-1 min-w-0">
+              {isRenaming ? (
+                <input
+                  ref={renameRef}
+                  value={renameValue}
+                  onChange={e => setRenameValue(e.target.value)}
+                  onBlur={() => commitRename(task)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitRename(task) }
+                    if (e.key === 'Escape') { e.preventDefault(); setRenamingId(null) }
+                  }}
+                  className="w-full bg-transparent text-[16px] text-text-1 outline-none py-0.5"
+                />
+              ) : (
+                <button
+                  onClick={() => { if (editing) return; if (section === 'active') startRename(task) }}
+                  className="w-full min-w-0 text-left"
+                >
+                  <p className={`text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'} truncate`}>
+                    {task.title}
+                  </p>
+                  {due && (
+                    <p className={`text-[12.5px] mt-0.5 ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
+                  )}
+                </button>
+              )}
+              {source && (
+                <Link
+                  href={source.href}
+                  className="mt-1 inline-flex max-w-full items-center gap-1.5 text-[12px] font-medium text-accent active:opacity-60"
+                >
+                  <span className="shrink-0">{source.icon || '📋'}</span>
+                  <span className="truncate">Linked to {source.title}</span>
+                </Link>
+              )}
+            </div>
+
+            {task.assigneeId && (
+              <span
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold text-white shrink-0"
+                style={{ background: userColor(task.assigneeId) }}
               >
-                <span className="shrink-0">{source.icon || '📋'}</span>
-                <span className="truncate">Linked to {source.title}</span>
-              </Link>
+                {userInitial(task.assigneeId)}
+              </span>
+            )}
+            {section === 'active' && !editing && !isRenaming && (
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : task.id)}
+                className="shrink-0 text-text-3 active:opacity-60 -mr-1 p-1"
+                aria-label="Show details"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                  className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                  <path d="M6 4l4 4-4 4" />
+                </svg>
+              </button>
             )}
           </div>
-
-          {task.assigneeId && (
-            <span
-              className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold text-white shrink-0"
-              style={{ background: userColor(task.assigneeId) }}
-            >
-              {userInitial(task.assigneeId)}
-            </span>
-          )}
-          {section === 'active' && !editing && !isRenaming && (
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : task.id)}
-              className="shrink-0 text-text-3 active:opacity-60 -mr-1 p-1"
-              aria-label="Show details"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                <path d="M6 4l4 4-4 4" />
-              </svg>
-            </button>
-          )}
-        </div>
-       </SwipeRow>
+        </SwipeRow>
 
         {/* Inline detail editor */}
         {isExpanded && !editing && (
@@ -421,6 +433,9 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
           <header className="px-5 pt-1 pb-3">
             <h1 className="text-[28px] font-bold tracking-tight" style={{ color }}>{title}</h1>
           </header>
+
+          {/* Offline / sync status */}
+          <SyncBanner pending={pending} isSyncing={isSyncing} />
 
           {/* Active tasks */}
           <div className="mx-4 bg-surface rounded-2xl overflow-hidden">
