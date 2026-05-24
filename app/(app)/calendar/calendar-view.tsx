@@ -954,9 +954,15 @@ export function CalendarView({
         <div className="h-3" />
       </div>
 
-      {/* ── Selected day panel — capped at 35% of screen, scrolls beyond ── */}
-      <div className="flex-shrink-0 flex flex-col border-t border-border bg-bg" style={{ maxHeight: '35vh' }}>
-        <div className="flex items-center justify-between px-4 pt-2 pb-0.5 flex-shrink-0">
+      {/* ── Selected day panel ── */}
+      <div
+        className="flex-shrink-0 flex flex-col bg-surface rounded-t-3xl"
+        style={{
+          maxHeight: '35vh',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.08)',
+        }}
+      >
+        <div className="flex items-center justify-between px-4 pt-3 pb-0.5 flex-shrink-0">
           <p className="text-[13px] font-semibold text-text-2">{fullDate(selectedDate)}</p>
           {connected && (
             <button onClick={openCreate} className="text-accent text-[14px] font-medium active:opacity-60">+ Add</button>
@@ -967,7 +973,7 @@ export function CalendarView({
           {selectedEvents.length === 0 && selectedTasks.length === 0 ? (
             <p className="text-[14px] text-text-3 py-3 text-center">Nothing on</p>
           ) : (
-            <div className="bg-surface rounded-2xl overflow-hidden mb-2">
+            <div className="bg-bg rounded-2xl overflow-hidden mb-2">
               {selectedEvents.map((ev, i) => (
                 <button
                   key={ev.id}
@@ -1064,10 +1070,10 @@ export function CalendarView({
                 paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)',
               }}
             >
-              {/* ── Drag handle — always present, swipe down to dismiss/cancel ── */}
+              {/* ── Drag handle — large touch target, swipe down to dismiss/cancel ── */}
               <div
-                className="flex justify-center pt-[10px] pb-1 shrink-0"
-                style={{ touchAction: 'none' }}
+                className="flex justify-center items-center shrink-0"
+                style={{ touchAction: 'none', height: 44, paddingBottom: 4 }}
                 onTouchStart={e => {
                   sheetDragRef.current = { startY: e.touches[0].clientY, startTime: Date.now() }
                   setSheetState('dragging')
@@ -1093,7 +1099,7 @@ export function CalendarView({
                   }
                 }}
               >
-                <div className="w-9 h-[5px] rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 30%, transparent)' }} />
+                <div className="w-10 h-[5px] rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 40%, transparent)' }} />
               </div>
 
               {/* ── Detail pane ── */}
