@@ -107,11 +107,13 @@ export function EventEditor({
   event,
   onClose,
   onSaved,
+  embedded = false,
 }: {
   initialDate: Date
   event: CalEvent | null
   onClose: () => void
   onSaved: () => void
+  embedded?: boolean
 }) {
   const editing = Boolean(event)
 
@@ -271,32 +273,30 @@ export function EventEditor({
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-bg flex flex-col max-w-lg mx-auto">
+  const navBar = (
+    <div className={`px-4 pt-3 pb-2.5 flex items-center justify-between border-b border-border shrink-0 ${!embedded ? 'safe-top' : ''}`}>
+      <button
+        onClick={onClose}
+        className="text-accent text-[16px] active:opacity-60 min-w-[56px]"
+      >
+        Cancel
+      </button>
+      <span className="text-[16px] font-semibold text-text-1 tracking-tight">
+        {editing ? 'Edit Event' : 'New Event'}
+      </span>
+      <button
+        onClick={save}
+        disabled={saving || !title.trim()}
+        className="text-accent text-[16px] font-semibold active:opacity-60 disabled:opacity-40 min-w-[56px] text-right"
+      >
+        {saving ? 'Saving…' : editing ? 'Done' : 'Add'}
+      </button>
+    </div>
+  )
 
-      {/* ── Nav bar ── */}
-      <div className="px-4 pt-3 pb-2.5 flex items-center justify-between border-b border-border safe-top shrink-0">
-        <button
-          onClick={onClose}
-          className="text-accent text-[16px] active:opacity-60 min-w-[56px]"
-        >
-          Cancel
-        </button>
-        <span className="text-[16px] font-semibold text-text-1 tracking-tight">
-          {editing ? 'Edit Event' : 'New Event'}
-        </span>
-        <button
-          onClick={save}
-          disabled={saving || !title.trim()}
-          className="text-accent text-[16px] font-semibold active:opacity-60 disabled:opacity-40 min-w-[56px] text-right"
-        >
-          {saving ? 'Saving…' : editing ? 'Done' : 'Add'}
-        </button>
-      </div>
-
-      {/* ── Scrollable form ── */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="px-4 pt-5 pb-10 flex flex-col gap-3">
+  const formBody = (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-4 pt-5 pb-10 flex flex-col gap-3">
 
           {/* ── Title + Location ── */}
           <div className="bg-surface rounded-2xl overflow-hidden shadow-sm">
@@ -409,6 +409,21 @@ export function EventEditor({
 
         </div>
       </div>
+  )
+
+  if (embedded) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0">
+        {navBar}
+        {formBody}
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-bg flex flex-col max-w-lg mx-auto">
+      {navBar}
+      {formBody}
     </div>
   )
 }

@@ -321,10 +321,15 @@ export function CalendarView({
   const [flashEventId, setFlashEventId] = useState<string | null>(null)
   const [visibleMonthKey, setVisibleMonthKey] = useState(`${today.getFullYear()}-${today.getMonth()}`)
   const [detail, setDetail] = useState<CalEvent | null>(null)
+  // Bottom-sheet animation state
+  const [sheetState, setSheetState] = useState<'closed' | 'open' | 'dragging'>('closed')
+  const [sheetDragY, setSheetDragY] = useState(0)
+  const sheetDragRef = useRef<{ startY: number; startTime: number } | null>(null)
+  const latestSheetDragY = useRef(0)
   const [taskOverrides, setTaskOverrides] = useState<Record<string, boolean>>({})
+  // 'detail' | 'edit' | 'create' — which pane is visible inside the sheet
+  const [sheetPane, setSheetPane] = useState<'detail' | 'edit' | 'create'>('detail')
   const [, startTransition] = useTransition()
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   // Calendar event colour — persisted to localStorage, hydrated on mount
@@ -382,8 +387,11 @@ export function CalendarView({
       return () => clearTimeout(t)
     }
 
-    const el = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
-    if (el) container.scrollTop = el.offsetTop
+    // Land on today's row — same target as the "Today" button — not the month top.
+    const todayCell = document.getElementById('cal-today')
+    const monthEl   = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const target    = todayCell ?? monthEl
+    if (target) container.scrollTop = Math.max(0, scrollOffsetWithin(container, target) - rowHeightRef.current)
   }, [today, focusEventId, events])
 
   // After rowHeight changes during a pinch, re-anchor so the same row stays under the fingers.
@@ -581,16 +589,49 @@ export function CalendarView({
     }
   }
 
-  function openCreate() { setEditingEvent(null); setEditorOpen(true) }
-  function openEdit(ev: CalEvent) { setEditingEvent(ev); setEditorOpen(true) }
-  function onEditorSaved() { setEditorOpen(false); setEditingEvent(null); setDetail(null); router.refresh() }
+  // ── Sheet helpers ────────────────────────────────────────────────────────
+
+  function animateSheetIn() {
+    setSheetState('closed')
+    setSheetDragY(0)
+    latestSheetDragY.current = 0
+    requestAnimationFrame(() => requestAnimationFrame(() => setSheetState('open')))
+  }
+
+  function openDetail(ev: CalEvent) {
+    setDetail(ev)
+    setSheetPane('detail')
+    animateSheetIn()
+  }
+
+  function closeSheet() {
+    setSheetState('closed')
+    setSheetDragY(0)
+    latestSheetDragY.current = 0
+    setTimeout(() => { setDetail(null); setSheetPane('detail') }, 320)
+  }
+
+  function openCreate() {
+    setDetail(null)
+    setSheetPane('create')
+    animateSheetIn()
+  }
+
+  // Opens edit pane — if sheet already open just swap pane, no re-animation
+  function openEdit(ev?: CalEvent) {
+    if (ev) setDetail(ev)
+    setSheetPane('edit')
+    if (sheetState !== 'open') animateSheetIn()
+  }
+
+  function onEditorSaved() { closeSheet(); router.refresh() }
 
   async function deleteEvent(ev: CalEvent) {
     if (!confirm(`Delete "${ev.title}"?`)) return
     setDeleting(true)
     try {
       const res = await fetch(`/api/calendar/events/${ev.id}`, { method: 'DELETE' })
-      if (res.ok) { setDetail(null); router.refresh() }
+      if (res.ok) { closeSheet(); router.refresh() }
       else if (res.status === 409) setBanner('Connect your Google account before editing events.')
       else setBanner('Could not delete the event. Please try again.')
     } finally { setDeleting(false) }
@@ -748,7 +789,7 @@ export function CalendarView({
                                 key={bar.id}
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  if (bar.event) setDetail(bar.event)
+                                  if (bar.event) openDetail(bar.event)
                                   else setSelectedKey(localDayKey(weekDays[bar.startCol]))
                                 }}
                                 className="absolute pointer-events-auto overflow-hidden flex items-center"
@@ -825,7 +866,7 @@ export function CalendarView({
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        if (item.event) setDetail(item.event)
+                                        if (item.event) openDetail(item.event)
                                         else setSelectedKey(localDayKey(d))
                                       }}
                                       className="absolute pointer-events-auto overflow-hidden flex flex-col items-start text-left"
@@ -930,7 +971,7 @@ export function CalendarView({
               {selectedEvents.map((ev, i) => (
                 <button
                   key={ev.id}
-                  onClick={() => setDetail(ev)}
+                  onClick={() => openDetail(ev)}
                   className={`w-full flex items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''} ${flashEventId === ev.id ? 'flash-highlight' : ''}`}
                 >
                   <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: calColor }} />
@@ -995,64 +1036,137 @@ export function CalendarView({
         </div>
       </div>
 
-      {/* ── Event detail modal ── */}
-      {detail && (
-        <div className="fixed inset-0 z-50 bg-bg flex flex-col max-w-lg mx-auto">
-          <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border safe-top">
-            <button onClick={() => setDetail(null)} className="text-accent text-[16px] active:opacity-60">Done</button>
-            <span className="text-[16px] font-semibold text-text-1">Event</span>
-            {connected ? (
-              <button onClick={() => openEdit(detail)} className="text-accent text-[16px] font-semibold active:opacity-60">Edit</button>
-            ) : (
-              <span className="w-12" />
-            )}
-          </div>
+      {/* ── Event / editor bottom sheet ── */}
+      {(detail !== null || sheetPane === 'create') && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50"
+            style={{
+              background: `rgba(0,0,0,${sheetState === 'closed' ? 0 : 0.4})`,
+              transition: 'background 0.32s',
+              pointerEvents: sheetState === 'closed' ? 'none' : 'auto',
+            }}
+            onClick={closeSheet}
+          />
 
-          <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-1.5 self-stretch rounded-full shrink-0" style={{ background: calColor }} />
-              <h2 className="text-[22px] font-bold text-text-1 leading-tight">{detail.title}</h2>
-            </div>
-
-            <div className="bg-surface rounded-2xl overflow-hidden">
-              <div className="px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-wide text-text-3 mb-0.5">When</p>
-                <p className="text-[15px] text-text-1">{eventDateLine(detail)}</p>
-                {detail.allDay ? (
-                  <p className="text-[14px] text-text-2 mt-0.5">All day</p>
-                ) : (
-                  <div className="mt-0.5">
-                    <p className="text-[14px] text-text-2">{formatTime(detail.start)}</p>
-                    <p className="text-[14px] text-text-2">{formatTime(detail.end > detail.start ? detail.end : detail.start)}</p>
-                  </div>
-                )}
+          {/* Sheet — nearly full screen, centred to max-w-lg */}
+          <div className="fixed bottom-0 left-0 right-0 z-[51] flex justify-center pointer-events-none">
+            <div
+              className="w-full max-w-lg bg-bg rounded-t-[24px] shadow-2xl flex flex-col pointer-events-auto"
+              style={{
+                height: '92dvh',
+                transform:
+                  sheetState === 'dragging' ? `translateY(${sheetDragY}px)` :
+                  sheetState === 'open'      ? 'translateY(0)'               :
+                                               'translateY(100%)',
+                transition: sheetState === 'dragging' ? 'none' : 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)',
+              }}
+            >
+              {/* ── Drag handle — always present, swipe down to dismiss/cancel ── */}
+              <div
+                className="flex justify-center pt-[10px] pb-1 shrink-0"
+                style={{ touchAction: 'none' }}
+                onTouchStart={e => {
+                  sheetDragRef.current = { startY: e.touches[0].clientY, startTime: Date.now() }
+                  setSheetState('dragging')
+                }}
+                onTouchMove={e => {
+                  if (!sheetDragRef.current) return
+                  const delta = Math.max(0, e.touches[0].clientY - sheetDragRef.current.startY)
+                  latestSheetDragY.current = delta
+                  setSheetDragY(delta)
+                }}
+                onTouchEnd={() => {
+                  if (!sheetDragRef.current) return
+                  const { startTime } = sheetDragRef.current
+                  sheetDragRef.current = null
+                  const finalY = latestSheetDragY.current
+                  const velocity = finalY / Math.max(Date.now() - startTime, 1)
+                  latestSheetDragY.current = 0
+                  if (finalY > 100 || velocity > 0.4) {
+                    closeSheet()
+                  } else {
+                    setSheetState('open')
+                    setSheetDragY(0)
+                  }
+                }}
+              >
+                <div className="w-9 h-[5px] rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 30%, transparent)' }} />
               </div>
-              {detail.location && (
-                <div className="px-4 py-3 border-t border-border">
-                  <p className="text-[12px] font-semibold uppercase tracking-wide text-text-3 mb-0.5">Location</p>
-                  <p className="text-[15px] text-text-1">{detail.location}</p>
-                </div>
+
+              {/* ── Detail pane ── */}
+              {sheetPane === 'detail' && detail && (
+                <>
+                  {/* Title + Edit */}
+                  <div className="flex items-start justify-between gap-3 px-5 pt-2 pb-3 shrink-0">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: calColor }} />
+                      <h2 className="text-[22px] font-bold text-text-1 leading-tight">{detail.title}</h2>
+                    </div>
+                    {connected && (
+                      <button onClick={() => openEdit(detail)} className="text-accent text-[15px] font-semibold active:opacity-60 shrink-0">
+                        Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Scrollable cards */}
+                  <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-2 flex flex-col gap-3">
+                    <div className="bg-surface rounded-2xl overflow-hidden">
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 mb-1">When</p>
+                        <p className="text-[15px] text-text-1">{eventDateLine(detail)}</p>
+                        {detail.allDay ? (
+                          <p className="text-[14px] text-text-2 mt-0.5">All day</p>
+                        ) : (
+                          <p className="text-[14px] text-text-2 mt-0.5">
+                            {formatTime(detail.start)} – {formatTime(detail.end > detail.start ? detail.end : detail.start)}
+                          </p>
+                        )}
+                      </div>
+                      {detail.location && (
+                        <div className="px-4 py-3 border-t border-border">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 mb-1">Where</p>
+                          <p className="text-[15px] text-text-1">{detail.location}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {detail.description && (
+                      <div className="bg-surface rounded-2xl px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 mb-1">Notes</p>
+                        <p className="text-[14px] text-text-1 whitespace-pre-wrap leading-relaxed">{detail.description}</p>
+                      </div>
+                    )}
+
+                    {connected && (
+                      <button
+                        onClick={() => deleteEvent(detail)}
+                        disabled={deleting}
+                        className="w-full bg-surface rounded-2xl px-4 py-3 text-[15px] font-semibold text-red active:bg-surface-2 disabled:opacity-50"
+                      >
+                        {deleting ? 'Deleting…' : 'Delete event'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ── Edit / Create pane ── */}
+              {(sheetPane === 'edit' || sheetPane === 'create') && (
+                <EventEditor
+                  embedded
+                  initialDate={detail ? new Date(detail.start) : selectedDate}
+                  event={sheetPane === 'edit' ? detail : null}
+                  onClose={() => sheetPane === 'edit' ? setSheetPane('detail') : closeSheet()}
+                  onSaved={onEditorSaved}
+                />
               )}
             </div>
-
-            {detail.description && (
-              <div className="bg-surface rounded-2xl px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-wide text-text-3 mb-1">Notes</p>
-                <p className="text-[14px] text-text-1 whitespace-pre-wrap leading-relaxed">{detail.description}</p>
-              </div>
-            )}
-
-            {connected && (
-              <button
-                onClick={() => deleteEvent(detail)}
-                disabled={deleting}
-                className="mt-2 w-full bg-surface rounded-2xl px-4 py-3 text-[15px] font-semibold text-red active:bg-surface-2 disabled:opacity-50"
-              >
-                {deleting ? 'Deleting…' : 'Delete event'}
-              </button>
-            )}
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Calendar colour picker bottom sheet ── */}
@@ -1106,14 +1220,6 @@ export function CalendarView({
         </div>
       )}
 
-      {editorOpen && (
-        <EventEditor
-          initialDate={selectedDate}
-          event={editingEvent}
-          onClose={() => { setEditorOpen(false); setEditingEvent(null) }}
-          onSaved={onEditorSaved}
-        />
-      )}
     </div>
   )
 }

@@ -352,7 +352,6 @@ function ScheduleBlock({
     <section className="mx-4 mb-4">
       <div className="flex items-center justify-between mb-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Schedule</p>
-        <Link href="/calendar" className="text-[11.5px] font-semibold text-accent">Calendar</Link>
       </div>
 
       {/* Controls: range chips (left) + combined/separate toggle (right) */}
