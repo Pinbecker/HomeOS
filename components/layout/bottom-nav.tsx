@@ -4,10 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
+// ── Icon helpers ─────────────────────────────────────────────────────────────
+
 function NavIcon({ children }: { children: React.ReactNode }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}
-      strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+      strokeLinecap="round" strokeLinejoin="round" className="w-[26px] h-[26px]">
       {children}
     </svg>
   )
@@ -15,36 +17,49 @@ function NavIcon({ children }: { children: React.ReactNode }) {
 
 function MenuIcon({ children }: { children: React.ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}
-      strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}
+      strokeLinecap="round" strokeLinejoin="round" className="w-[26px] h-[26px]">
       {children}
     </svg>
   )
 }
 
-type Tab = { href: string; label: string; exact?: boolean; icon: React.ReactNode }
+// ── Types ────────────────────────────────────────────────────────────────────
+
+type Tab = {
+  href: string
+  label: string
+  exact?: boolean
+  color: string
+  icon: React.ReactNode
+}
+
 type MenuItem = { href: string; label: string; color: string; icon: React.ReactNode }
+
+// ── Tab definitions ──────────────────────────────────────────────────────────
 
 const leftTabs: Tab[] = [
   {
     href: '/',
     label: 'Home',
     exact: true,
+    color: '#007AFF',
     icon: (
       <NavIcon>
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
+        <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z" />
+        <path d="M9 21V12h6v9" />
       </NavIcon>
     ),
   },
   {
     href: '/household/shopping',
     label: 'Shopping',
+    color: '#34C759',
     icon: (
       <NavIcon>
-        <circle cx="9" cy="21" r="1" />
-        <circle cx="20" cy="21" r="1" />
-        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <path d="M16 10a4 4 0 0 1-8 0" />
       </NavIcon>
     ),
   },
@@ -54,23 +69,28 @@ const rightTabs: Tab[] = [
   {
     href: '/household/tasks',
     label: 'Tasks',
+    color: '#FF9500',
     icon: (
       <NavIcon>
-        <polyline points="9 11 12 14 22 4" />
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+        <rect x="9" y="3" width="6" height="4" rx="1" />
+        <polyline points="9 12 11 14 15 10" />
       </NavIcon>
     ),
   },
   {
     href: '/life',
     label: 'Life',
+    color: '#FF2D55',
     icon: (
       <NavIcon>
-        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
       </NavIcon>
     ),
   },
 ]
+
+// ── More menu items ──────────────────────────────────────────────────────────
 
 const menuItems: MenuItem[] = [
   {
@@ -146,9 +166,38 @@ const menuItems: MenuItem[] = [
   },
 ]
 
-// iOS sheet easing — fast out, gentle settle.
 const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
-const CLOSE_THRESHOLD = 90 // px dragged down before release dismisses
+const CLOSE_THRESHOLD = 90
+
+// ── NavTab ───────────────────────────────────────────────────────────────────
+
+function NavTab({ tab, active, onClick }: { tab: Tab; active: boolean; onClick?: () => void }) {
+  return (
+    <Link
+      href={tab.href}
+      onClick={onClick}
+      aria-label={tab.label}
+      className="flex-1 flex items-center justify-center py-[10px]"
+    >
+      <div
+        className="w-[54px] h-[54px] flex items-center justify-center rounded-[17px] transition-all duration-200"
+        style={{
+          background: `color-mix(in srgb, ${tab.color} ${active ? 22 : 12}%, var(--surface))`,
+          color: tab.color,
+          opacity: active ? 1 : 0.55,
+          boxShadow: active
+            ? `0 6px 22px color-mix(in srgb, ${tab.color} 46%, transparent)`
+            : 'none',
+          transform: active ? 'scale(1.06)' : 'scale(1)',
+        }}
+      >
+        {tab.icon}
+      </div>
+    </Link>
+  )
+}
+
+// ── BottomNav ────────────────────────────────────────────────────────────────
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -169,7 +218,6 @@ export function BottomNav() {
     dragStartRef.current = null
   }
 
-  // Lock background scroll + close on Escape while the sheet is open.
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -262,7 +310,7 @@ export function BottomNav() {
                 href={item.href}
                 onClick={close}
                 aria-label={item.label}
-                className="flex flex-col items-center gap-2 active:scale-90"
+                className="flex flex-col items-center gap-2 active:scale-90 transition-transform"
                 style={{
                   width: 84,
                   opacity: open ? 1 : 0,
@@ -275,7 +323,6 @@ export function BottomNav() {
                   background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: item.color,
-                  transition: 'transform 0.15s ease',
                 }}>
                   {item.icon}
                 </div>
@@ -289,125 +336,127 @@ export function BottomNav() {
       </div>
 
       {/* ── Nav bar ── */}
-      <nav
-        className="fixed bottom-0 inset-x-0 z-50 bg-surface border-t border-border"
+      <div
+        className="fixed bottom-0 inset-x-0 z-50"
         style={{
-          paddingBottom: 'calc(env(safe-area-inset-bottom) + 6px)',
-          overflow: 'visible',
+          background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
+          backdropFilter: 'blur(28px)',
+          WebkitBackdropFilter: 'blur(28px)',
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.10)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        <div className="flex items-start pt-1.5 px-1" style={{ overflow: 'visible' }}>
+        <div
+          className="flex items-center max-w-lg mx-auto"
+          style={{
+            paddingLeft: 4,
+            paddingRight: 4,
+          }}
+        >
 
           {/* Left tabs */}
-          {leftTabs.map(tab => {
-            const active = isActive(tab.href, tab.exact)
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                onClick={close}
-                className="flex-1 flex flex-col items-center gap-0.5 py-1"
-              >
-                <div
-                  className="w-[44px] h-[32px] flex items-center justify-center rounded-[10px] transition-all"
-                  style={active ? {
-                    background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-                    color: 'var(--accent)',
-                  } : { color: 'var(--text-3)' }}
-                >
-                  {tab.icon}
-                </div>
-                <span
-                  className="text-[10px] font-semibold tracking-wide transition-colors"
-                  style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }}
-                >
-                  {tab.label}
-                </span>
-              </Link>
-            )
-          })}
+          {leftTabs.map(tab => (
+            <NavTab
+              key={tab.href}
+              tab={tab}
+              active={isActive(tab.href, tab.exact)}
+              onClick={close}
+            />
+          ))}
 
-          {/* Centre: More button */}
-          <div className="flex-1 flex flex-col items-center" style={{ overflow: 'visible' }}>
-            <div style={{ position: 'relative', width: 48, height: 48, marginTop: -20, flexShrink: 0 }}>
-              <button
-                onClick={() => (open ? close() : setOpen(true))}
-                aria-label={open ? 'Close menu' : 'Open menu'}
-                aria-expanded={open}
+          {/* ── Centre: More button ── */}
+          <div className="flex-1 flex items-center justify-center py-[10px]">
+            <button
+              onClick={() => (open ? close() : setOpen(true))}
+              aria-label={open ? 'Close menu' : 'Open menu'}
+              aria-expanded={open}
+              className="active:scale-90 transition-transform"
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: '50%',
+                background: open
+                  ? `color-mix(in srgb, var(--accent) 20%, var(--surface))`
+                  : 'var(--accent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: open ? 'none' : '0 6px 24px rgba(0,122,255,0.50)',
+                transition: 'background 0.22s ease, box-shadow 0.22s ease',
+              }}
+            >
+              {/* Dot grid → X transition */}
+              <span
                 style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: 16,
-                  background: open
-                    ? 'color-mix(in srgb, var(--accent) 14%, var(--surface))'
-                    : 'var(--accent)',
+                  position: 'relative',
+                  width: 22,
+                  height: 22,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: open
-                    ? 'none'
-                    : '0 4px 16px rgba(0,122,255,0.38)',
-                  transition: 'background 0.22s ease, box-shadow 0.22s ease',
                 }}
               >
+                {/* Grid of dots (visible when closed) */}
+                <svg
+                  viewBox="0 0 22 22"
+                  fill="white"
+                  width={20}
+                  height={20}
+                  style={{
+                    position: 'absolute',
+                    opacity: open ? 0 : 1,
+                    transform: open ? 'scale(0.6) rotate(-45deg)' : 'scale(1) rotate(0deg)',
+                    transition: 'opacity 0.22s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  }}
+                >
+                  <circle cx="5" cy="5" r="2" />
+                  <circle cx="11" cy="5" r="2" />
+                  <circle cx="17" cy="5" r="2" />
+                  <circle cx="5" cy="11" r="2" />
+                  <circle cx="11" cy="11" r="2" />
+                  <circle cx="17" cy="11" r="2" />
+                  <circle cx="5" cy="17" r="2" />
+                  <circle cx="11" cy="17" r="2" />
+                  <circle cx="17" cy="17" r="2" />
+                </svg>
+                {/* X (visible when open) */}
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke={open ? 'var(--accent)' : 'white'}
-                  strokeWidth={2.2}
+                  strokeWidth={2.4}
                   strokeLinecap="round"
-                  strokeLinejoin="round"
+                  width={20}
+                  height={20}
                   style={{
-                    width: 20,
-                    height: 20,
-                    transform: open ? 'rotate(45deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                    position: 'absolute',
+                    opacity: open ? 1 : 0,
+                    transform: open ? 'scale(1) rotate(0deg)' : 'scale(0.6) rotate(45deg)',
+                    transition: 'opacity 0.22s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
                   }}
                 >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
-              </button>
-            </div>
-            <span
-              className="text-[10px] font-semibold tracking-wide mt-0.5"
-              style={{ color: open ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s ease' }}
-            >
-              More
-            </span>
+              </span>
+            </button>
           </div>
 
           {/* Right tabs */}
-          {rightTabs.map(tab => {
-            const active = isActive(tab.href, tab.exact)
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                onClick={close}
-                className="flex-1 flex flex-col items-center gap-0.5 py-1"
-              >
-                <div
-                  className="w-[44px] h-[32px] flex items-center justify-center rounded-[10px] transition-all"
-                  style={active ? {
-                    background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-                    color: 'var(--accent)',
-                  } : { color: 'var(--text-3)' }}
-                >
-                  {tab.icon}
-                </div>
-                <span
-                  className="text-[10px] font-semibold tracking-wide transition-colors"
-                  style={{ color: active ? 'var(--accent)' : 'var(--text-3)' }}
-                >
-                  {tab.label}
-                </span>
-              </Link>
-            )
-          })}
+          {rightTabs.map(tab => (
+            <NavTab
+              key={tab.href}
+              tab={tab}
+              active={isActive(tab.href, tab.exact)}
+              onClick={close}
+            />
+          ))}
 
         </div>
-      </nav>
+      </div>
     </>
   )
 }
