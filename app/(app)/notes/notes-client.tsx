@@ -152,7 +152,7 @@ export function NotesClient({ notes: initialNotes }: { notes: Note[] }) {
     <>
       <div className="flex flex-col max-w-lg mx-auto">
         <header className="px-5 pt-5 pb-3 flex items-center justify-between">
-          <h1 className="text-[22px] font-extrabold text-text-1 tracking-tight">Notes</h1>
+          <h1 className="text-[28px] font-bold text-text-1 tracking-tight">Notes</h1>
           <button
             onClick={openNew}
             className="w-8 h-8 flex items-center justify-center text-accent active:opacity-60 transition-opacity"
@@ -166,12 +166,12 @@ export function NotesClient({ notes: initialNotes }: { notes: Note[] }) {
         </header>
 
         {notes.length === 0 ? (
-          <div className="mx-4 bg-surface border border-border rounded-2xl px-5 py-10 text-center">
+          <div className="mx-4 bg-surface rounded-2xl px-5 py-10 text-center">
             <p className="text-[15px] font-semibold text-text-1 mb-1">No notes yet</p>
             <p className="text-[13px] text-text-2">Tap + to write your first note</p>
           </div>
         ) : (
-          <div className="mx-4 bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="mx-4 bg-surface rounded-2xl overflow-hidden">
             {notes.map((note, idx) => (
               <SwipeRow
                 key={note.id}

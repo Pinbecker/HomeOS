@@ -20,14 +20,13 @@ export default async function RemindersPage() {
 
   return (
     <div className="flex flex-col max-w-lg mx-auto pb-4">
-      <header className="px-5 pt-5 pb-5">
-        <h1 className="text-[34px] leading-tight font-extrabold text-text-1 tracking-tight">Reminders</h1>
-        <p className="text-[16px] text-text-2 mt-1">Life admin dates and household follow-ups.</p>
+      <header className="px-5 pt-5 pb-4">
+        <h1 className="text-[28px] font-bold text-text-1 tracking-tight">Reminders</h1>
       </header>
 
       <section className="mx-4 mb-5">
         <p className="text-[12px] font-bold uppercase tracking-wide text-text-3 mb-2">Coming up</p>
-        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+        <div className="bg-surface rounded-2xl overflow-hidden">
           {data.reminders.length > 0 ? (
             data.reminders.map((reminder, index) => (
               <Link key={reminder.id} href={reminder.href} className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
@@ -50,7 +49,7 @@ export default async function RemindersPage() {
 
       <section className="mx-4 mb-5">
         <p className="text-[12px] font-bold uppercase tracking-wide text-text-3 mb-2">Renewals & due dates</p>
-        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+        <div className="bg-surface rounded-2xl overflow-hidden">
           {data.renewals.length > 0 ? (
             data.renewals.map((entity, index) => (
               <Link key={entity.id} href={entity.href} className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>

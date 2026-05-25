@@ -485,28 +485,6 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
 
             <p className="px-1 mt-2.5 text-[12px] text-text-3">Swipe a category to edit or delete it.</p>
           </section>
-
-          <section className="mx-4 mb-6">
-            <p className="text-[12px] font-bold uppercase tracking-wide text-text-3 mb-2">Useful views</p>
-            <div className="grid grid-cols-2 gap-2.5">
-              {data.viewCards.map(card => (
-                  <Link
-                    key={card.title}
-                    href={card.href}
-                    className="bg-surface rounded-2xl p-3.5 min-h-[112px] active:bg-surface-2 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[24px] leading-none">{card.icon}</span>
-                      <span className="text-[11px] font-bold text-text-2 bg-surface-2 rounded-full px-2 py-0.5">
-                        {card.countLabel}
-                      </span>
-                    </div>
-                    <p className="text-[14.5px] font-bold text-text-1 mt-3 leading-tight">{card.title}</p>
-                    <p className="text-[11.5px] text-text-2 mt-1 leading-snug">{card.subtitle}</p>
-                  </Link>
-                ))}
-            </div>
-          </section>
         </>
       )}
 

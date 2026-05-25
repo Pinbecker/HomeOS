@@ -337,25 +337,20 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
 
         {/* Inline detail editor */}
         {isExpanded && !editing && (
-          <div className="px-4 pb-3 pl-[49px] flex flex-col gap-3">
-            {/* Due date — iOS style: date first, then optional time */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[14px] text-text-1 shrink-0">Due Date</span>
+          <div className="px-3 pb-3">
+            <div className="bg-surface-2 rounded-2xl overflow-hidden">
+              {/* Due Date */}
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-[13px] text-text-2 shrink-0">Due Date</span>
                 <div className="flex items-center gap-2">
                   {task.dueDate && (
-                    <button onClick={() => setDueDate(task, '')} className="text-[13px] text-red active:opacity-60">
-                      Clear
-                    </button>
+                    <button onClick={() => setDueDate(task, '')} className="text-[13px] text-red active:opacity-60">Clear</button>
                   )}
-                  {/* Chip label sits behind; native input sits on top, nearly invisible */}
                   <div className="relative">
-                    <div className={`rounded-lg px-2.5 py-1.5 text-[14px] font-medium select-none ${task.dueDate ? 'bg-surface-2 text-accent' : 'bg-surface-2 text-text-2'}`}>
+                    <div className={`rounded-lg px-2.5 py-1.5 text-[13px] font-medium select-none ${task.dueDate ? 'bg-surface text-accent' : 'bg-surface text-text-3'}`}>
                       {task.dueDate ? toDisplayDate(new Date(task.dueDate)) : 'Add Date'}
                     </div>
-                    <input
-                      ref={dateInputRef}
-                      type="date"
+                    <input ref={dateInputRef} type="date"
                       value={task.dueDate ? toInputDate(new Date(task.dueDate)) : ''}
                       onChange={e => setDueDate(task, e.target.value)}
                       className="absolute inset-0 w-full h-full cursor-pointer rounded-lg"
@@ -365,25 +360,21 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
                 </div>
               </div>
 
-              {/* Time row — only appears once a date is set */}
+              {/* Time — only once a date is set */}
               {task.dueDate && (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[14px] text-text-1 shrink-0">Time</span>
+                <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+                  <span className="text-[13px] text-text-2 shrink-0">Time</span>
                   <div className="flex items-center gap-2">
                     {hasSetTime(new Date(task.dueDate)) && (
-                      <button onClick={() => clearTime(task)} className="text-[13px] text-red active:opacity-60">
-                        Remove
-                      </button>
+                      <button onClick={() => clearTime(task)} className="text-[13px] text-red active:opacity-60">Remove</button>
                     )}
                     <div className="relative">
-                      <div className={`rounded-lg px-2.5 py-1.5 text-[14px] font-medium select-none ${hasSetTime(new Date(task.dueDate)) ? 'bg-surface-2 text-accent' : 'bg-surface-2 text-text-2'}`}>
+                      <div className={`rounded-lg px-2.5 py-1.5 text-[13px] font-medium select-none ${hasSetTime(new Date(task.dueDate)) ? 'bg-surface text-accent' : 'bg-surface text-text-3'}`}>
                         {hasSetTime(new Date(task.dueDate))
                           ? new Date(task.dueDate).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
                           : 'Add Time'}
                       </div>
-                      <input
-                        ref={timeInputRef}
-                        type="time"
+                      <input ref={timeInputRef} type="time"
                         value={hasSetTime(new Date(task.dueDate)) ? toInputTime(new Date(task.dueDate)) : ''}
                         onChange={e => setDueTime(task, e.target.value)}
                         className="absolute inset-0 w-full h-full cursor-pointer rounded-lg"
@@ -393,41 +384,41 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
                   </div>
                 </div>
               )}
-            </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-[14px] text-text-1">Assign to</span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setAssignee(task, null)}
-                  className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${task.assigneeId == null ? 'bg-accent text-white' : 'bg-surface-2 text-text-1'}`}
-                >
-                  None
-                </button>
-                {users.map(u => (
+              {/* Assign to */}
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+                <span className="text-[13px] text-text-2 shrink-0">Assign to</span>
+                <div className="flex items-center gap-1.5">
                   <button
-                    key={u.id}
-                    onClick={() => setAssignee(task, u.id)}
-                    className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${task.assigneeId === u.id ? 'bg-accent text-white' : 'bg-surface-2 text-text-1'}`}
+                    onClick={() => setAssignee(task, null)}
+                    className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${task.assigneeId == null ? 'bg-accent text-white' : 'bg-surface text-text-1'}`}
                   >
-                    {u.name.split(' ')[0]}
+                    None
                   </button>
-                ))}
+                  {users.map(u => (
+                    <button key={u.id} onClick={() => setAssignee(task, u.id)}
+                      className={`px-3 py-1.5 rounded-lg text-[13px] font-medium ${task.assigneeId === u.id ? 'bg-accent text-white' : 'bg-surface text-text-1'}`}
+                    >
+                      {u.name.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-[14px] text-text-1">List</span>
-              <select
-                value={task.listId ?? ''}
-                onChange={e => moveToList(task, e.target.value || null)}
-                className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none max-w-[190px]"
-              >
-                <option value="">Inbox</option>
-                {lists.map(list => (
-                  <option key={list.id} value={list.id}>{list.name}</option>
-                ))}
-              </select>
+              {/* List */}
+              <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+                <span className="text-[13px] text-text-2 shrink-0">List</span>
+                <select
+                  value={task.listId ?? ''}
+                  onChange={e => moveToList(task, e.target.value || null)}
+                  className="bg-surface rounded-lg px-2.5 py-1.5 text-[13px] text-text-1 outline-none max-w-[160px]"
+                >
+                  <option value="">Inbox</option>
+                  {lists.map(list => (
+                    <option key={list.id} value={list.id}>{list.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         )}
