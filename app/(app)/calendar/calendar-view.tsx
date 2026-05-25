@@ -1360,24 +1360,43 @@ export function CalendarView({
 
 // ── Calendars management sheet ────────────────────────────────────────────────
 
-function ColorRow({ color, current, onPick }: { color: string; current: string; onPick: (c: string) => void }) {
+function ColorSwatch({ color, current, onPick }: { color: string; current: string; onPick: (c: string) => void }) {
   return (
     <button
       onClick={() => onPick(color)}
-      className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-70 transition-transform active:scale-90"
+      className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70 transition-transform active:scale-90"
       style={{
         background: color,
-        boxShadow: current === color ? `0 0 0 2.5px var(--bg), 0 0 0 4.5px ${color}` : 'none',
+        boxShadow: current === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none',
       }}
       aria-label={color}
     >
       {current === color && (
-        <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5">
+        <svg viewBox="0 0 16 16" fill="none" className="w-3 h-3">
           <path d="M3 8l3.5 3.5L13 5" stroke="white" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </button>
   )
+}
+
+function ColorPicker({ current, onPick }: { current: string; onPick: (c: string) => void }) {
+  return (
+    <div className="px-4 pt-3 pb-3.5 border-t border-border flex gap-2.5 flex-wrap">
+      {CAL_COLORS.map(c => <ColorSwatch key={c} color={c} current={current} onPick={onPick} />)}
+    </div>
+  )
+}
+
+function syncTimeLabel(d: Date | null): string {
+  if (!d) return 'Not yet synced'
+  const diffMs = Date.now() - d.getTime()
+  const mins = Math.floor(diffMs / 60_000)
+  if (mins < 2)  return 'Synced just now'
+  if (mins < 60) return `Synced ${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return `Synced ${hrs}h ago`
+  return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
 }
 
 function CalendarsSheet({
@@ -1395,13 +1414,20 @@ function CalendarsSheet({
   connectedEmail: string | null
   onClose: () => void
 }) {
+  // Which item's colour picker is open: 'google' | feedId | 'new' | null
+  const [pickerFor, setPickerFor] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
   const [addingUrl, setAddingUrl] = useState('')
   const [addingName, setAddingName] = useState('')
-  const [addingColor, setAddingColor] = useState(CAL_COLORS[1]) // green default for subscriptions
+  const [addingColor, setAddingColor] = useState(CAL_COLORS[1])
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+
+  function togglePicker(id: string) {
+    setPickerFor(prev => prev === id ? null : id)
+  }
 
   async function addFeed() {
     if (!addingUrl.trim() || !addingName.trim()) return
@@ -1416,8 +1442,7 @@ function CalendarsSheet({
       if (!res.ok) { setAddError('Could not add calendar — check the URL and try again.'); return }
       const { feed } = await res.json()
       onFeedsChange([...feeds, feed])
-      setAddingUrl('')
-      setAddingName('')
+      setAddingUrl(''); setAddingName(''); setAddOpen(false); setPickerFor(null)
     } catch {
       setAddError('Network error — please try again.')
     } finally {
@@ -1449,7 +1474,6 @@ function CalendarsSheet({
     setSyncing(id)
     try {
       await fetch(`/api/calendar/feeds/${id}/sync`, { method: 'POST' })
-      // Refresh feed metadata
       const res = await fetch('/api/calendar/feeds')
       if (res.ok) { const { feeds: updated } = await res.json(); onFeedsChange(updated) }
     } finally {
@@ -1479,49 +1503,54 @@ function CalendarsSheet({
         </div>
 
         {/* ── Google Calendar ── */}
-        <div className="px-5 mb-5">
+        <div className="px-5 mb-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-3 mb-2">Google Calendar</p>
-          <div className="bg-bg rounded-2xl px-4 py-3">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-full shrink-0" style={{ background: calColor }} />
+          <div className="bg-bg rounded-2xl overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3">
+              {/* Tappable colour dot */}
+              <button
+                className="w-9 h-9 rounded-full shrink-0 active:opacity-70 transition-opacity"
+                style={{ background: calColor }}
+                onClick={() => togglePicker('google')}
+                aria-label="Change colour"
+              />
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-semibold text-text-1 truncate">{calendarName}</p>
                 {connected
                   ? <p className="text-[12px] text-text-2 truncate">{connectedEmail ?? 'Connected'}</p>
-                  : <p className="text-[12px] text-red">Not connected</p>
+                  : <p className="text-[12px] text-red">Not connected — <a href="/api/google/connect" className="underline">Connect</a></p>
                 }
               </div>
             </div>
-            <div className="flex gap-3 flex-wrap">
-              {CAL_COLORS.map(c => <ColorRow key={c} color={c} current={calColor} onPick={onCalColorChange} />)}
-            </div>
+            {pickerFor === 'google' && (
+              <ColorPicker current={calColor} onPick={c => { onCalColorChange(c); setPickerFor(null) }} />
+            )}
           </div>
         </div>
 
         {/* ── ICS subscriptions ── */}
-        {feeds.length > 0 && (
-          <div className="px-5 mb-5">
+        {(feeds.length > 0 || addOpen) && (
+          <div className="px-5 mb-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-3 mb-2">Subscriptions</p>
-            <div className="flex flex-col gap-2">
-              {feeds.map(feed => (
-                <div key={feed.id} className="bg-bg rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-3 mb-2.5">
-                    {/* Colour dot — tap to cycle */}
+            <div className="bg-bg rounded-2xl overflow-hidden">
+              {feeds.map((feed, i) => (
+                <div key={feed.id} className={i > 0 ? 'border-t border-border' : ''}>
+                  {/* Main row */}
+                  <div className="flex items-center gap-3 px-4 py-3">
                     <button
-                      className="w-9 h-9 rounded-full shrink-0 active:opacity-70"
+                      className="w-9 h-9 rounded-full shrink-0 active:opacity-70 transition-opacity"
                       style={{ background: feed.color }}
-                      onClick={() => {
-                        const idx = CAL_COLORS.indexOf(feed.color)
-                        const next = CAL_COLORS[(idx + 1) % CAL_COLORS.length]
-                        patchFeed(feed.id, { color: next })
-                      }}
+                      onClick={() => togglePicker(feed.id)}
                       aria-label="Change colour"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-[15px] font-semibold text-text-1 truncate">{feed.name}</p>
-                      <p className="text-[11.5px] text-text-2 truncate">{feed.url}</p>
+                      {feed.errorMessage
+                        ? <p className="text-[11.5px] text-red leading-snug truncate">⚠ {feed.errorMessage}</p>
+                        : <p className="text-[11.5px] text-text-3">{syncTimeLabel(feed.lastSyncedAt)}</p>
+                      }
                     </div>
-                    {/* Enable toggle */}
+                    {/* Enable/disable toggle */}
                     <button
                       onClick={() => patchFeed(feed.id, { enabled: !feed.enabled })}
                       className={`w-12 h-7 rounded-full transition-colors shrink-0 ${feed.enabled ? 'bg-sage' : 'bg-surface-2'}`}
@@ -1530,66 +1559,109 @@ function CalendarsSheet({
                       <div className={`w-6 h-6 bg-white rounded-full shadow transition-transform mx-0.5 ${feed.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
                     </button>
                   </div>
-                  {feed.errorMessage && (
-                    <p className="text-[11.5px] text-red mb-2 leading-snug">⚠ {feed.errorMessage}</p>
+
+                  {/* Inline colour picker */}
+                  {pickerFor === feed.id && (
+                    <ColorPicker current={feed.color} onPick={c => { patchFeed(feed.id, { color: c }); setPickerFor(null) }} />
                   )}
-                  <div className="flex items-center gap-3">
-                    {feed.lastSyncedAt && (
-                      <span className="text-[11px] text-text-3 flex-1">
-                        Synced {new Date(feed.lastSyncedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-4 px-4 pb-3">
                     <button
                       onClick={() => syncFeed(feed.id)}
                       disabled={syncing === feed.id}
-                      className="text-[12.5px] font-semibold text-accent active:opacity-60 disabled:opacity-40"
+                      className="text-[12px] font-semibold text-accent active:opacity-60 disabled:opacity-40"
                     >
                       {syncing === feed.id ? 'Syncing…' : 'Sync now'}
                     </button>
                     <button
                       onClick={() => deleteFeed(feed.id)}
                       disabled={deleting === feed.id}
-                      className="text-[12.5px] font-semibold text-red active:opacity-60 disabled:opacity-40"
+                      className="text-[12px] font-semibold text-red active:opacity-60 disabled:opacity-40"
                     >
-                      {deleting === feed.id ? '…' : 'Remove'}
+                      {deleting === feed.id ? 'Removing…' : 'Remove'}
                     </button>
                   </div>
                 </div>
               ))}
+
+              {/* ── Inline add form (when open) ── */}
+              {addOpen && (
+                <div className={feeds.length > 0 ? 'border-t border-border' : ''}>
+                  {/* Colour dot + name */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <button
+                      className="w-9 h-9 rounded-full shrink-0 active:opacity-70 transition-opacity"
+                      style={{ background: addingColor }}
+                      onClick={() => togglePicker('new')}
+                      aria-label="Choose colour"
+                    />
+                    <input
+                      value={addingName}
+                      onChange={e => setAddingName(e.target.value)}
+                      placeholder="Name (e.g. School holidays)"
+                      className="flex-1 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none"
+                      autoFocus
+                    />
+                  </div>
+                  {/* Inline colour picker for new feed */}
+                  {pickerFor === 'new' && (
+                    <ColorPicker current={addingColor} onPick={c => { setAddingColor(c); setPickerFor(null) }} />
+                  )}
+                  {/* URL */}
+                  <div className="border-t border-border">
+                    <input
+                      value={addingUrl}
+                      onChange={e => setAddingUrl(e.target.value)}
+                      placeholder="ICS / iCal URL"
+                      type="url"
+                      className="w-full px-4 py-3 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none"
+                    />
+                  </div>
+                  {addError && (
+                    <p className="px-4 pb-2 text-[12.5px] text-red">{addError}</p>
+                  )}
+                  {/* Cancel / Subscribe */}
+                  <div className="border-t border-border flex">
+                    <button
+                      onClick={() => { setAddOpen(false); setAddingName(''); setAddingUrl(''); setAddError(null); setPickerFor(null) }}
+                      className="flex-1 py-3 text-[15px] font-semibold text-text-2 active:bg-surface-2 border-r border-border"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={addFeed}
+                      disabled={adding || !addingUrl.trim() || !addingName.trim()}
+                      className="flex-1 py-3 text-[15px] font-semibold text-accent active:bg-surface-2 disabled:opacity-40"
+                    >
+                      {adding ? 'Adding…' : 'Subscribe'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ── Add a calendar ── */}
-        <div className="px-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-3 mb-2">Add a calendar</p>
-          <div className="bg-bg rounded-2xl overflow-hidden">
-            <input
-              value={addingName}
-              onChange={e => setAddingName(e.target.value)}
-              placeholder="Name (e.g. School holidays)"
-              className="w-full px-4 py-3 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none border-b border-border"
-            />
-            <input
-              value={addingUrl}
-              onChange={e => setAddingUrl(e.target.value)}
-              placeholder="ICS / iCal URL"
-              type="url"
-              className="w-full px-4 py-3 text-[15px] text-text-1 placeholder:text-text-3 bg-transparent outline-none"
-            />
+        {/* ── Add calendar button (when form not open) ── */}
+        {!addOpen && (
+          <div className="px-5">
+            <button
+              onClick={() => { setAddOpen(true); setPickerFor(null) }}
+              className="w-full flex items-center gap-3 px-4 py-3 bg-bg rounded-2xl active:bg-surface-2 text-left"
+            >
+              <span
+                className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center"
+                style={{ background: 'color-mix(in srgb, var(--accent) 12%, var(--bg))' }}
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="w-4 h-4 text-accent">
+                  <line x1="8" y1="3" x2="8" y2="13" /><line x1="3" y1="8" x2="13" y2="8" />
+                </svg>
+              </span>
+              <span className="text-[15px] font-semibold text-accent">Add calendar</span>
+            </button>
           </div>
-          <div className="flex gap-3 mt-3 flex-wrap">
-            {CAL_COLORS.map(c => <ColorRow key={c} color={c} current={addingColor} onPick={setAddingColor} />)}
-          </div>
-          {addError && <p className="text-[12.5px] text-red mt-2">{addError}</p>}
-          <button
-            onClick={addFeed}
-            disabled={adding || !addingUrl.trim() || !addingName.trim()}
-            className="mt-3 w-full bg-accent text-white rounded-2xl py-3 text-[15px] font-semibold active:opacity-80 disabled:opacity-40"
-          >
-            {adding ? 'Adding…' : 'Subscribe'}
-          </button>
-        </div>
+        )}
       </div>
     </div>
   )
