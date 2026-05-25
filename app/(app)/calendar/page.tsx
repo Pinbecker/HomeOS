@@ -25,27 +25,31 @@ export default async function CalendarPage({
       orderBy: [asc(items.dueDate)],
       columns: { id: true, title: true, dueDate: true, listId: true, status: true },
     }),
-    db.query.calendarFeeds.findMany({
-      where: eq(calendarFeeds.householdId, HOUSEHOLD_ID),
+    session ? db.query.calendarFeeds.findMany({
+      where: and(eq(calendarFeeds.householdId, HOUSEHOLD_ID), eq(calendarFeeds.userId, session.user.id)),
       columns: { id: true, name: true, url: true, color: true, enabled: true, lastSyncedAt: true, errorMessage: true },
-    }),
+    }) : Promise.resolve([]),
     db.query.lists.findMany({
       columns: { id: true, color: true },
     }),
   ])
 
   const listColorMap = new Map(listRows.map(l => [l.id, l.color ?? '#FF9500']))
+  // Only show ICS events from this user's own feeds (not other user's subscriptions)
+  const myFeedIds = new Set(feedRows.map(f => `ics:${f.id}`))
 
-  const events = rows.map(e => ({
-    id: e.id,
-    title: e.title,
-    start: e.startsAt.getTime(),
-    end: e.endsAt ? e.endsAt.getTime() : e.startsAt.getTime(),
-    allDay: e.allDay,
-    location: e.location,
-    description: e.description,
-    calendarId: e.calendarId ?? null,
-  }))
+  const events = rows
+    .filter(e => !e.calendarId?.startsWith('ics:') || myFeedIds.has(e.calendarId))
+    .map(e => ({
+      id: e.id,
+      title: e.title,
+      start: e.startsAt.getTime(),
+      end: e.endsAt ? e.endsAt.getTime() : e.startsAt.getTime(),
+      allDay: e.allDay,
+      location: e.location,
+      description: e.description,
+      calendarId: e.calendarId ?? null,
+    }))
 
   const tasks = taskRows.map(t => ({
     id: t.id,

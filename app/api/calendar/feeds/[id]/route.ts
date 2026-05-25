@@ -19,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params
   const feed = await db.query.calendarFeeds.findFirst({
-    where: and(eq(calendarFeeds.id, id), eq(calendarFeeds.householdId, HOUSEHOLD_ID)),
+    where: and(eq(calendarFeeds.id, id), eq(calendarFeeds.householdId, HOUSEHOLD_ID), eq(calendarFeeds.userId, session.user.id)),
   })
   if (!feed) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
@@ -42,7 +42,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const { id } = await params
   const feed = await db.query.calendarFeeds.findFirst({
-    where: and(eq(calendarFeeds.id, id), eq(calendarFeeds.householdId, HOUSEHOLD_ID)),
+    where: and(eq(calendarFeeds.id, id), eq(calendarFeeds.householdId, HOUSEHOLD_ID), eq(calendarFeeds.userId, session.user.id)),
   })
   if (!feed) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 

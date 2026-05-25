@@ -266,6 +266,7 @@ export const googleCalendarConnections = sqliteTable('google_calendar_connection
 export const calendarFeeds = sqliteTable('calendar_feeds', {
   id:           text('id').primaryKey(),
   householdId:  text('household_id').notNull().references(() => household.id),
+  userId:       text('user_id').references(() => users.id, { onDelete: 'cascade' }),
   name:         text('name').notNull(),
   url:          text('url').notNull(),
   color:        text('color').notNull().default('#007AFF'),

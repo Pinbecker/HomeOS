@@ -85,6 +85,13 @@
       "when": 1779692752689,
       "tag": "0011_typical_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1779707689792,
+      "tag": "0012_chunky_ultimo",
+      "breakpoints": true
     }
   ]
 }

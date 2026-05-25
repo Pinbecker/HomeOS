@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { calendarFeeds } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import { syncIcsFeed } from '@/lib/services/ics-sync'
 
@@ -20,7 +20,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const feeds = await db.query.calendarFeeds.findMany({
-    where: eq(calendarFeeds.householdId, HOUSEHOLD_ID),
+    where: and(eq(calendarFeeds.householdId, HOUSEHOLD_ID), eq(calendarFeeds.userId, session.user.id)),
     columns: { id: true, name: true, url: true, color: true, enabled: true, lastSyncedAt: true, errorMessage: true },
   })
   return NextResponse.json({ feeds })
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const now = new Date()
   const id = ulid()
   await db.insert(calendarFeeds).values({
-    id, householdId: HOUSEHOLD_ID,
+    id, householdId: HOUSEHOLD_ID, userId: session.user.id,
     name: parsed.data.name,
     url: parsed.data.url,
     color: parsed.data.color ?? '#007AFF',

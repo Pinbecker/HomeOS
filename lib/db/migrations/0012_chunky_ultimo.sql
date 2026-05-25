@@ -1,0 +1,1 @@
+ALTER TABLE `calendar_feeds` ADD `user_id` text REFERENCES users(id);
