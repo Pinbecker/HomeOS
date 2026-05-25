@@ -40,7 +40,6 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-const TASK_COLOR = '#FF9500'
 
 const DEFAULT_ROW_H = 112
 const MIN_ROW_H = 40
@@ -1110,7 +1109,7 @@ export function CalendarView({
                     <button
                       onClick={e => { e.stopPropagation(); toggleCalTask(t.id, completed) }}
                       className="w-[18px] h-[18px] rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform"
-                      style={completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
+                      style={completed ? { background: t.color } : { border: `2px solid ${t.color}` }}
                       aria-label={completed ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`}
                     >
                       {completed && (
@@ -1120,7 +1119,7 @@ export function CalendarView({
                       )}
                     </button>
                     <p className={`flex-1 text-[15px] font-medium truncate ${completed ? 'text-text-3 line-through' : 'text-text-1'}`}>{t.title}</p>
-                    <span className="text-[11px] font-bold shrink-0" style={{ color: TASK_COLOR }}>Task</span>
+                    <span className="text-[11px] font-bold shrink-0" style={{ color: t.color }}>Task</span>
                   </div>
                 )
               })}
@@ -1267,10 +1266,10 @@ export function CalendarView({
                 const completed = taskOverrides[t.id] ?? t.completed
                 return (
                   <>
-                    {/* Title + orange dot */}
+                    {/* Title + list colour dot */}
                     <div className="flex items-start justify-between gap-3 px-5 pt-2 pb-3 shrink-0">
                       <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: TASK_COLOR }} />
+                        <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: t.color }} />
                         <h2 className="text-[22px] font-bold text-text-1 leading-tight">{t.title}</h2>
                       </div>
                       {t.listId && (
@@ -1299,7 +1298,7 @@ export function CalendarView({
                       >
                         <div
                           className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center transition-all"
-                          style={completed ? { background: TASK_COLOR } : { border: `2px solid ${TASK_COLOR}` }}
+                          style={completed ? { background: t.color } : { border: `2px solid ${t.color}` }}
                         >
                           {completed && (
                             <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
