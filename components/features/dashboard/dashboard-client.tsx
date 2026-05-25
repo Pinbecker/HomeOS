@@ -44,6 +44,8 @@ type CalEvent = {
   timeLabel: string
   // Resolved calendar colour (ICS feed colour, or default accent blue for Google events)
   color: string
+  // True for Google Calendar events — client overrides color with homeos:cal-color after hydration
+  isGoogleEvent: boolean
 }
 type Pin = BoardPin
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
@@ -523,6 +525,14 @@ export function DashboardClient({
     return () => window.removeEventListener('homeos:sync-complete', handler)
   }, [router])
 
+  // Google Calendar colour — user-chosen in the calendar settings, stored in localStorage.
+  // Server defaults to #007AFF; client overrides after hydration so the icon matches.
+  const [googleCalColor, setGoogleCalColor] = useState('#007AFF')
+  useEffect(() => {
+    const saved = localStorage.getItem('homeos:cal-color')
+    if (saved) setGoogleCalColor(saved)
+  }, [])
+
   // Schedule preferences — range (days ahead) + combined/separate view, persisted locally.
   // Defaults match the server render to avoid hydration mismatch; restored on mount.
   const [rangeDays, setRangeDaysState] = useState(7)
@@ -649,7 +659,9 @@ export function DashboardClient({
 
       {/* Schedule — unified timeline: calendar + tasks + renewals */}
       <ScheduleBlock
-        calendarEvents={calendarEvents}
+        calendarEvents={calendarEvents.map(ev =>
+          ev.isGoogleEvent ? { ...ev, color: googleCalColor } : ev
+        )}
         tasks={tasks}
         renewals={renewals}
         doneIds={doneTaskIds}

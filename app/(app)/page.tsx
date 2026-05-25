@@ -184,6 +184,9 @@ export default async function DashboardPage() {
       location: e.location,
       timeLabel: e.allDay ? 'All day' : eventTimeLabel(e.startsAt, false),
       color,
+      // True for Google Calendar events — the client will override `color` with
+      // the user's locally-stored calendar colour preference after hydration.
+      isGoogleEvent: !e.calendarId?.startsWith('ics:'),
     }
   })
 
