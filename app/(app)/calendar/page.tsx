@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { calendarEvents, calendarFeeds, items } from '@/lib/db/schema'
+import { calendarEvents, calendarFeeds, items, lists } from '@/lib/db/schema'
 import { and, asc, eq, isNull, isNotNull } from 'drizzle-orm'
 import { CalendarView } from './calendar-view'
 import { getSession } from '@/lib/auth/session'
@@ -13,7 +13,7 @@ export default async function CalendarPage({
   searchParams: Promise<{ google?: string; event?: string }>
 }) {
   const session = await getSession()
-  const [{ google, event }, connection, rows, taskRows, feedRows] = await Promise.all([
+  const [{ google, event }, connection, rows, taskRows, feedRows, listRows] = await Promise.all([
     searchParams,
     session ? getConnection(session.user.id) : Promise.resolve(undefined),
     db.query.calendarEvents.findMany({
@@ -29,7 +29,12 @@ export default async function CalendarPage({
       where: eq(calendarFeeds.householdId, HOUSEHOLD_ID),
       columns: { id: true, name: true, url: true, color: true, enabled: true, lastSyncedAt: true, errorMessage: true },
     }),
+    db.query.lists.findMany({
+      columns: { id: true, color: true },
+    }),
   ])
+
+  const listColorMap = new Map(listRows.map(l => [l.id, l.color ?? '#FF9500']))
 
   const events = rows.map(e => ({
     id: e.id,
@@ -48,6 +53,7 @@ export default async function CalendarPage({
     due: t.dueDate!.getTime(),
     listId: t.listId,
     completed: t.status === 'completed',
+    color: t.listId ? (listColorMap.get(t.listId) ?? '#FF9500') : '#FF9500',
   }))
 
   return (

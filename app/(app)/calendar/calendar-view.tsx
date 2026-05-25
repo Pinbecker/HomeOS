@@ -33,6 +33,7 @@ type CalTask = {
   due: number
   listId: string | null
   completed: boolean
+  color: string
 }
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
@@ -253,7 +254,7 @@ function computeWeekLayout(
     const col = weekKeys.indexOf(key)
     if (col === -1 || weekDays[col].getMonth() !== month) continue
     candidates.push({
-      id: t.id, title: t.title, color: TASK_COLOR, time: t.due,
+      id: t.id, title: t.title, color: t.color, time: t.due,
       startCol: col, endCol: col, roundLeft: true, roundRight: true,
       event: null, task: t, isMulti: false,
     })
@@ -853,10 +854,20 @@ export function CalendarView({
                                 }}
                               >
                                 {bar.roundLeft && (
-                                  <p className="font-semibold leading-tight truncate w-full" style={{ fontSize: 11, color: pillText(bar.color) }}>
-                                    {bar.title}
-                                    {bar.time !== null && <span className="font-normal ml-[4px]" style={{ opacity: 0.6 }}>{cellTime(bar.time)}</span>}
-                                  </p>
+                                  <span className="flex items-center gap-[3px] min-w-0 w-full overflow-hidden">
+                                    {bar.event?.allDay && (
+                                      <svg viewBox="0 0 10 10" width={8} height={8} fill="none" stroke={pillText(bar.color)} strokeWidth={1.1} strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80">
+                                        <rect x="1" y="1.5" width="8" height="7.5" rx="1.2" />
+                                        <line x1="1" y1="4" x2="9" y2="4" />
+                                        <line x1="3.5" y1="0.5" x2="3.5" y2="2.5" />
+                                        <line x1="6.5" y1="0.5" x2="6.5" y2="2.5" />
+                                      </svg>
+                                    )}
+                                    <p className="font-semibold leading-tight truncate flex-1" style={{ fontSize: 11, color: pillText(bar.color) }}>
+                                      {bar.title}
+                                      {bar.time !== null && <span className="font-normal ml-[4px]" style={{ opacity: 0.6 }}>{cellTime(bar.time)}</span>}
+                                    </p>
+                                  </span>
                                 )}
                               </button>
                             )
@@ -892,19 +903,29 @@ export function CalendarView({
                               )
                             }
 
-                            // Share remaining space between visible pills (reserving a compact slot
-                            // for "+more"), capped so a lone event never balloons to fill the cell.
+                            // Tasks always get a fixed compact height; events share remaining space.
+                            const TASK_H      = MIN_PILL_H
+                            const taskCount   = colItems.slice(0, visibleCount).filter(i => i.task).length
+                            const eventCount  = visibleCount - taskCount
                             const moreReserve = showMore ? MIN_PILL_H + PILL_GAP : 0
                             const pillArea    = singleAvail - moreReserve
-                            const pillH       = Math.min(
-                              MAX_PILL_H,
-                              Math.floor((pillArea - (visibleCount - 1) * PILL_GAP) / visibleCount),
-                            )
+                            const tasksArea   = taskCount * (TASK_H + PILL_GAP)
+                            const eventH      = eventCount > 0
+                              ? Math.min(MAX_PILL_H, Math.floor((pillArea - tasksArea - (eventCount - 1) * PILL_GAP) / eventCount))
+                              : 0
                             const visible = colItems.slice(0, visibleCount)
+
+                            // Precompute per-item heights and cumulative top offsets
+                            const itemHeights = visible.map(i => i.task ? TASK_H : eventH)
+                            const itemTops = itemHeights.reduce<number[]>((acc, h, i) => {
+                              acc.push(i === 0 ? 0 : acc[i - 1] + itemHeights[i - 1] + PILL_GAP)
+                              return acc
+                            }, [])
 
                             return (
                               <React.Fragment key={`sd-${col}`}>
                                 {visible.map((item, idx) => {
+                                  const pillH     = itemHeights[idx]
                                   const showTime  = item.time !== null && pillH >= 32
                                   const twoLine   = pillH >= (showTime ? 44 : 30)
                                   const titleFont = pillH >= 24 ? 12 : 11
@@ -918,33 +939,63 @@ export function CalendarView({
                                         else if (item.task) openTask(item.task)
                                         else setSelectedKey(localDayKey(d))
                                       }}
-                                      className="absolute pointer-events-auto overflow-hidden flex flex-col items-start text-left"
+                                      className="absolute pointer-events-auto overflow-hidden text-left"
                                       style={{
                                         left:          `calc(${(col / 7) * 100}% + 1px)`,
                                         width:         `calc(${(1   / 7) * 100}% - 2px)`,
-                                        top:           singleOffset + idx * (pillH + PILL_GAP),
+                                        top:           singleOffset + itemTops[idx],
                                         height:        pillH,
                                         background:    pillBg(item.color),
                                         borderRadius:  5,
                                         paddingTop:    3,
                                         paddingBottom: 2,
-                                        paddingLeft:   6,
+                                        paddingLeft:   item.task ? 3 : 6,
                                         paddingRight:  5,
+                                        display:       'flex',
+                                        flexDirection: 'column',
+                                        alignItems:    'flex-start',
+                                        justifyContent:'center',
                                       }}
                                     >
-                                      <p
-                                        className={`font-semibold leading-tight w-full ${twoLine ? 'line-clamp-2' : 'truncate'}`}
-                                        style={{ fontSize: titleFont, color: pillText(item.color) }}
-                                      >
-                                        {item.title}
-                                      </p>
-                                      {showTime && (
-                                        <p
-                                          className="font-normal leading-tight truncate w-full mt-[1px]"
-                                          style={{ fontSize: 10.5, color: pillText(item.color), opacity: 0.6 }}
-                                        >
-                                          {cellTime(item.time!)}
-                                        </p>
+                                      {item.task ? (
+                                        // ── Task pill: filled dot + single-line title ──
+                                        <div className="flex items-center gap-[3px] w-full overflow-hidden">
+                                          <span className="shrink-0" style={{ width: 9, height: 9 }}>
+                                            {item.task.completed ? (
+                                              <svg viewBox="0 0 10 10" width={9} height={9}>
+                                                <circle cx="5" cy="5" r="5" fill={item.color} />
+                                              </svg>
+                                            ) : (
+                                              <svg viewBox="0 0 10 10" width={9} height={9}>
+                                                <circle cx="5" cy="5" r="4" fill="none" stroke={item.color} strokeWidth={1.4} />
+                                              </svg>
+                                            )}
+                                          </span>
+                                          <p
+                                            className={`leading-tight flex-1 min-w-0 truncate ${item.task.completed ? 'line-through opacity-50' : ''}`}
+                                            style={{ fontSize: titleFont, fontWeight: 600, color: pillText(item.color) }}
+                                          >
+                                            {item.title}
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        // ── Event pill: title + optional time ──
+                                        <>
+                                          <p
+                                            className={`font-semibold leading-tight w-full ${twoLine ? 'line-clamp-2' : 'truncate'}`}
+                                            style={{ fontSize: titleFont, color: pillText(item.color) }}
+                                          >
+                                            {item.title}
+                                          </p>
+                                          {showTime && (
+                                            <p
+                                              className="font-normal leading-tight truncate w-full mt-[1px]"
+                                              style={{ fontSize: 10.5, color: pillText(item.color), opacity: 0.6 }}
+                                            >
+                                              {cellTime(item.time!)}
+                                            </p>
+                                          )}
+                                        </>
                                       )}
                                     </button>
                                   )
@@ -955,7 +1006,7 @@ export function CalendarView({
                                     style={{
                                       left:   `calc(${(col / 7) * 100}% + 1px)`,
                                       width:  `calc(${(1   / 7) * 100}% - 2px)`,
-                                      top:    singleOffset + visibleCount * (pillH + PILL_GAP),
+                                      top:    singleOffset + (itemTops[visibleCount - 1] ?? 0) + (itemHeights[visibleCount - 1] ?? 0) + PILL_GAP,
                                       height: MIN_PILL_H,
                                     }}
                                   >
