@@ -77,14 +77,14 @@ export function CategoryView({ meta, initialRecords }: { meta: CategoryMeta; ini
           </button>
         </div>
       ) : (
-        <div className="mx-4 flex flex-col gap-3">
-          {list.map(rec => {
+        <div className="mx-4 bg-surface rounded-2xl overflow-hidden">
+          {list.map((rec, recIndex) => {
             const shownFields = rec.fields.filter(f => f.value)
             return (
               <Link
                 key={rec.id}
                 href={`/life/admin/${rec.id}`}
-                className="relative flex bg-surface border border-border rounded-2xl overflow-hidden active:bg-surface-2 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+                className={`relative flex bg-surface active:bg-surface-2 transition-colors${recIndex > 0 ? ' border-t border-border' : ''}`}
               >
                 <span className="w-[3px] shrink-0" style={{ background: meta.color }} aria-hidden />
                 <div className="flex-1 min-w-0 p-4">
@@ -210,9 +210,9 @@ function RecordEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col max-w-lg mx-auto">
+    <div className="fixed inset-0 z-50 bg-surface-2 flex flex-col max-w-lg mx-auto">
       {/* Editor nav */}
-      <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border safe-top">
+      <div className="px-4 pt-3 pb-2 flex items-center justify-between bg-surface-2 safe-top">
         <button onClick={onClose} className="text-accent text-[16px] active:opacity-60">Cancel</button>
         <span className="text-[16px] font-semibold text-text-1">{isNew ? `New ${meta.label}` : 'Edit'}</span>
         <button onClick={save} disabled={!title.trim() || saving} className="text-accent text-[16px] font-semibold active:opacity-60 disabled:opacity-40">

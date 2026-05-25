@@ -91,7 +91,7 @@ function InlinePanel({
   onCancel: () => void
 }) {
   return (
-    <div className="bg-surface border border-border rounded-2xl p-4">
+    <div className="bg-surface rounded-2xl p-4">
       {children}
       <button type="button" onClick={onCancel} className="mt-3 text-[14px] font-semibold text-text-2 active:opacity-60">
         Cancel
@@ -203,7 +203,7 @@ export function EntityProfile({
         <section className="mx-4 mb-5">
           <form
             action={formData => submitAction(formDataForUpdate => updateEntityDetails(entity.id, formDataForUpdate), formData)}
-            className="bg-surface border border-border rounded-[24px] p-4 flex flex-col gap-4"
+            className="bg-surface rounded-[24px] p-4 flex flex-col gap-4"
           >
             <div className="flex items-center justify-between">
               <p className="text-[17px] font-bold text-text-1">Edit details</p>
@@ -287,7 +287,7 @@ export function EntityProfile({
       <Section title="Key facts">
         {profile.facts.length > 0 || entity.renewalDate ? (
           <>
-            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            <div className="bg-surface rounded-2xl overflow-hidden">
               {profile.facts.map((fact, index) => {
                 const showBorder = index > 0
                 const row = (
@@ -316,7 +316,7 @@ export function EntityProfile({
             )}
           </>
         ) : (
-          <div className="bg-surface border border-border rounded-2xl">
+          <div className="bg-surface rounded-2xl">
             <EmptyRow icon="+" title="No key facts yet" subtitle="Add the small details worth finding later." />
           </div>
         )}
@@ -324,7 +324,7 @@ export function EntityProfile({
 
       {entity.notes && (
         <Section title="Notes">
-          <div className="bg-surface border border-border rounded-2xl px-4 py-3">
+          <div className="bg-surface rounded-2xl px-4 py-3">
             <p className="text-[14.5px] leading-relaxed text-text-1 whitespace-pre-wrap">{entity.notes}</p>
           </div>
         </Section>
@@ -358,7 +358,7 @@ export function EntityProfile({
             </form>
           </InlinePanel>
         )}
-        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'renewal' ? 'mt-3' : ''}`}>
+        <div className={`bg-surface rounded-2xl overflow-hidden ${openPanel === 'renewal' ? 'mt-3' : ''}`}>
           {entity.renewalDate ? (
             <SwipeRow
               onDelete={clearRenewal}
@@ -403,7 +403,7 @@ export function EntityProfile({
             </form>
           </InlinePanel>
         )}
-        <div className={`bg-surface border border-border rounded-2xl overflow-hidden ${openPanel === 'reminder' ? 'mt-3' : ''}`}>
+        <div className={`bg-surface rounded-2xl overflow-hidden ${openPanel === 'reminder' ? 'mt-3' : ''}`}>
           {profile.linkedReminders.length > 0 ? (
             profile.linkedReminders.map((reminder, index) => (
               <div key={reminder.id}>

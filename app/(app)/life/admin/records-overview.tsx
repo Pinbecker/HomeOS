@@ -49,7 +49,7 @@ function EntityCard({ entity }: { entity: HouseholdEntity }) {
   return (
     <Link
       href={entity.href}
-      className="bg-surface border border-border rounded-2xl px-4 py-3.5 active:bg-surface-2 transition-colors"
+      className="bg-surface rounded-2xl px-4 py-3.5 active:bg-surface-2 transition-colors"
     >
       <div className="flex items-start gap-3">
         <div
@@ -91,17 +91,18 @@ function EntityCard({ entity }: { entity: HouseholdEntity }) {
   )
 }
 
-function CategoryRow({ category, onEdit, onDelete }: {
+function CategoryRow({ category, onEdit, onDelete, isFirst }: {
   category: CategoryItem
   onEdit: () => void
   onDelete: () => void
+  isFirst?: boolean
 }) {
   return (
     <SwipeRow
       onEdit={onEdit}
       onDelete={onDelete}
-      wrapClassName="rounded-2xl"
-      className="rounded-2xl border border-border"
+      wrapClassName={isFirst ? '' : 'border-t border-border'}
+      className=""
     >
       <Link
         href={category.href}
@@ -347,22 +348,13 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
 
   return (
     <div className="flex flex-col max-w-lg mx-auto pb-4">
-      <div className="px-3 pt-3 pb-2">
-        <Link href="/life" className="flex items-center gap-1 text-accent active:opacity-60 -ml-1 w-fit">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M10 3L5 8l5 5" />
-          </svg>
-          <span className="text-[16px]">Life</span>
-        </Link>
-      </div>
-
-      <header className="px-5 pt-1 pb-5">
+      <header className="px-5 pt-5 pb-5">
         <h1 className="text-[34px] leading-tight font-extrabold text-text-1 tracking-tight">Vault</h1>
         <p className="text-[16px] text-text-2 mt-1">The important bits, all in one place.</p>
       </header>
 
       <section className="mx-4 mb-4">
-        <Link href="/life/admin/ai" className="bg-surface border border-border rounded-2xl px-4 py-3.5 flex items-center gap-3 active:bg-surface-2">
+        <Link href="/life/admin/ai" className="bg-surface rounded-2xl px-4 py-3.5 flex items-center gap-3 active:bg-surface-2">
           <div className="w-10 h-10 rounded-[12px] bg-accent-bg flex items-center justify-center text-[13px] font-bold text-accent shrink-0">AI</div>
           <div className="flex-1 min-w-0">
             <p className="text-[15px] font-semibold text-text-1">AI Log</p>
@@ -399,7 +391,7 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
               {filteredEntities.map(entity => <EntityCard key={entity.id} entity={entity} />)}
             </div>
           ) : (
-            <div className="bg-surface border border-border rounded-2xl px-5 py-8 text-center">
+            <div className="bg-surface rounded-2xl px-5 py-8 text-center">
               <p className="text-[15px] font-semibold text-text-1">Nothing found</p>
               <p className="text-[13px] text-text-2 mt-1">Try a provider, account, person or place.</p>
             </div>
@@ -413,7 +405,7 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
                 <span className="w-2 h-2 rounded-full bg-amber" />
                 <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">Needs attention</p>
               </div>
-              <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+              <div className="bg-surface rounded-2xl overflow-hidden">
                 {data.attention.map((item, index) => (
                   <Link
                     key={item.id}
@@ -453,28 +445,43 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
               </button>
             </div>
 
-            <div className="flex flex-col gap-2">
-              {categories.map(category => (
+            <div className="bg-surface rounded-2xl overflow-hidden">
+              {categories.map((category, index) => (
                 <CategoryRow
                   key={category.key}
                   category={category}
                   onEdit={() => setEditing(category)}
                   onDelete={() => requestDelete(category)}
+                  isFirst={index === 0}
                 />
               ))}
+              {categories.length > 0 && (
+                <button
+                  onClick={() => setEditing('new')}
+                  className="border-t border-border w-full flex items-center gap-3 px-4 py-3.5 active:bg-surface-2"
+                >
+                  <div className="w-11 h-11 rounded-[13px] bg-accent-bg flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" className="w-4 h-4 text-accent">
+                      <path d="M8 3.5v9M3.5 8h9" />
+                    </svg>
+                  </div>
+                  <p className="text-[15.5px] font-semibold text-accent">Add category</p>
+                </button>
+              )}
+              {categories.length === 0 && (
+                <button
+                  onClick={() => setEditing('new')}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 active:bg-surface-2"
+                >
+                  <div className="w-11 h-11 rounded-[13px] bg-accent-bg flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" className="w-4 h-4 text-accent">
+                      <path d="M8 3.5v9M3.5 8h9" />
+                    </svg>
+                  </div>
+                  <p className="text-[15.5px] font-semibold text-accent">Add category</p>
+                </button>
+              )}
             </div>
-
-            <button
-              onClick={() => setEditing('new')}
-              className="mt-2 w-full flex items-center gap-3 px-4 py-3.5 bg-surface border border-dashed border-border rounded-2xl active:bg-surface-2"
-            >
-              <div className="w-11 h-11 rounded-[13px] bg-accent-bg flex items-center justify-center shrink-0">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" className="w-4 h-4 text-accent">
-                  <path d="M8 3.5v9M3.5 8h9" />
-                </svg>
-              </div>
-              <p className="text-[15.5px] font-semibold text-accent">Add category</p>
-            </button>
 
             <p className="px-1 mt-2.5 text-[12px] text-text-3">Swipe a category to edit or delete it.</p>
           </section>
@@ -486,7 +493,7 @@ export function RecordsOverview({ data }: { data: RecordsOverviewData }) {
                   <Link
                     key={card.title}
                     href={card.href}
-                    className="bg-surface border border-border rounded-2xl p-3.5 min-h-[112px] active:bg-surface-2 transition-colors"
+                    className="bg-surface rounded-2xl p-3.5 min-h-[112px] active:bg-surface-2 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-[24px] leading-none">{card.icon}</span>

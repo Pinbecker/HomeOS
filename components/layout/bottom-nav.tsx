@@ -67,6 +67,19 @@ const leftTabs: Tab[] = [
 
 const rightTabs: Tab[] = [
   {
+    href: '/calendar',
+    label: 'Calendar',
+    color: '#32ADE6',
+    icon: (
+      <NavIcon>
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+      </NavIcon>
+    ),
+  },
+  {
     href: '/household/tasks',
     label: 'Tasks',
     color: '#FF9500',
@@ -78,31 +91,27 @@ const rightTabs: Tab[] = [
       </NavIcon>
     ),
   },
-  {
-    href: '/life',
-    label: 'Life',
-    color: '#FF2D55',
-    icon: (
-      <NavIcon>
-        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-      </NavIcon>
-    ),
-  },
 ]
 
 // ── More menu items ──────────────────────────────────────────────────────────
 
 const menuItems: MenuItem[] = [
   {
-    href: '/calendar',
-    label: 'Calendar',
-    color: '#32ADE6',
+    href: '/life/admin',
+    label: 'Vault',
+    color: '#5856D6',
     icon: (
       <MenuIcon>
-        <rect x="3" y="4" width="18" height="18" rx="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8" y1="2" x2="8" y2="6" />
-        <line x1="3" y1="10" x2="21" y2="10" />
+        {/* Vault door body */}
+        <rect x="3" y="2" width="16" height="20" rx="2" />
+        {/* Combination dial outer ring */}
+        <circle cx="11" cy="12" r="4.5" />
+        {/* Dial centre filled dot */}
+        <circle cx="11" cy="12" r="1.5" fill="currentColor" stroke="none" />
+        {/* Dial notch marks */}
+        <path d="M11 8v1.5M11 14.5V16M7.5 12H9M13 12h1.5" />
+        {/* Side handle / locking bolt */}
+        <path d="M19 9v6" strokeWidth={2.2} strokeLinecap="round" />
       </MenuIcon>
     ),
   },
