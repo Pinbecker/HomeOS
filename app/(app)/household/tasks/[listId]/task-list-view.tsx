@@ -52,6 +52,18 @@ function toInputDate(d: Date) {
 function toInputTime(d: Date) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+function hasSetTime(d: Date | null): boolean {
+  if (!d) return false
+  return d.getHours() !== 0 || d.getMinutes() !== 0
+}
+function toDisplayDate(d: Date): string {
+  const days = dayDiff(d)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  if (days === -1) return 'Yesterday'
+  if (days > 1 && days < 7) return d.toLocaleDateString('en-GB', { weekday: 'long' })
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
 function formatDue(due: Date): { label: string; overdue: boolean } {
   const days = dayDiff(due)
   const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
@@ -84,6 +96,8 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
   const [isPending, startTransition] = useTransition()
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+  const timeInputRef = useRef<HTMLInputElement>(null)
 
   const canEditList = !isAll && !isInbox
 
@@ -163,6 +177,13 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
     const base = new Date(task.dueDate)
     const [h, min] = timeStr ? timeStr.split(':').map(Number) : [0, 0]
     const date = new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, min)
+    patchTask(task.id, { dueDate: date })
+    updateTask(task.id, { dueDate: date.getTime() })
+  }
+  function clearTime(task: Task) {
+    if (!task.dueDate) return
+    const d = new Date(task.dueDate)
+    const date = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0)
     patchTask(task.id, { dueDate: date })
     updateTask(task.id, { dueDate: date.getTime() })
   }
@@ -317,27 +338,61 @@ export function TaskListView({ listId, isAll, isInbox, title, color, users, list
         {/* Inline detail editor */}
         {isExpanded && !editing && (
           <div className="px-4 pb-3 pl-[49px] flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[14px] text-text-1 shrink-0">Due date</span>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <input
-                  type="date"
-                  value={task.dueDate ? toInputDate(new Date(task.dueDate)) : ''}
-                  onChange={e => setDueDate(task, e.target.value)}
-                  className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none"
-                />
-                {task.dueDate && (
-                  <input
-                    type="time"
-                    value={toInputTime(new Date(task.dueDate))}
-                    onChange={e => setDueTime(task, e.target.value)}
-                    className="bg-surface-2 rounded-lg px-2.5 py-1.5 text-[14px] text-text-1 outline-none"
-                  />
-                )}
-                {task.dueDate && (
-                  <button onClick={() => setDueDate(task, '')} className="text-[13px] text-red active:opacity-60">Clear</button>
-                )}
+            {/* Due date — iOS style: date first, then optional time */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[14px] text-text-1 shrink-0">Due Date</span>
+                <div className="flex items-center gap-2">
+                  {task.dueDate && (
+                    <button onClick={() => setDueDate(task, '')} className="text-[13px] text-red active:opacity-60">
+                      Clear
+                    </button>
+                  )}
+                  {/* Chip label sits behind; native input sits on top, nearly invisible */}
+                  <div className="relative">
+                    <div className={`rounded-lg px-2.5 py-1.5 text-[14px] font-medium select-none ${task.dueDate ? 'bg-surface-2 text-accent' : 'bg-surface-2 text-text-2'}`}>
+                      {task.dueDate ? toDisplayDate(new Date(task.dueDate)) : 'Add Date'}
+                    </div>
+                    <input
+                      ref={dateInputRef}
+                      type="date"
+                      value={task.dueDate ? toInputDate(new Date(task.dueDate)) : ''}
+                      onChange={e => setDueDate(task, e.target.value)}
+                      className="absolute inset-0 w-full h-full cursor-pointer rounded-lg"
+                      style={{ opacity: 0.01, colorScheme: 'light dark' }}
+                    />
+                  </div>
+                </div>
               </div>
+
+              {/* Time row — only appears once a date is set */}
+              {task.dueDate && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[14px] text-text-1 shrink-0">Time</span>
+                  <div className="flex items-center gap-2">
+                    {hasSetTime(new Date(task.dueDate)) && (
+                      <button onClick={() => clearTime(task)} className="text-[13px] text-red active:opacity-60">
+                        Remove
+                      </button>
+                    )}
+                    <div className="relative">
+                      <div className={`rounded-lg px-2.5 py-1.5 text-[14px] font-medium select-none ${hasSetTime(new Date(task.dueDate)) ? 'bg-surface-2 text-accent' : 'bg-surface-2 text-text-2'}`}>
+                        {hasSetTime(new Date(task.dueDate))
+                          ? new Date(task.dueDate).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
+                          : 'Add Time'}
+                      </div>
+                      <input
+                        ref={timeInputRef}
+                        type="time"
+                        value={hasSetTime(new Date(task.dueDate)) ? toInputTime(new Date(task.dueDate)) : ''}
+                        onChange={e => setDueTime(task, e.target.value)}
+                        className="absolute inset-0 w-full h-full cursor-pointer rounded-lg"
+                        style={{ opacity: 0.01, colorScheme: 'light dark' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between">
