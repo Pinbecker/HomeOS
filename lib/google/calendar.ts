@@ -1,7 +1,7 @@
 import { google, calendar_v3 } from 'googleapis'
 import { db } from '@/lib/db'
 import { calendarEvents } from '@/lib/db/schema'
-import { eq, lt } from 'drizzle-orm'
+import { and, eq, lt } from 'drizzle-orm'
 import { ulid } from 'ulid'
 import {
   anyAuthorizedClient,
@@ -187,8 +187,11 @@ export async function syncCalendar(): Promise<void> {
       pageToken = res.data.nextPageToken ?? undefined
     } while (pageToken)
 
-    // Prune rows not seen this run (deleted or moved out of window).
-    await db.delete(calendarEvents).where(lt(calendarEvents.lastSyncedAt, now))
+    // Prune only Google-calendar rows not seen this run (deleted or moved out of window).
+    // Scoped to this calendarId so ICS feed events are never touched.
+    await db.delete(calendarEvents).where(
+      and(eq(calendarEvents.calendarId, calendarId), lt(calendarEvents.lastSyncedAt, now))
+    )
 
     console.log(`[calendar-sync] Synced ${count} events from Google calendar ${calendarId}`)
   } catch (err) {
