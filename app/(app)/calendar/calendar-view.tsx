@@ -35,7 +35,7 @@ type CalTask = {
   completed: boolean
 }
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -63,7 +63,7 @@ const DEFAULT_CAL_COLOR = '#007AFF'
 // ── Bar layout constants ─────────────────────────────────────────────────────
 const BAR_GAP         = 2    // vertical gap between stacked multi-day bars in px
 const MIN_BAR_H       = 13   // minimum bar height before we hide bars and show dots
-const DATE_H          = 30   // px reserved for the date-number circle per cell
+const DATE_H          = 36   // px reserved for the date-number circle per cell
 const MULTI_DAY_BAR_H = 16   // compact fixed height for all-day / multi-day overlay bars
 const PILL_GAP        = 3    // vertical gap between stacked single-day pills
 const MIN_PILL_H      = 16   // single-line title only
@@ -686,8 +686,8 @@ export function CalendarView({
           </svg>
           <span className="text-[16px]">Home</span>
         </Link>
-        <span className="text-[17px] font-bold text-text-1">
-          {MONTHS[vm_month]} <span className="text-text-2 font-semibold text-[15px]">{vm_year}</span>
+        <span className="text-[17px] font-bold text-text-1" style={{ letterSpacing: '-0.01em' }}>
+          {MONTHS[vm_month]} <span className="text-text-2 font-normal text-[15px]">{vm_year}</span>
         </span>
         <div className="flex items-center gap-1.5">
           <button
@@ -719,8 +719,8 @@ export function CalendarView({
 
       {/* ── Sticky weekday labels ── */}
       <div className="px-2 grid grid-cols-7 border-b border-border flex-shrink-0 bg-bg">
-        {WEEKDAYS.map(d => (
-          <div key={d} className="text-center text-[11px] font-semibold text-text-3 py-1">{d}</div>
+        {WEEKDAYS.map((d, i) => (
+          <div key={i} className={`text-center text-[12px] font-semibold py-1 ${i >= 5 ? 'text-text-3' : 'text-text-2'}`}>{d}</div>
         ))}
       </div>
 
@@ -733,9 +733,9 @@ export function CalendarView({
             data-monthkey={`${year}-${month}`}
           >
             {/* Month label */}
-            <div className="px-3 pt-3 pb-1">
-              <span className="text-[12px] font-bold text-text-3 uppercase tracking-wider">
-                {MONTHS_SHORT[month]} {year}
+            <div className="px-3 pt-4 pb-1">
+              <span className="text-[28px] font-bold text-text-1" style={{ letterSpacing: '-0.02em' }}>
+                {MONTHS[month]}
               </span>
             </div>
 
@@ -780,13 +780,23 @@ export function CalendarView({
                               className="flex flex-col items-start px-0.5 pt-1 pb-0.5 border-t border-border active:opacity-70"
                             >
                               {/* Date number */}
-                              <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[12px] mb-[2px] flex-shrink-0 font-${isToday ? 'bold' : isSelected ? 'semibold' : 'normal'} ${
-                                isToday    ? 'bg-accent text-white'
-                                : isSelected ? 'bg-accent-bg text-accent'
-                                : 'text-text-1'
-                              }`}>
-                                {d.getDate()}
-                              </span>
+                              {(() => {
+                                const isWeekend = col >= 5
+                                const bg = isToday ? '#FF3B30' : isSelected ? 'var(--surface-2)' : 'transparent'
+                                const fg = isToday ? '#fff'
+                                  : isSelected ? 'var(--text-1)'
+                                  : isWeekend ? 'var(--text-3)'
+                                  : 'var(--text-1)'
+                                const weight = isToday || isSelected ? '700' : isWeekend ? '400' : '400'
+                                return (
+                                  <span
+                                    className="w-7 h-7 flex items-center justify-center rounded-full text-[14px] mb-[2px] flex-shrink-0"
+                                    style={{ background: bg, color: fg, fontWeight: weight }}
+                                  >
+                                    {d.getDate()}
+                                  </span>
+                                )
+                              })()}
 
                               {/* Compact: coloured dots when the row is too short for bars */}
                               {!showBars && (() => {
