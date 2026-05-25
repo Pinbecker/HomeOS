@@ -182,13 +182,9 @@ function NavTab({ tab, active, onClick }: { tab: Tab; active: boolean; onClick?:
       <div
         className="w-[54px] h-[54px] flex items-center justify-center rounded-[17px] transition-all duration-200"
         style={{
-          background: `color-mix(in srgb, ${tab.color} ${active ? 22 : 12}%, var(--surface))`,
+          background: `color-mix(in srgb, ${tab.color} ${active ? 18 : 0}%, transparent)`,
           color: tab.color,
-          opacity: active ? 1 : 0.55,
-          boxShadow: active
-            ? `0 6px 22px color-mix(in srgb, ${tab.color} 46%, transparent)`
-            : 'none',
-          transform: active ? 'scale(1.06)' : 'scale(1)',
+          opacity: active ? 1 : 0.45,
         }}
       >
         {tab.icon}
@@ -384,7 +380,7 @@ export function BottomNav() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: open ? 'none' : '0 6px 24px rgba(0,122,255,0.50)',
+                boxShadow: open ? 'none' : '0 6px 24px color-mix(in srgb, var(--accent) 55%, transparent)',
                 transition: 'background 0.22s ease, box-shadow 0.22s ease',
               }}
             >

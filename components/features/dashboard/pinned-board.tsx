@@ -55,10 +55,10 @@ export function PinnedBoard({ initialPins }: { initialPins: BoardPin[] }) {
 
   return (
     <section className="mx-4 mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Pinned</p>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[19px] font-bold" style={{ color: '#F5A623', letterSpacing: '-0.01em' }}>Pinned</h2>
         {pins.length > 0 && (
-          <button onClick={() => setPicking(true)} className="text-[11.5px] font-semibold text-accent active:opacity-60">
+          <button onClick={() => setPicking(true)} className="text-[13px] font-semibold text-accent active:opacity-60">
             Add pin
           </button>
         )}

@@ -287,10 +287,20 @@ function GroupedTimeline({
   onToggle: (id: string) => void
 }) {
   return (
-    <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+    <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
       {groups.map((group, gi) => (
         <div key={group.key}>
-          <div className={`px-4 py-[7px] bg-surface-2 ${gi > 0 ? 'border-t border-border' : ''}`}>
+          <div
+            className={`px-4 py-[7px] ${gi > 0 ? 'border-t' : ''}`}
+            style={{
+              borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
+              background: group.isOverdue
+                ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))'
+                : group.isToday
+                  ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))'
+                  : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
+            }}
+          >
             <p className={`text-[10px] font-bold uppercase tracking-[0.09em] ${
               group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'
             }`}>
@@ -350,8 +360,8 @@ function ScheduleBlock({
 
   return (
     <section className="mx-4 mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Schedule</p>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[19px] font-bold" style={{ color: '#007AFF', letterSpacing: '-0.01em' }}>Schedule</h2>
       </div>
 
       {/* Controls: range chips (left) + combined/separate toggle (right) */}
@@ -392,7 +402,7 @@ function ScheduleBlock({
       </div>
 
       {isEmpty ? (
-        <Link href="/calendar" className="flex items-center gap-3 bg-surface border border-border rounded-2xl px-4 py-3 active:bg-bg">
+        <Link href="/calendar" className="flex items-center gap-3 rounded-2xl px-4 py-3 active:bg-bg" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
           <div className="w-[18px] h-[18px] rounded-full bg-accent/15 flex items-center justify-center shrink-0">
             <div className="w-[7px] h-[7px] rounded-full bg-accent" />
           </div>
@@ -434,9 +444,9 @@ function ScheduleBlock({
 function OnTonightCard({ shows }: { shows: TonightShow[] }) {
   return (
     <section className="mx-4 mb-5">
-      <div className="flex items-center justify-between mb-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">On Tonight</p>
-        <Link href="/watch" className="text-[11.5px] font-semibold text-accent">TV Guide</Link>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[19px] font-bold" style={{ color: '#AF52DE', letterSpacing: '-0.01em' }}>On Tonight</h2>
+        <Link href="/watch" className="text-[13px] font-semibold text-accent">TV Guide</Link>
       </div>
       <div
         className="rounded-2xl overflow-hidden"
@@ -556,10 +566,10 @@ export function DashboardClient({
     <div className="flex flex-col max-w-lg mx-auto">
 
       {/* Header */}
-      <header className="px-5 pt-5 pb-5 flex items-start justify-between">
+      <header className="px-5 pt-7 pb-5 flex items-start justify-between">
         <div>
-          <p className="text-[11.5px] font-semibold text-text-3 mb-1 tracking-wide uppercase">{dateStr}</p>
-          <h1 className="text-[22px] font-extrabold text-text-1 leading-tight tracking-tight">
+          <p className="text-[12px] font-medium text-text-3 mb-1 tracking-[0.02em]">{dateStr}</p>
+          <h1 className="text-[30px] font-bold text-text-1 leading-[1.1]" style={{ letterSpacing: '-0.025em' }}>
             {greeting}
           </h1>
         </div>
@@ -574,7 +584,10 @@ export function DashboardClient({
       {/* Alerts — bins going out + inbox (compact strip, only when needed) */}
       {hasAlerts && (
         <section className="mx-4 mb-4">
-          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="flex items-center mb-3">
+            <h2 className="text-[19px] font-bold" style={{ color: '#FF9500', letterSpacing: '-0.01em' }}>Heads up</h2>
+          </div>
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
 
             {bins.map((bin, i) => {
               const days = dayDiffFrom(bin.nextCollection.getTime(), now)
@@ -639,21 +652,22 @@ export function DashboardClient({
 
       {/* Shopping — always shown */}
       <section className="mx-4 mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Shopping</p>
-          <Link href="/household/shopping" className="text-[11.5px] font-semibold text-accent">Full list</Link>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[19px] font-bold" style={{ color: '#34C759', letterSpacing: '-0.01em' }}>Shopping</h2>
+          <Link href="/household/shopping" className="text-[13px] font-semibold text-accent">Full list</Link>
         </div>
 
         {shoppingItems.length === 0 ? (
           <Link
             href="/household/shopping"
-            className="flex items-center gap-3 bg-surface border border-border rounded-2xl px-4 py-3"
+            className="flex items-center gap-3 rounded-2xl px-4 py-3"
+            style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}
           >
             <div className="w-5 h-5 rounded-[6px] border-[1.5px] border-border shrink-0 opacity-40" />
             <span className="text-[13.5px] text-text-3">Add shopping items</span>
           </Link>
         ) : (
-          <div className="bg-surface border border-border rounded-2xl px-2 py-1.5">
+          <div className="rounded-2xl px-2 py-1.5" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
             <div className="grid grid-cols-2 gap-x-3">
               {shoppingItems.map(item => {
                 const checked = checkedShopIds.has(item.id)
