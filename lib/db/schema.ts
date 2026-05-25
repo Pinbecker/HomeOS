@@ -258,6 +258,25 @@ export const googleCalendarConnections = sqliteTable('google_calendar_connection
 })
 
 // ============================================================
+// CALENDAR FEEDS — ICS/iCal subscriptions (external read-only calendars)
+//   e.g. UK bank holidays, sports fixtures, school terms.
+//   Each feed syncs into calendar_events with calendarId = "ics:{feedId}".
+// ============================================================
+
+export const calendarFeeds = sqliteTable('calendar_feeds', {
+  id:           text('id').primaryKey(),
+  householdId:  text('household_id').notNull().references(() => household.id),
+  name:         text('name').notNull(),
+  url:          text('url').notNull(),
+  color:        text('color').notNull().default('#007AFF'),
+  enabled:      integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  lastSyncedAt: integer('last_synced_at', { mode: 'timestamp' }),
+  errorMessage: text('error_message'),
+  createdAt:    integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt:    integer('updated_at', { mode: 'timestamp' }).notNull(),
+})
+
+// ============================================================
 // PINS — cards the household pins to the home feed
 //   Like sticky notes on a fridge: a quick title + optional body,
 //   colour-coded. May optionally deep-link somewhere in the app.

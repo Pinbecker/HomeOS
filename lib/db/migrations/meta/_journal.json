@@ -78,6 +78,13 @@
       "when": 1779527191067,
       "tag": "0010_mixed_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1779692752689,
+      "tag": "0011_typical_korvac",
+      "breakpoints": true
     }
   ]
 }
