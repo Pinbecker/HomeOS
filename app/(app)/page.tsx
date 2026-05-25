@@ -1,6 +1,6 @@
 import { requireSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { items, lists, listItems, records, calendarEvents, pins, reminders } from '@/lib/db/schema'
+import { items, lists, listItems, records, calendarEvents, calendarFeeds, pins, reminders } from '@/lib/db/schema'
 import { eq, and, isNull, isNotNull, lte, gte, asc, desc, inArray } from 'drizzle-orm'
 import { DashboardClient } from '@/components/features/dashboard/dashboard-client'
 import { STATIC_BIN_SCHEDULES, daysUntil, getNextStaticBinCollection } from '@/lib/utils/bins'
@@ -21,7 +21,7 @@ export default async function DashboardPage() {
   const scheduleWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 31, 23, 59, 59)
 
   // These queries are independent — run in parallel
-  const [shoppingLists, tasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, pinRows, pinnedNoteRows, followedTvShows] =
+  const [shoppingLists, tasks, inboxCount, inboxPreview, renewalRows, reminderRows, calRows, calFeedRows, listColorRows, pinRows, pinnedNoteRows, followedTvShows] =
     await Promise.all([
       db.query.lists.findMany({
         where: and(eq(lists.type, 'shopping'), eq(lists.archived, false)),
@@ -68,8 +68,15 @@ export default async function DashboardPage() {
       db.query.calendarEvents.findMany({
         where: and(gte(calendarEvents.startsAt, startOfToday), lte(calendarEvents.startsAt, scheduleWindow)),
         orderBy: [asc(calendarEvents.startsAt)],
-        columns: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, location: true },
+        columns: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, location: true, calendarId: true },
         limit: 60,
+      }),
+      db.query.calendarFeeds.findMany({
+        where: eq(calendarFeeds.userId, session.user.id),
+        columns: { id: true, color: true },
+      }),
+      db.query.lists.findMany({
+        columns: { id: true, color: true },
       }),
       db.query.pins.findMany({
         where: isNotNull(pins.linkHref),
@@ -150,15 +157,35 @@ export default async function DashboardPage() {
 
   // Format calendar event times once, here on the server, so the client renders
   // them as plain strings and never re-formats a Date during hydration.
-  const calEvents = calRows.map(e => ({
-    id: e.id,
-    title: e.title,
-    startsAt: e.startsAt,
-    endsAt: e.endsAt,
-    allDay: e.allDay,
-    location: e.location,
-    timeLabel: e.allDay ? 'All day' : eventTimeLabel(e.startsAt, false),
-  }))
+  // Resolve the colour from the ICS feed (if any) so the dashboard icon matches
+  // the calendar colour set in the Calendars sheet.
+  const listColorMap = new Map(listColorRows.map(l => [l.id, l.color ?? '#FF9500']))
+  const feedColorMap = new Map(calFeedRows.map(f => [f.id, f.color]))
+  const DEFAULT_CAL_COLOR = '#007AFF'
+
+  // Only show ICS events from feeds this user actually owns. Filters out orphaned
+  // events from deleted feeds and events from the other user's subscriptions.
+  const userFeedCalIds = new Set(calFeedRows.map(f => `ics:${f.id}`))
+  const visibleCalRows = calRows.filter(
+    e => !e.calendarId?.startsWith('ics:') || userFeedCalIds.has(e.calendarId)
+  )
+
+  const calEvents = visibleCalRows.map(e => {
+    let color = DEFAULT_CAL_COLOR
+    if (e.calendarId?.startsWith('ics:')) {
+      color = feedColorMap.get(e.calendarId.slice(4)) ?? DEFAULT_CAL_COLOR
+    }
+    return {
+      id: e.id,
+      title: e.title,
+      startsAt: e.startsAt,
+      endsAt: e.endsAt,
+      allDay: e.allDay,
+      location: e.location,
+      timeLabel: e.allDay ? 'All day' : eventTimeLabel(e.startsAt, false),
+      color,
+    }
+  })
 
   // Greeting + date computed once on the server (UK time) and passed down, so the
   // client doesn't call new Date() during render — the source of hydration drift.
@@ -198,11 +225,16 @@ export default async function DashboardPage() {
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime())
 
+  const coloredTasks = tasks.map(t => ({
+    ...t,
+    color: t.listId ? (listColorMap.get(t.listId) ?? '#FF9500') : '#FF9500',
+  }))
+
   return (
     <DashboardClient
       user={session.user}
       shoppingItems={shoppingItems}
-      tasks={tasks}
+      tasks={coloredTasks}
       inboxCount={inboxCount}
       inboxPreview={inboxPreview}
       bins={relevantBins}

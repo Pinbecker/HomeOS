@@ -16,6 +16,7 @@ type Task = {
   dueDate: Date | null
   listId: string | null
   assignee: { name: string } | null
+  color: string
 }
 type InboxPreview = { id: string; title: string }
 type BinWithDate = {
@@ -41,6 +42,8 @@ type CalEvent = {
   // Pre-formatted on the server so the client never re-formats a time during render
   // (avoids server/client ICU hour-cycle hydration mismatches). 'All day' for all-day events.
   timeLabel: string
+  // Resolved calendar colour (ICS feed colour, or default accent blue for Google events)
+  color: string
 }
 type Pin = BoardPin
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
@@ -75,8 +78,8 @@ const BIN_DOT: Record<string, string> = {
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null }
-  | { kind: 'task';     id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null; color: string }
+  | { kind: 'task';     id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string }
   | { kind: 'renewal';  id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 
 type DayGroup = {
@@ -113,6 +116,7 @@ function buildTimeline(
       sortMs: ev.startsAt.getTime(),
       timeLabel: ev.timeLabel,
       sub: ev.location,
+      color: ev.color,
     })
   }
 
@@ -127,6 +131,7 @@ function buildTimeline(
       listId: task.listId,
       assignee: task.assignee?.name ?? null,
       overdue: dayDiffFrom(task.dueDate.getTime(), now) < 0,
+      color: task.color,
     })
   }
 
@@ -195,9 +200,12 @@ function TimelineRow({
   if (entry.kind === 'calendar') {
     return (
       <Link href={`/calendar?event=${entry.eventId}`} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${borderCls}`}>
-        {/* Calendar icon — accent blue */}
-        <div className="w-8 h-8 rounded-[9px] bg-accent-bg flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-[15px] h-[15px] text-accent">
+        {/* Calendar icon — coloured to match the source calendar */}
+        <div
+          className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0"
+          style={{ background: `color-mix(in srgb, ${entry.color} 15%, var(--surface))` }}
+        >
+          <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-[15px] h-[15px]" style={{ stroke: entry.color }}>
             <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
             <path d="M2 6.5h12" />
             <path d="M5 1v3M11 1v3" />
@@ -216,19 +224,22 @@ function TimelineRow({
     const done = doneIds.has(entry.taskId)
     return (
       <div className={`flex items-center gap-3 px-4 py-3 ${borderCls}`}>
-        {/* Checkable circle — sage green */}
+        {/* Checkable circle — list colour, smaller to match calendar view */}
         <button
           onClick={() => onToggle(entry.taskId)}
-          className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center active:scale-90 transition-transform ${
-            done ? 'bg-sage' : 'border-2 border-border bg-surface'
-          }`}
+          className="w-8 h-8 shrink-0 flex items-center justify-center active:scale-90 transition-transform"
           aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}
         >
-          {done && (
-            <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-              <path d="M3 8l3.5 3.5L13 4.5" />
-            </svg>
-          )}
+          <span
+            className="w-[19px] h-[19px] rounded-full flex items-center justify-center"
+            style={done ? { background: entry.color } : { border: `2px solid ${entry.color}` }}
+          >
+            {done && (
+              <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5">
+                <path d="M3 8l3.5 3.5L13 4.5" />
+              </svg>
+            )}
+          </span>
         </button>
         <Link href={`/household/tasks/${entry.listId ?? 'all'}`} className="flex-1 min-w-0 active:opacity-70">
           <p className={`text-[13.5px] font-semibold truncate ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{entry.title}</p>

@@ -12,7 +12,7 @@
 
 import { db } from '@/lib/db'
 import { calendarFeeds, calendarEvents } from '@/lib/db/schema'
-import { eq, and, lt } from 'drizzle-orm'
+import { eq, and, lt, like, notInArray } from 'drizzle-orm'
 import { ulid } from 'ulid'
 
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
@@ -141,6 +141,21 @@ export async function syncIcsFeed(feedId: string): Promise<{ count: number; erro
   const windowStart = new Date(now.getTime() - 90  * 86_400_000)
   const windowEnd   = new Date(now.getTime() + 365 * 86_400_000)
 
+  // ── Sweep orphaned ICS events ────────────────────────────────────────────────
+  // Delete events whose calendarId references a feed that no longer exists.
+  // Runs before the sync so removed calendars are cleaned up even if the UI
+  // delete call fails to finish, and so re-adding the same URL doesn't leave
+  // ghost duplicates around.
+  const allFeeds = await db.query.calendarFeeds.findMany({ columns: { id: true } })
+  const validCalIds = allFeeds.map(f => `ics:${f.id}`)
+  if (validCalIds.length > 0) {
+    await db.delete(calendarEvents).where(
+      and(like(calendarEvents.calendarId, 'ics:%'), notInArray(calendarEvents.calendarId, validCalIds))
+    )
+  } else {
+    await db.delete(calendarEvents).where(like(calendarEvents.calendarId, 'ics:%'))
+  }
+
   try {
     const res = await fetch(feed.url, {
       headers: { 'User-Agent': 'HomeOS/1.0 (calendar feed sync)' },
@@ -156,7 +171,9 @@ export async function syncIcsFeed(feedId: string): Promise<{ count: number; erro
       const row = {
         id:           ulid(),
         householdId:  HOUSEHOLD_ID,
-        externalId:   `${feedId}:${ev.uid}`,
+        // Key on feed URL + UID rather than feedId + UID so that deleting and
+        // re-adding the same calendar URL is a pure upsert — not a duplicate insert.
+        externalId:   `${feed.url}::${ev.uid}`,
         calendarId,
         title:        ev.summary,
         description:  ev.description,
@@ -173,6 +190,9 @@ export async function syncIcsFeed(feedId: string): Promise<{ count: number; erro
       await db.insert(calendarEvents).values(row).onConflictDoUpdate({
         target: calendarEvents.externalId,
         set: {
+          // Update calendarId so events are re-claimed if the feed was removed and
+          // re-added at the same URL (new feedId, same externalId key).
+          calendarId: row.calendarId,
           title: row.title, description: row.description, location: row.location,
           startsAt: row.startsAt, endsAt: row.endsAt, allDay: row.allDay,
           lastSyncedAt: now, updatedAt: now,

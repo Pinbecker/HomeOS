@@ -1079,7 +1079,7 @@ export function CalendarView({
                   onClick={() => openDetail(ev)}
                   className={`w-full flex items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''} ${flashEventId === ev.id ? 'flash-highlight' : ''}`}
                 >
-                  <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: calColor }} />
+                  <div className="w-1 self-stretch rounded-full shrink-0 my-0.5" style={{ background: getEventColor(ev) }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-[15px] font-semibold text-text-1">{ev.title}</p>
                     {ev.location && <p className="text-[12.5px] text-text-2 truncate mt-0.5">{ev.location}</p>}
@@ -1208,7 +1208,7 @@ export function CalendarView({
                   {/* Title + Edit */}
                   <div className="flex items-start justify-between gap-3 px-5 pt-2 pb-3 shrink-0">
                     <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: calColor }} />
+                      <div className="w-[14px] h-[14px] rounded-full shrink-0 mt-[5px]" style={{ background: getEventColor(detail) }} />
                       <h2 className="text-[22px] font-bold text-text-1 leading-tight">{detail.title}</h2>
                     </div>
                     {connected && (
