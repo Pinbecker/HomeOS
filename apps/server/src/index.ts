@@ -11,9 +11,12 @@ import { exchangeCode, isGoogleConfigured, saveConnection, consentUrl } from './
 import { syncGoogleCalendar } from './google-calendar'
 import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
 import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, type SyncMutation } from './sync'
+import { transcribeAudio } from './ai-planner'
+import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
 
 const app = Fastify({
   logger: true,
+  bodyLimit: 25 * 1024 * 1024,
 })
 const webDist = path.resolve(process.cwd(), 'apps/web/dist')
 const GOOGLE_SYNC_INTERVAL_MS = Number(process.env.GOOGLE_SYNC_INTERVAL_MS ?? 60_000)
@@ -267,6 +270,121 @@ app.post('/api/calendar/google/sync', async (request, reply) => {
     requestLog(error)
     return reply.status(500).send({ error: 'sync_failed' })
   }
+})
+
+app.post('/api/ai/capture', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  try {
+    const body = (request.body ?? {}) as {
+      text?: string
+      sourceType?: 'typed_capture' | 'inbox_triage'
+      sourceContext?: Record<string, unknown>
+    }
+    const rawInput = body.text?.trim()
+    if (!rawInput) return reply.status(400).send({ error: 'Nothing to capture yet.' })
+
+    return reply.send(await runAiCapture({
+      rawInput,
+      inputType: 'text',
+      sourceType: body.sourceType ?? 'typed_capture',
+      sourceContext: body.sourceContext ?? { route: 'capture' },
+    }, session.user))
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'AI capture failed' })
+  }
+})
+
+app.post('/api/ai/voice', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  try {
+    const body = (request.body ?? {}) as {
+      audioBase64?: string
+      mimeType?: string
+      fileName?: string
+    }
+    if (!body.audioBase64) return reply.status(400).send({ error: 'No audio was attached.' })
+
+    const bytes = Buffer.from(body.audioBase64, 'base64')
+    const audio = new File([bytes], body.fileName ?? 'capture.webm', { type: body.mimeType ?? 'audio/webm' })
+    const transcript = await transcribeAudio(audio)
+    if (!transcript.text) return reply.status(400).send({ error: 'I could not hear enough to save that.' })
+
+    const result = await runAiCapture({
+      rawInput: transcript.text,
+      inputType: 'voice',
+      sourceType: 'voice',
+      sourceContext: {
+        route: 'voice_capture',
+        fileName: audio.name,
+        mimeType: audio.type,
+        sizeBytes: audio.size,
+      },
+      transcriptConfidence: transcript.confidence,
+    }, session.user)
+
+    return reply.send({ ...result, transcript: transcript.text })
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'Voice capture failed' })
+  }
+})
+
+app.post('/api/ai/inbox/:itemId/triage', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  try {
+    const itemId = (request.params as { itemId?: string }).itemId ?? ''
+    const body = (request.body ?? {}) as { message?: string; conversationId?: string | null }
+    const item = await getActiveInboxItem(itemId)
+    if (!item) return reply.status(404).send({ error: 'Inbox item not found.' })
+
+    let previousMessages = await conversationMessages(body.conversationId)
+    if (body.conversationId && body.message?.trim()) {
+      previousMessages = await appendConversationUserMessage(body.conversationId, body.message.trim())
+    }
+
+    const rawInput = body.message?.trim()
+      ? `${item.title}\n\nFollow-up: ${body.message.trim()}`
+      : [item.title, item.body].filter(Boolean).join('\n\n')
+
+    return reply.send(await runAiCapture({
+      rawInput,
+      inputType: 'text',
+      sourceType: 'inbox_triage',
+      sourceContext: { route: 'inbox_triage', itemId, existingMetadata: item.metadata ?? null },
+      originItemId: itemId,
+      conversationId: body.conversationId ?? null,
+      previousMessages,
+    }, session.user))
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'Inbox AI triage failed' })
+  }
+})
+
+app.post('/api/ai/jobs/:jobId/confirm', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  try {
+    const jobId = (request.params as { jobId?: string }).jobId ?? ''
+    return reply.send(await confirmAiJob(jobId, session.user))
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'AI confirmation failed' })
+  }
+})
+
+app.get('/api/ai/jobs', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+  return reply.send({ jobs: await recentAiJobs() })
 })
 
 app.get('/*', async (request, reply) => {

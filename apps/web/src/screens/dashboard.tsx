@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { changePassword, signOut } from '@homeos/auth/client'
+import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, type ThemeMode, watchAutoTheme } from '../lib/appearance'
-import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
 import { resetSession } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
@@ -394,67 +395,6 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   )
 }
 
-function AiCaptureLite() {
-  const [text, setText] = useState('')
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    const value = text.trim()
-    if (!value) return
-    const id = makeId('inbox')
-    const now = new Date().toISOString()
-    const current = getCurrentState()
-    const payload = {
-      id,
-      householdId: current.data.household[0]?.id ?? 'default',
-      createdById: current.data.users[0]?.id ?? 'system',
-      type: 'inbox',
-      title: value,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    }
-    setText('')
-    await enqueueMutation({
-      id: makeId('mutation'),
-      name: 'inbox.upsert',
-      entityType: 'item',
-      entityId: id,
-      operation: 'upsert',
-      payload,
-    }, prev => ({ ...prev, data: { ...prev.data, items: [...prev.data.items, payload] } }))
-  }
-
-  return (
-    <section className="mx-4 mb-4">
-      <div className="rounded-2xl border border-border bg-surface px-3 py-3">
-        <form onSubmit={submit}>
-          <div className="flex items-center gap-2">
-            <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white" aria-label="Record voice note">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="22" />
-              </svg>
-            </button>
-            <input
-              value={text}
-              onChange={event => setText(event.target.value)}
-              placeholder="Speak or type anything for the house brain"
-              className="h-11 min-w-0 flex-1 rounded-xl bg-surface-2 px-3 text-[14px] font-medium text-text-1 outline-none placeholder:text-text-3"
-            />
-            <button type="submit" disabled={!text.trim()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-white disabled:opacity-40" aria-label="Capture">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-                <path d="M5 12h14" />
-                <path d="M13 6l6 6-6 6" />
-              </svg>
-            </button>
-          </div>
-        </form>
-      </div>
-    </section>
-  )
-}
-
 function PinnedBoardLite({ pins }: { pins: Array<{ id: string; title: string; body?: string | null }> }) {
   return (
     <section className="mx-4 mb-4">
@@ -827,7 +767,7 @@ export function DashboardPage() {
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
       </header>
 
-      <AiCaptureLite />
+      <AiCapture surface="home" placeholder="Speak or type anything for the house brain" />
       <PinnedBoardLite pins={snapshot.pins} />
 
       {hasAlerts ? (
