@@ -434,7 +434,9 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
   if (existing) {
     const nextChecked = (payload.checked as boolean | undefined) ?? existing.checked
     await db.update(listItems).set({
+      listId: (payload.listId as string | undefined) ?? existing.listId,
       title: (payload.title as string | undefined) ?? existing.title,
+      sortOrder: (payload.sortOrder as number | undefined) ?? existing.sortOrder,
       checked: nextChecked,
       checkedAt: payload.checkedAt === undefined
         ? existing.checkedAt
