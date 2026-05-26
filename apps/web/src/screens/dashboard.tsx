@@ -715,17 +715,17 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   if (entry.kind === 'task') {
     const done = entry.completed || doneIds.has(entry.taskId)
     return (
-      <SwipeRow onDelete={() => onDelete(entry.taskId)} wrapClassName={border} className="bg-surface">
+      <SwipeRow onDelete={() => onDelete(entry.taskId)} className={border}>
         <div className="flex items-center gap-3 px-4 py-3">
           <button onClick={() => onToggle(entry.taskId)} className="flex h-8 w-8 shrink-0 items-center justify-center transition-transform active:scale-90" aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
             <span className="flex h-[19px] w-[19px] items-center justify-center rounded-full" style={done ? { background: entry.color } : { border: `2px solid ${entry.color}` }}>
               {done ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
             </span>
           </button>
-          <a href={`/household/tasks/${entry.listId ?? 'all'}`} className="min-w-0 flex-1 active:opacity-70">
+          <button type="button" onClick={() => { window.location.href = `/household/tasks/${entry.listId ?? 'all'}` }} className="min-w-0 flex-1 text-left active:opacity-70">
             <p className={`truncate text-[13.5px] font-semibold ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{entry.title}</p>
             {entry.assignee && !done ? <p className="mt-0.5 text-[11.5px] text-text-2">{entry.assignee}</p> : null}
-          </a>
+          </button>
           {entry.overdue && !done ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : null}
         </div>
       </SwipeRow>

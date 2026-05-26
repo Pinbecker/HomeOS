@@ -637,6 +637,11 @@ export function LifeEntityPage() {
   const [renewalLabel, setRenewalLabel] = useState('')
   const [renewalDate, setRenewalDate] = useState('')
   const [savingPanel, setSavingPanel] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editSubtitle, setEditSubtitle] = useState('')
+  const [editIcon, setEditIcon] = useState('')
+  const [editFields, setEditFields] = useState<RecordField[]>([])
+  const [editNotes, setEditNotes] = useState('')
 
   if (!snapshot.record) {
     return (
@@ -652,6 +657,72 @@ export function LifeEntityPage() {
 
   const visibleFields = (snapshot.record.fields ?? []).filter(field => field.label || field.value)
   const householdId = getCurrentState().data.household[0]?.id ?? 'default'
+
+  function startInlineEdit() {
+    setEditTitle(snapshot.record?.title ?? '')
+    setEditSubtitle(snapshot.record?.subtitle ?? '')
+    setEditIcon(snapshot.record?.icon ?? '')
+    setEditFields(
+      snapshot.record?.fields?.length
+        ? snapshot.record.fields.map(field => ({ ...field }))
+        : snapshot.category.defaultFields.map(label => ({ label, value: '' })),
+    )
+    setEditNotes(snapshot.record?.notes ?? '')
+    setEditing(true)
+  }
+
+  function cancelInlineEdit() {
+    setEditing(false)
+    setEditTitle('')
+    setEditSubtitle('')
+    setEditIcon('')
+    setEditFields([])
+    setEditNotes('')
+  }
+
+  function setEditField(index: number, patch: Partial<RecordField>) {
+    setEditFields(prev => prev.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field))
+  }
+
+  function addEditField() {
+    setEditFields(prev => [...prev, { label: '', value: '' }])
+  }
+
+  function removeEditField(index: number) {
+    setEditFields(prev => prev.filter((_, fieldIndex) => fieldIndex !== index))
+  }
+
+  async function saveInlineRecord() {
+    if (!snapshot.record || !editTitle.trim() || savingPanel) return
+    setSavingPanel(true)
+    const now = new Date().toISOString()
+    const payload = {
+      ...snapshot.record,
+      title: editTitle.trim(),
+      subtitle: editSubtitle.trim() || null,
+      icon: editIcon.trim() || null,
+      fields: editFields.map(field => ({ label: field.label.trim(), value: field.value.trim() })).filter(field => field.label || field.value),
+      notes: editNotes.trim() || null,
+      updatedAt: now,
+    }
+
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'record.upsert',
+      entityType: 'record',
+      entityId: snapshot.record.id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        records: prev.data.records.map(record => record.id === snapshot.record!.id ? { ...record, ...payload } : record),
+      },
+    }))
+    setSavingPanel(false)
+    cancelInlineEdit()
+  }
 
   function openRenewalPanel() {
     setRenewalLabel(snapshot.record?.renewalLabel ?? '')
@@ -851,7 +922,14 @@ export function LifeEntityPage() {
             <BackChevron />
             <span className="text-[16px]">Back</span>
           </button>
-          <button onClick={() => setEditing(true)} className="px-1 text-[15px] font-semibold text-accent active:opacity-60">Edit</button>
+          {editing ? (
+            <div className="flex items-center gap-4">
+              <button onClick={cancelInlineEdit} className="px-1 text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>
+              <button onClick={() => { void saveInlineRecord() }} disabled={!editTitle.trim() || savingPanel} className="px-1 text-[15px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{savingPanel ? 'Saving...' : 'Save'}</button>
+            </div>
+          ) : (
+            <button onClick={startInlineEdit} className="px-1 text-[15px] font-semibold text-accent active:opacity-60">Edit</button>
+          )}
         </div>
 
         <header className="px-5 pb-5 pt-1">
@@ -859,28 +937,68 @@ export function LifeEntityPage() {
             className="mb-4 flex h-16 w-16 items-center justify-center rounded-[20px] text-[32px] shadow-[0_10px_24px_rgba(0,0,0,0.05)]"
             style={{ background: `${snapshot.category.color}1F` }}
           >
-            {snapshot.record.icon || snapshot.category.icon}
+            {editing ? (
+              <input value={editIcon} onChange={event => setEditIcon(event.target.value)} placeholder={snapshot.category.icon} className="h-12 w-12 bg-transparent text-center text-[30px] outline-none" />
+            ) : (
+              snapshot.record.icon || snapshot.category.icon
+            )}
           </div>
-          <h1 className="text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1">{snapshot.record.title}</h1>
-          <p className="mt-2 text-[16px] text-text-2">
-            {snapshot.record.subtitle ? `${snapshot.record.subtitle} · ${snapshot.category.label}` : snapshot.category.label}
-          </p>
+          {editing ? (
+            <div className="overflow-hidden rounded-2xl bg-surface">
+              <input value={editTitle} onChange={event => setEditTitle(event.target.value)} placeholder="Title" className="w-full bg-transparent px-4 py-3 text-[22px] font-extrabold text-text-1 outline-none placeholder:text-text-3" />
+              <input value={editSubtitle} onChange={event => setEditSubtitle(event.target.value)} placeholder="Subtitle" className="w-full border-t border-border bg-transparent px-4 py-3 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
+            </div>
+          ) : (
+            <>
+              <h1 className="text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1">{snapshot.record.title}</h1>
+              <p className="mt-2 text-[16px] text-text-2">
+                {snapshot.record.subtitle ? `${snapshot.record.subtitle} · ${snapshot.category.label}` : snapshot.category.label}
+              </p>
+            </>
+          )}
         </header>
 
         <Section title="Key facts">
-          <div className="overflow-hidden rounded-2xl bg-surface">
-            {visibleFields.length > 0 ? visibleFields.map((field, index) => (
-              <div key={`${field.label}-${field.value}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <p className="shrink-0 text-[13.5px] text-text-2">{field.label || 'Detail'}</p>
-                <p className="break-words text-right text-[14.5px] font-medium text-text-1">{field.value || 'Not set'}</p>
+          {editing ? (
+            <>
+              <div className="overflow-hidden rounded-2xl bg-surface">
+                {editFields.map((field, index) => (
+                  <div key={index} className={`flex items-center gap-2 px-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                    <input value={field.label} onChange={event => setEditField(index, { label: event.target.value })} placeholder="Label" className="w-[38%] bg-transparent py-3 text-[14px] text-text-2 outline-none placeholder:text-text-3" />
+                    <input value={field.value} onChange={event => setEditField(index, { value: event.target.value })} placeholder="Value" className="min-w-0 flex-1 bg-transparent py-3 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
+                    <button onClick={() => removeEditField(index)} className="px-1 text-[18px] font-semibold text-red active:opacity-60">-</button>
+                  </div>
+                ))}
               </div>
-            )) : (
-              <div className="px-4 py-3">
-                <p className="text-[14px] text-text-2">No key facts yet.</p>
+              <button onClick={addEditField} className="mt-2 px-1 text-[14px] font-semibold text-accent active:opacity-60">Add field</button>
+            </>
+          ) : (
+            <div className="overflow-hidden rounded-2xl bg-surface">
+              {visibleFields.length > 0 ? visibleFields.map((field, index) => (
+                <div key={`${field.label}-${field.value}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                  <p className="shrink-0 text-[13.5px] text-text-2">{field.label || 'Detail'}</p>
+                  <p className="break-words text-right text-[14.5px] font-medium text-text-1">{field.value || 'Not set'}</p>
+                </div>
+              )) : (
+                <div className="px-4 py-3">
+                  <p className="text-[14px] text-text-2">No key facts yet.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </Section>
+
+        {(editing || snapshot.record.notes) ? (
+          <Section title="Notes">
+            {editing ? (
+              <textarea value={editNotes} onChange={event => setEditNotes(event.target.value)} placeholder="Notes" rows={5} className="w-full resize-none rounded-2xl bg-surface px-4 py-3 text-[14.5px] leading-relaxed text-text-1 outline-none placeholder:text-text-3" />
+            ) : (
+              <div className="rounded-2xl bg-surface px-4 py-3">
+                <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-text-1">{snapshot.record.notes}</p>
               </div>
             )}
-          </div>
-        </Section>
+          </Section>
+        ) : null}
 
         <Section title="Renewal" action={<button onClick={openRenewalPanel} className="text-[12px] font-semibold text-accent">{snapshot.record.renewalDate ? 'Edit' : 'Add renewal'}</button>}>
           {openPanel === 'renewal' ? (
@@ -914,14 +1032,6 @@ export function LifeEntityPage() {
             )}
           </div>
         </Section>
-
-        {snapshot.record.notes ? (
-          <Section title="Notes">
-            <div className="rounded-2xl bg-surface px-4 py-3">
-              <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-text-1">{snapshot.record.notes}</p>
-            </div>
-          </Section>
-        ) : null}
 
         <Section title="Tasks" action={<button onClick={() => setOpenPanel(prev => prev === 'task' ? null : 'task')} className="text-[12px] font-semibold text-accent">Add task</button>}>
           {openPanel === 'task' ? (
@@ -1020,13 +1130,6 @@ export function LifeEntityPage() {
         </Section>
       </div>
 
-      {editing ? (
-        <RecordEditor
-          category={snapshot.category}
-          initial={snapshot.record}
-          onClose={() => setEditing(false)}
-        />
-      ) : null}
     </ScreenShell>
   )
 }
