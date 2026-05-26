@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { ScreenShell } from './shell'
 
@@ -42,6 +42,13 @@ const DEFAULT_CAL_COLOR = '#007AFF'
 const DEFAULT_ROW_H = 112
 const MIN_ROW_H = 40
 const MAX_ROW_H = 170
+const BAR_GAP = 2
+const MIN_BAR_H = 13
+const DATE_H = 36
+const MULTI_DAY_BAR_H = 16
+const PILL_GAP = 3
+const MIN_PILL_H = 16
+const MAX_PILL_H = 46
 
 function localDayKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
@@ -153,6 +160,162 @@ function parseDateTime(date: string, time: string) {
 
 function scrollOffsetWithin(container: HTMLElement, element: HTMLElement) {
   return container.scrollTop + element.getBoundingClientRect().top - container.getBoundingClientRect().top
+}
+
+type WeekBarItem = {
+  id: string
+  title: string
+  color: string
+  time: number | null
+  startCol: number
+  spanCols: number
+  lane: number
+  roundLeft: boolean
+  roundRight: boolean
+  event: CalEvent | null
+}
+
+type SingleDayItem = {
+  id: string
+  title: string
+  color: string
+  time: number | null
+  event: CalEvent | null
+  task: CalTask | null
+}
+
+type WeekLayout = {
+  multiDayBars: WeekBarItem[]
+  singleDayCols: SingleDayItem[][]
+  colMultiDayLanes: number[]
+}
+
+function computeWeekLayout(
+  weekDays: Date[],
+  month: number,
+  events: CalEvent[],
+  tasks: CalTask[],
+  getEventColor: (event: CalEvent) => string,
+): WeekLayout {
+  const weekKeys = weekDays.map(date => localDayKey(date))
+  type Candidate = {
+    id: string
+    title: string
+    color: string
+    time: number | null
+    startCol: number
+    endCol: number
+    roundLeft: boolean
+    roundRight: boolean
+    event: CalEvent | null
+    task: CalTask | null
+    isMulti: boolean
+  }
+  const candidates: Candidate[] = []
+
+  for (const event of events) {
+    const eventKeys = eventDayKeys(event)
+    const eventSet = new Set(eventKeys)
+    let startCol = -1
+    let endCol = -1
+    for (let col = 0; col < 7; col++) {
+      if (eventSet.has(weekKeys[col])) {
+        if (startCol === -1) startCol = col
+        endCol = col
+      }
+    }
+    if (startCol === -1) continue
+    if (!weekDays.some((date, col) => date.getMonth() === month && eventSet.has(weekKeys[col]))) continue
+    const spanCols = endCol - startCol + 1
+    candidates.push({
+      id: event.id,
+      title: event.title,
+      color: getEventColor(event),
+      time: event.allDay ? null : event.start,
+      startCol,
+      endCol,
+      roundLeft: eventKeys[0] === weekKeys[startCol],
+      roundRight: eventKeys[eventKeys.length - 1] === weekKeys[endCol],
+      event,
+      task: null,
+      isMulti: event.allDay || spanCols > 1,
+    })
+  }
+
+  for (const task of tasks) {
+    const key = localDayKey(new Date(task.due))
+    const col = weekKeys.indexOf(key)
+    if (col === -1 || weekDays[col].getMonth() !== month) continue
+    candidates.push({
+      id: task.id,
+      title: task.title,
+      color: task.color,
+      time: task.due,
+      startCol: col,
+      endCol: col,
+      roundLeft: true,
+      roundRight: true,
+      event: null,
+      task,
+      isMulti: false,
+    })
+  }
+
+  const multiCandidates = candidates.filter(candidate => candidate.isMulti)
+  multiCandidates.sort((a, b) => {
+    const diff = (b.endCol - b.startCol) - (a.endCol - a.startCol)
+    return diff !== 0 ? diff : a.startCol - b.startCol
+  })
+
+  const laneRanges: Array<Array<{ s: number; e: number }>> = []
+  const multiDayBars: WeekBarItem[] = []
+  for (const candidate of multiCandidates) {
+    let lane = 0
+    for (;;) {
+      if (!laneRanges[lane]) laneRanges[lane] = []
+      const blocked = laneRanges[lane].some(range => !(candidate.endCol < range.s || candidate.startCol > range.e))
+      if (!blocked) {
+        laneRanges[lane].push({ s: candidate.startCol, e: candidate.endCol })
+        break
+      }
+      lane++
+    }
+    multiDayBars.push({
+      id: candidate.id,
+      title: candidate.title,
+      color: candidate.color,
+      time: candidate.time,
+      startCol: candidate.startCol,
+      spanCols: candidate.endCol - candidate.startCol + 1,
+      lane,
+      roundLeft: candidate.roundLeft,
+      roundRight: candidate.roundRight,
+      event: candidate.event,
+    })
+  }
+
+  const colMultiDayLanes = Array<number>(7).fill(0)
+  for (const bar of multiDayBars) {
+    for (let col = bar.startCol; col < bar.startCol + bar.spanCols; col++) {
+      colMultiDayLanes[col] = Math.max(colMultiDayLanes[col], bar.lane + 1)
+    }
+  }
+
+  const singleDayCols: SingleDayItem[][] = Array.from({ length: 7 }, () => [])
+  const singleCandidates = candidates.filter(candidate => !candidate.isMulti)
+  singleCandidates.sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+  for (const candidate of singleCandidates) {
+    singleDayCols[candidate.startCol].push({
+      id: candidate.id,
+      title: candidate.title,
+      color: candidate.color,
+      time: candidate.time,
+      event: candidate.event,
+      task: candidate.task,
+    })
+  }
+
+  return { multiDayBars, singleDayCols, colMultiDayLanes }
 }
 
 function syncTimeLabel(value: string | number | Date | null | undefined) {
@@ -296,11 +459,28 @@ function CalendarPageInner() {
     return map
   }, [snapshot.tasks])
 
+  const weekLayoutData = useMemo(() => {
+    const map = new Map<string, WeekLayout>()
+    for (const { year, month, grid } of monthList) {
+      for (let i = 0; i < grid.length; i += 7) {
+        map.set(
+          `${year}-${month}-w${Math.floor(i / 7)}`,
+          computeWeekLayout(grid.slice(i, i + 7), month, snapshot.events, snapshot.tasks, getEventColor),
+        )
+      }
+    }
+    return map
+  }, [monthList, snapshot.events, snapshot.tasks, feedMap, calColor])
+
   const [vmYear, vmMonth] = visibleMonthKey.split('-').map(Number)
   const [selectedYear, selectedMonth, selectedDay] = selectedKey.split('-').map(Number)
   const selectedDate = new Date(selectedYear, selectedMonth, selectedDay)
   const selectedEvents = eventsByDay.get(selectedKey) ?? []
   const selectedTasks = tasksByDay.get(selectedKey) ?? []
+  const avail = rowHeight - DATE_H
+  const showBars = avail >= MIN_BAR_H
+  const mLaneH = MULTI_DAY_BAR_H + BAR_GAP
+  const maxMultiDayLanesVisible = showBars ? Math.max(1, Math.floor(avail / mLaneH)) : 0
 
   useEffect(() => {
     const previous = document.body.style.overflow
@@ -493,46 +673,241 @@ function CalendarPageInner() {
               <span className="text-[28px] font-bold text-text-1" style={{ letterSpacing: '-0.02em' }}>{MONTHS[month]}</span>
             </div>
             <div data-cal-grid className="px-2">
-              {Array.from({ length: Math.ceil(grid.length / 7) }, (_, weekIndex) => grid.slice(weekIndex * 7, weekIndex * 7 + 7)).map(weekDays => (
-                <div key={localDayKey(weekDays[0])} className="grid grid-cols-7 overflow-hidden border-t border-border" style={{ height: rowHeight }}>
-                  {weekDays.map((date, col) => {
-                    const key = localDayKey(date)
-                    const inMonth = date.getMonth() === month
-                    const dayEvents = inMonth ? eventsByDay.get(key) ?? [] : []
-                    const dayTasks = inMonth ? tasksByDay.get(key) ?? [] : []
-                    const showBars = rowHeight >= 64
-                    const visible = [...dayEvents.map(event => ({ type: 'event' as const, id: event.id, title: event.title, color: getEventColor(event), time: event.allDay ? null : event.start, event })), ...dayTasks.map(task => ({ type: 'task' as const, id: task.id, title: task.title, color: task.color, time: task.due, task }))].slice(0, showBars ? 4 : 0)
-                    const hidden = dayEvents.length + dayTasks.length - visible.length
-                    const isToday = key === todayKey
-                    const isSelected = key === selectedKey
-                    return (
-                      <button key={key} id={isToday ? 'cal-today' : undefined} data-daykey={key} onClick={() => setSelectedKey(key)} className="min-w-0 border-r border-border px-0.5 pt-1 pb-0.5 text-left active:opacity-70">
-                        {inMonth ? (
-                          <>
-                            <span className="mb-[2px] flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[14px]" style={{ background: isToday ? '#FF3B30' : isSelected ? 'var(--surface-2)' : 'transparent', color: isToday ? '#fff' : isSelected ? 'var(--text-1)' : col >= 5 ? 'var(--text-3)' : 'var(--text-1)', fontWeight: isToday || isSelected ? 700 : 400 }}>
+              {Array.from({ length: Math.ceil(grid.length / 7) }, (_, weekIndex) => grid.slice(weekIndex * 7, weekIndex * 7 + 7)).map((weekDays, weekIndex) => {
+                const layout = weekLayoutData.get(`${year}-${month}-w${weekIndex}`) ?? {
+                  multiDayBars: [],
+                  singleDayCols: Array.from({ length: 7 }, (): SingleDayItem[] => []),
+                  colMultiDayLanes: Array<number>(7).fill(0),
+                }
+
+                return (
+                  <div key={localDayKey(weekDays[0])} className="relative overflow-hidden" style={{ height: rowHeight }}>
+                    <div className="grid h-full grid-cols-7">
+                      {weekDays.map((date, col) => {
+                        const key = localDayKey(date)
+                        const inMonth = date.getMonth() === month
+                        if (!inMonth) return <div key={key} className="border-t border-border" />
+
+                        const isToday = key === todayKey
+                        const isSelected = key === selectedKey
+
+                        return (
+                          <button
+                            key={key}
+                            id={isToday ? 'cal-today' : undefined}
+                            data-daykey={key}
+                            onClick={() => setSelectedKey(key)}
+                            className="flex flex-col items-start border-t border-border px-0.5 pt-1 pb-0.5 active:opacity-70"
+                          >
+                            <span
+                              className="mb-[2px] flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[14px]"
+                              style={{
+                                background: isToday ? '#FF3B30' : isSelected ? 'var(--surface-2)' : 'transparent',
+                                color: isToday ? '#fff' : isSelected ? 'var(--text-1)' : col >= 5 ? 'var(--text-3)' : 'var(--text-1)',
+                                fontWeight: isToday || isSelected ? 700 : 400,
+                              }}
+                            >
                               {date.getDate()}
                             </span>
-                            {showBars ? (
-                              <div className="flex flex-col gap-[3px]">
-                                {visible.map(item => (
-                                  <span key={`${item.type}-${item.id}`} onClick={event => { event.stopPropagation(); item.type === 'event' ? openDetail(item.event) : openTask(item.task) }} className="block truncate rounded-[5px] px-1.5 py-[2px] text-[11px] font-semibold leading-tight" style={{ background: pillBg(item.color), color: pillText(item.color) }}>
-                                    {item.type === 'task' ? '○ ' : ''}{item.title}{item.time && rowHeight > 120 ? <span className="ml-1 font-normal opacity-60">{cellTime(item.time)}</span> : null}
-                                  </span>
-                                ))}
-                                {hidden > 0 ? <span className="px-1.5 text-[10.5px] font-semibold text-text-2">{hidden} more</span> : null}
+                            {!showBars ? (() => {
+                              const multiColors = layout.multiDayBars
+                                .filter(bar => bar.startCol <= col && col < bar.startCol + bar.spanCols)
+                                .map(bar => bar.color)
+                              const singleColors = layout.singleDayCols[col].map(item => item.color)
+                              const dots = [...multiColors, ...singleColors].slice(0, 3)
+                              if (!dots.length) return null
+                              return (
+                                <div className="flex shrink-0 gap-[3px] px-0.5">
+                                  {dots.map((color, index) => <div key={index} className="h-[5px] w-[5px] rounded-full" style={{ background: color }} />)}
+                                </div>
+                              )
+                            })() : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {showBars ? (
+                      <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: DATE_H }}>
+                        {layout.multiDayBars.filter(bar => bar.lane < maxMultiDayLanesVisible).map(bar => {
+                          const leftPct = (bar.startCol / 7) * 100
+                          const widthPct = (bar.spanCols / 7) * 100
+                          const insetL = bar.roundLeft ? 1 : 0
+                          const insetR = bar.roundRight ? 1 : 0
+                          return (
+                            <button
+                              key={bar.id}
+                              onClick={event => {
+                                event.stopPropagation()
+                                if (bar.event) openDetail(bar.event)
+                                else setSelectedKey(localDayKey(weekDays[bar.startCol]))
+                              }}
+                              className="pointer-events-auto absolute flex items-center overflow-hidden"
+                              style={{
+                                left: `calc(${leftPct}% + ${insetL}px)`,
+                                width: `calc(${widthPct}% - ${insetL + insetR}px)`,
+                                top: bar.lane * mLaneH,
+                                height: MULTI_DAY_BAR_H,
+                                background: pillBg(bar.color),
+                                borderRadius: `${bar.roundLeft ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundLeft ? 5 : 1}px`,
+                                paddingLeft: bar.roundLeft ? 6 : 3,
+                                paddingRight: bar.roundRight ? 6 : 3,
+                              }}
+                            >
+                              {bar.roundLeft ? (
+                                <span className="flex min-w-0 w-full items-center gap-[3px] overflow-hidden">
+                                  {bar.event?.allDay ? (
+                                    <svg viewBox="0 0 10 10" width={8} height={8} fill="none" stroke={pillText(bar.color)} strokeWidth={1.1} strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80">
+                                      <rect x="1" y="1.5" width="8" height="7.5" rx="1.2" />
+                                      <line x1="1" y1="4" x2="9" y2="4" />
+                                      <line x1="3.5" y1="0.5" x2="3.5" y2="2.5" />
+                                      <line x1="6.5" y1="0.5" x2="6.5" y2="2.5" />
+                                    </svg>
+                                  ) : null}
+                                  <p className="flex-1 truncate font-semibold leading-tight" style={{ fontSize: 11, color: pillText(bar.color) }}>
+                                    {bar.title}
+                                    {bar.time !== null ? <span className="ml-[4px] font-normal opacity-60">{cellTime(bar.time)}</span> : null}
+                                  </p>
+                                </span>
+                              ) : null}
+                            </button>
+                          )
+                        })}
+
+                        {weekDays.map((date, col) => {
+                          if (date.getMonth() !== month) return null
+                          const colItems = layout.singleDayCols[col]
+                          if (colItems.length === 0) return null
+
+                          const singleOffset = layout.colMultiDayLanes[col] * mLaneH
+                          const singleAvail = avail - singleOffset
+                          const fit = Math.floor((singleAvail + PILL_GAP) / (MIN_PILL_H + PILL_GAP))
+                          if (fit < 1) return null
+
+                          const showMore = colItems.length > fit
+                          const visibleCount = showMore ? fit - 1 : colItems.length
+                          const hiddenCount = colItems.length - visibleCount
+
+                          if (visibleCount < 1) {
+                            return (
+                              <div key={`sd-${col}`} className="pointer-events-none absolute flex items-center" style={{ left: `calc(${(col / 7) * 100}% + 1px)`, width: `calc(${(1 / 7) * 100}% - 2px)`, top: singleOffset, height: MIN_PILL_H }}>
+                                <span className="truncate pl-1.5 text-[10.5px] font-semibold leading-none text-text-2">{colItems.length} more</span>
                               </div>
-                            ) : (
-                              <div className="flex gap-[3px] px-0.5">
-                                {[...dayEvents.map(event => getEventColor(event)), ...dayTasks.map(task => task.color)].slice(0, 3).map((color, index) => <div key={index} className="h-[5px] w-[5px] rounded-full" style={{ background: color }} />)}
-                              </div>
-                            )}
-                          </>
-                        ) : null}
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
+                            )
+                          }
+
+                          const TASK_H = MIN_PILL_H
+                          const visible = colItems.slice(0, visibleCount)
+                          const taskCount = visible.filter(item => item.task).length
+                          const eventCount = visibleCount - taskCount
+                          const moreReserve = showMore ? MIN_PILL_H + PILL_GAP : 0
+                          const pillArea = singleAvail - moreReserve
+                          const tasksArea = taskCount * (TASK_H + PILL_GAP)
+                          const eventH = eventCount > 0
+                            ? Math.min(MAX_PILL_H, Math.floor((pillArea - tasksArea - (eventCount - 1) * PILL_GAP) / eventCount))
+                            : 0
+                          const itemHeights = visible.map(item => item.task ? TASK_H : eventH)
+                          const itemTops = itemHeights.reduce<number[]>((acc, height, index) => {
+                            acc.push(index === 0 ? 0 : acc[index - 1] + itemHeights[index - 1] + PILL_GAP)
+                            return acc
+                          }, [])
+
+                          return (
+                            <Fragment key={`sd-${col}`}>
+                              {visible.map((item, index) => {
+                                const pillH = itemHeights[index]
+                                const showTime = item.time !== null && pillH >= 32
+                                const twoLine = pillH >= (showTime ? 44 : 30)
+                                const titleFont = pillH >= 24 ? 12 : 11
+                                const completed = item.task ? taskOverrides[item.task.id] ?? item.task.completed : false
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={event => {
+                                      event.stopPropagation()
+                                      if (item.event) openDetail(item.event)
+                                      else if (item.task) openTask(item.task)
+                                      else setSelectedKey(localDayKey(date))
+                                    }}
+                                    className="pointer-events-auto absolute overflow-hidden text-left"
+                                    style={{
+                                      left: `calc(${(col / 7) * 100}% + 1px)`,
+                                      width: `calc(${(1 / 7) * 100}% - 2px)`,
+                                      top: singleOffset + itemTops[index],
+                                      height: pillH,
+                                      background: pillBg(item.color),
+                                      borderRadius: 5,
+                                      paddingTop: 3,
+                                      paddingBottom: 2,
+                                      paddingLeft: item.task ? 3 : 6,
+                                      paddingRight: 5,
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'flex-start',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    {item.task ? (
+                                      <div className="flex w-full items-center gap-[3px] overflow-hidden">
+                                        <span className="shrink-0" style={{ width: 9, height: 9 }}>
+                                          {completed ? (
+                                            <svg viewBox="0 0 10 10" width={9} height={9}><circle cx="5" cy="5" r="5" fill={item.color} /></svg>
+                                          ) : (
+                                            <svg viewBox="0 0 10 10" width={9} height={9}><circle cx="5" cy="5" r="4" fill="none" stroke={item.color} strokeWidth={1.4} /></svg>
+                                          )}
+                                        </span>
+                                        <p className={`min-w-0 flex-1 truncate leading-tight ${completed ? 'line-through opacity-50' : ''}`} style={{ fontSize: titleFont, fontWeight: 600, color: pillText(item.color) }}>
+                                          {item.title}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <p className={`w-full font-semibold leading-tight ${twoLine ? 'line-clamp-2' : 'truncate'}`} style={{ fontSize: titleFont, color: pillText(item.color) }}>
+                                          {item.title}
+                                        </p>
+                                        {showTime ? (
+                                          <p className="mt-[1px] w-full truncate font-normal leading-tight" style={{ fontSize: 10.5, color: pillText(item.color), opacity: 0.6 }}>
+                                            {cellTime(item.time!)}
+                                          </p>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                              {hiddenCount > 0 ? (
+                                <div
+                                  className="pointer-events-none absolute flex items-center"
+                                  style={{
+                                    left: `calc(${(col / 7) * 100}% + 1px)`,
+                                    width: `calc(${(1 / 7) * 100}% - 2px)`,
+                                    top: singleOffset + (itemTops[visibleCount - 1] ?? 0) + (itemHeights[visibleCount - 1] ?? 0) + PILL_GAP,
+                                    height: MIN_PILL_H,
+                                  }}
+                                >
+                                  <span className="truncate pl-1.5 text-[10.5px] font-semibold leading-none text-text-2">{hiddenCount} more</span>
+                                </div>
+                              ) : null}
+                            </Fragment>
+                          )
+                        })}
+
+                        {weekDays.map((date, col) => {
+                          if (date.getMonth() !== month) return null
+                          const overflow = layout.multiDayBars.filter(bar => bar.lane >= maxMultiDayLanesVisible && bar.startCol <= col && col < bar.startCol + bar.spanCols).length
+                          if (!overflow) return null
+                          return (
+                            <div key={`ov-${col}`} className="pointer-events-none absolute" style={{ left: `${(col / 7) * 100}%`, width: `${(1 / 7) * 100}%`, top: maxMultiDayLanesVisible * mLaneH + 1 }}>
+                              <span className="px-1 text-[8px] leading-none text-text-3">+{overflow}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           </section>
         ))}
@@ -592,6 +967,7 @@ function CalendarPageInner() {
           eventColor={detail ? getEventColor(detail) : calColor}
           onClose={closeSheet}
           onEdit={() => setSheetPane('edit')}
+          onCancelEdit={() => setSheetPane('detail')}
           onDelete={deleteEvent}
           onTaskToggle={toggleCalTask}
           taskCompleted={sheetTask ? taskOverrides[sheetTask.id] ?? sheetTask.completed : false}
@@ -623,6 +999,7 @@ function CalendarSheet({
   eventColor,
   onClose,
   onEdit,
+  onCancelEdit,
   onDelete,
   onTaskToggle,
   taskCompleted,
@@ -637,18 +1014,61 @@ function CalendarSheet({
   eventColor: string
   onClose: () => void
   onEdit: () => void
+  onCancelEdit: () => void
   onDelete: (event: CalEvent) => void
   onTaskToggle: (id: string, current: boolean) => void
   taskCompleted: boolean
   householdId: string
   onSaved: () => void
 }) {
+  const [dragY, setDragY] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const dragRef = useRef<{ startY: number; startTime: number } | null>(null)
+  const latestDragY = useRef(0)
+
+  useEffect(() => {
+    if (!open) return
+    setDragY(0)
+    setDragging(false)
+    latestDragY.current = 0
+    dragRef.current = null
+  }, [open])
+
   return (
     <>
       <div className="fixed inset-0 z-50" style={{ background: `rgba(0,0,0,${open ? 0.4 : 0})`, transition: 'background 0.32s', pointerEvents: open ? 'auto' : 'none' }} onClick={onClose} />
       <div className="pointer-events-none fixed right-0 bottom-0 left-0 z-[51] flex justify-center">
-        <div className="pointer-events-auto flex w-full max-w-lg flex-col rounded-t-[24px] bg-bg shadow-2xl" style={{ height: '92dvh', transform: open ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
-          <div className="flex h-11 shrink-0 items-center justify-center"><button onClick={onClose} className="h-5 w-16" aria-label="Close"><div className="mx-auto h-[5px] w-10 rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 40%, transparent)' }} /></button></div>
+        <div className="pointer-events-auto flex w-full max-w-lg flex-col rounded-t-[24px] bg-bg shadow-2xl" style={{ height: '92dvh', transform: open ? `translateY(${dragY}px)` : 'translateY(100%)', transition: dragging ? 'none' : 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
+          <div
+            className="flex shrink-0 items-center justify-center"
+            style={{ touchAction: 'none', height: 44, paddingBottom: 4 }}
+            onTouchStart={event => {
+              dragRef.current = { startY: event.touches[0].clientY, startTime: Date.now() }
+              setDragging(true)
+            }}
+            onTouchMove={event => {
+              if (!dragRef.current) return
+              const delta = Math.max(0, event.touches[0].clientY - dragRef.current.startY)
+              latestDragY.current = delta
+              setDragY(delta)
+            }}
+            onTouchEnd={() => {
+              if (!dragRef.current) return
+              const { startTime } = dragRef.current
+              dragRef.current = null
+              const finalY = latestDragY.current
+              const velocity = finalY / Math.max(Date.now() - startTime, 1)
+              latestDragY.current = 0
+              if (finalY > 100 || velocity > 0.4) {
+                onClose()
+              } else {
+                setDragging(false)
+                setDragY(0)
+              }
+            }}
+          >
+            <div className="h-[5px] w-10 rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 40%, transparent)' }} />
+          </div>
           {pane === 'detail' && event ? (
             <>
               <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-2 pb-3">
@@ -689,7 +1109,7 @@ function CalendarSheet({
               </div>
             </>
           ) : (
-            <EventEditor event={pane === 'edit' ? event : null} initialDate={event ? new Date(event.start) : selectedDate} householdId={householdId} onClose={pane === 'edit' && event ? () => undefined : onClose} onBack={pane === 'edit' && event ? () => undefined : undefined} onSaved={onSaved} />
+            <EventEditor event={pane === 'edit' ? event : null} initialDate={event ? new Date(event.start) : selectedDate} householdId={householdId} onClose={pane === 'edit' && event ? onCancelEdit : onClose} onBack={pane === 'edit' && event ? onCancelEdit : undefined} onSaved={onSaved} />
           )}
         </div>
       </div>
