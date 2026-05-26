@@ -1,6 +1,7 @@
 export type ThemeMode = 'light' | 'auto' | 'dark'
 
 const DEFAULT_ACCENT = '#007AFF'
+let activeUserId: string | null = null
 const LEGACY_ACCENTS: Record<string, string> = {
   blue: '#007AFF',
   purple: '#AF52DE',
@@ -30,7 +31,9 @@ function hexToRgb(hex: string) {
 
 export function currentAccent() {
   if (typeof window === 'undefined') return DEFAULT_ACCENT
-  return normalizeHex(localStorage.getItem('accentHex'))
+  return normalizeHex(localStorage.getItem(appearanceKey('accentHex')))
+    ?? normalizeHex(localStorage.getItem('accentHex'))
+    ?? LEGACY_ACCENTS[localStorage.getItem(appearanceKey('accent')) ?? '']
     ?? LEGACY_ACCENTS[localStorage.getItem('accent') ?? '']
     ?? DEFAULT_ACCENT
 }
@@ -44,13 +47,13 @@ export function applyAccent(hex: string) {
   root.style.setProperty('--accent-bg', `rgba(${r},${g},${b},0.12)`)
   root.style.setProperty('--accent-border', `rgba(${r},${g},${b},0.24)`)
   root.removeAttribute('data-accent')
-  localStorage.setItem('accentHex', normalized)
-  localStorage.setItem('accent', 'custom')
+  localStorage.setItem(appearanceKey('accentHex'), normalized)
+  localStorage.setItem(appearanceKey('accent'), 'custom')
 }
 
 export function applyThemeMode(mode: ThemeMode) {
   const root = document.documentElement
-  localStorage.setItem('theme', mode)
+  localStorage.setItem(appearanceKey('theme'), mode)
 
   if (mode === 'dark') {
     root.classList.add('dark')
@@ -61,17 +64,28 @@ export function applyThemeMode(mode: ThemeMode) {
   }
 }
 
+export function currentThemeMode(): ThemeMode {
+  if (typeof window === 'undefined') return 'auto'
+  return (localStorage.getItem(appearanceKey('theme')) as ThemeMode | null)
+    ?? (localStorage.getItem('theme') as ThemeMode | null)
+    ?? 'auto'
+}
+
 export function applyStoredAppearance() {
   if (typeof window === 'undefined') return
-  const mode = (localStorage.getItem('theme') as ThemeMode | null) ?? 'auto'
-  applyThemeMode(mode)
+  applyThemeMode(currentThemeMode())
   applyAccent(currentAccent())
+}
+
+export function setAppearanceUserContext(userId: string | null) {
+  activeUserId = userId
+  applyStoredAppearance()
 }
 
 export function watchAutoTheme(onChange?: () => void) {
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   const handle = () => {
-    if ((localStorage.getItem('theme') as ThemeMode | null) === 'auto') {
+    if (currentThemeMode() === 'auto') {
       document.documentElement.classList.toggle('dark', media.matches)
       onChange?.()
     }
@@ -82,4 +96,8 @@ export function watchAutoTheme(onChange?: () => void) {
 
 export function actualThemeIsDark() {
   return document.documentElement.classList.contains('dark')
+}
+
+function appearanceKey(key: string) {
+  return activeUserId ? `homeos:user:${activeUserId}:${key}` : key
 }

@@ -1,5 +1,6 @@
 const CHECKPOINT_KEY = 'homeos:checkpoint'
 const DEVICE_ID_KEY = 'homeos:device-id'
+let activeUserId: string | null = null
 
 export type SyncMutation = {
   id: string
@@ -11,12 +12,20 @@ export type SyncMutation = {
 }
 
 export function getCheckpoint() {
-  const raw = localStorage.getItem(CHECKPOINT_KEY)
+  const raw = localStorage.getItem(checkpointKey())
   return raw ? Number(raw) : 0
 }
 
 export function setCheckpoint(checkpoint: number) {
-  localStorage.setItem(CHECKPOINT_KEY, String(checkpoint))
+  localStorage.setItem(checkpointKey(), String(checkpoint))
+}
+
+export function setSyncUserContext(userId: string | null) {
+  activeUserId = userId
+}
+
+function checkpointKey() {
+  return activeUserId ? `${CHECKPOINT_KEY}:${activeUserId}` : CHECKPOINT_KEY
 }
 
 export function getDeviceId() {

@@ -1,7 +1,8 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, Outlet, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { PushManager } from './components/push-manager'
-import { ensureBootstrap, useAppState } from './lib/app-store'
+import { ensureBootstrap, setAppUserContext, useAppState } from './lib/app-store'
+import { setAppearanceUserContext } from './lib/appearance'
 import { ensureSession, useSessionState } from './lib/session-store'
 import { DashboardPage } from './screens/dashboard'
 import { BottomNav } from './screens/bottom-nav'
@@ -19,7 +20,9 @@ import { WatchPage } from './screens/watch'
 function RootLayout() {
   const syncState = useAppState(state => state.error ? 'error' : state.syncing ? 'syncing' : 'idle')
   const sessionStatus = useSessionState(state => state.status)
+  const sessionUserId = useSessionState(state => state.user?.id ?? null)
   const [syncCollapsed, setSyncCollapsed] = useState(false)
+  const navigate = useNavigate()
 
   useEffect(() => {
     ensureSession().catch(() => undefined)
@@ -27,10 +30,35 @@ function RootLayout() {
   }, [])
 
   useEffect(() => {
-    if (sessionStatus !== 'authenticated') return undefined
+    if (sessionStatus !== 'authenticated' || !sessionUserId) {
+      setAppUserContext(null)
+      setAppearanceUserContext(null)
+      return undefined
+    }
+    setAppUserContext(sessionUserId)
+    setAppearanceUserContext(sessionUserId)
     ensureBootstrap().catch(() => undefined)
     return undefined
-  }, [sessionStatus])
+  }, [sessionStatus, sessionUserId])
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const target = event.target as Element | null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target || anchor.hasAttribute('download')) return
+
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin) return
+      if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) return
+
+      event.preventDefault()
+      void navigate({ to: `${url.pathname}${url.search}${url.hash}` })
+    }
+
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [navigate])
 
   useEffect(() => {
     if (syncState !== 'error') {

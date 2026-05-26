@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { ScreenShell } from './shell'
 import { ColorField } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 
 const DEFAULT_LIST_COLOR = '#007AFF'
 
@@ -216,6 +217,7 @@ export function TasksOverviewPage() {
 }
 
 export function TaskDetailPage() {
+  const currentUser = useSessionState(state => state.user)
   const pathname = typeof window === 'undefined' ? '' : window.location.pathname
   const listId = pathname.split('/').pop() ?? 'all'
   const { list, lists, items, users } = useAppState(state => {
@@ -269,7 +271,7 @@ export function TaskDetailPage() {
     newTitleRef.current = ''
     const id = makeId('task')
     const householdId = getCurrentState().data.household[0]?.id ?? 'default'
-    const createdById = users[0]?.id ?? 'system'
+    const createdById = currentUser?.id ?? 'system'
     const payload = {
       id,
       householdId,

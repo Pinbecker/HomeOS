@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 type NoteDraft = {
@@ -113,13 +114,13 @@ export function NotesPage() {
       if ((a.pinned ?? false) !== (b.pinned ?? false)) return a.pinned ? -1 : 1
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     }))
-  const users = useAppState(state => state.data.users)
+  const currentUser = useSessionState(state => state.user)
   const [modal, setModal] = useState<NoteDraft | false>(false)
   const orderedNotes = useMemo(() => notes, [notes])
 
   async function saveNote(draft: { id: string | null; title: string; body: string }) {
     const householdId = getCurrentState().data.household[0]?.id ?? 'default'
-    const createdById = users[0]?.id ?? 'system'
+    const createdById = currentUser?.id ?? 'system'
     const now = new Date().toISOString()
     const title = draft.title.trim()
     const body = draft.body.trim() || null

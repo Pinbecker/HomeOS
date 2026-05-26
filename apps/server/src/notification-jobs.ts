@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm'
 import { db } from '@homeos/db'
 import { household, items, notifications, reminders, tvProgrammes, users } from '@homeos/db/schema'
-import { sendPushToAll, sendPushToUser, type PushPayload } from './push'
+import { sendPushToUser, type PushPayload } from './push'
 
 type ChangeRecorder = (change: { entityType: string; entityId: string; operation: 'upsert' | 'delete'; payload: Record<string, unknown> | null }) => Promise<unknown>
 type NotificationPreferences = {
@@ -111,11 +111,16 @@ function mergeNotificationPreferences(raw: unknown): NotificationPreferences {
   }
 }
 
-async function notificationPreferences() {
+async function notificationPreferences(userId?: string | null) {
   const row = await db.query.household.findFirst({ where: eq(household.id, HOUSEHOLD_ID), columns: { settings: true } })
-  const raw = row?.settings && typeof row.settings === 'object'
-    ? (row.settings as { notificationPreferences?: unknown }).notificationPreferences
+  const settings = row?.settings && typeof row.settings === 'object' ? row.settings as Record<string, unknown> : null
+  const userSettings = settings?.userSettings && typeof settings.userSettings === 'object'
+    ? settings.userSettings as Record<string, unknown>
     : null
+  const personal = userId && userSettings?.[userId] && typeof userSettings[userId] === 'object'
+    ? (userSettings[userId] as { notificationPreferences?: unknown }).notificationPreferences
+    : null
+  const raw = personal ?? (settings as { notificationPreferences?: unknown } | null)?.notificationPreferences ?? null
   return mergeNotificationPreferences(raw)
 }
 
@@ -156,26 +161,6 @@ function formatAirtime(date: Date) {
   return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
 }
 
-async function recordNotificationForAll(title: string, body: string | undefined, entityType: string, entityId: string) {
-  const existing = await db.query.notifications.findFirst({ where: and(eq(notifications.entityType, entityType), eq(notifications.entityId, entityId)) })
-  if (existing) return false
-
-  const allUsers = await db.query.users.findMany({ columns: { id: true } })
-  const now = new Date()
-  if (allUsers.length > 0) {
-    await db.insert(notifications).values(allUsers.map(user => ({
-      id: `notification-${randomUUID()}`,
-      userId: user.id,
-      title,
-      body: body ?? null,
-      entityType,
-      entityId,
-      createdAt: now,
-    })))
-  }
-  return true
-}
-
 async function recordNotificationForUser(userId: string, title: string, body: string | undefined, entityType: string, entityId: string) {
   const existing = await db.query.notifications.findFirst({
     where: and(eq(notifications.userId, userId), eq(notifications.entityType, entityType), eq(notifications.entityId, entityId)),
@@ -195,9 +180,6 @@ async function recordNotificationForUser(userId: string, title: string, body: st
 }
 
 export async function dispatchReminders(recordChange: ChangeRecorder) {
-  const prefs = await notificationPreferences()
-  if (!prefs.reminders.enabled) return
-
   const now = new Date()
   const due = await db.query.reminders.findMany({
     where: and(isNull(reminders.dispatchedAt), isNull(reminders.dismissedAt), lte(reminders.triggerAt, now)),
@@ -215,6 +197,8 @@ export async function dispatchReminders(recordChange: ChangeRecorder) {
   }
 
   for (const reminder of due) {
+    const prefs = await notificationPreferences(reminder.createdById)
+    if (!prefs.reminders.enabled) continue
     const entityTitle = recordMap.get(reminder.entityId) ?? null
     const title = reminder.message || (entityTitle ? `Reminder: ${entityTitle}` : 'HomeOS Reminder')
     const body = entityTitle && reminder.message ? entityTitle : undefined
@@ -228,9 +212,6 @@ export async function dispatchReminders(recordChange: ChangeRecorder) {
 }
 
 export async function dispatchDailyTaskNotifications() {
-  const prefs = await notificationPreferences()
-  if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) return
-
   const now = new Date()
   const today = startOfDay(now)
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
@@ -258,6 +239,8 @@ export async function dispatchDailyTaskNotifications() {
   }
 
   for (const [userId, titles] of byAssignee) {
+    const prefs = await notificationPreferences(userId)
+    if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) continue
     const body = titles.length === 1 ? titles[0] : `${titles.length} tasks due today`
     const shouldSend = await recordNotificationForUser(userId, 'Tasks due today', body, 'tasks_due_today', `${todayKey}:${userId}`)
     if (shouldSend) await sendPushToUser(userId, { title: 'Tasks due today', body, url: '/household/tasks/all' })
@@ -265,15 +248,17 @@ export async function dispatchDailyTaskNotifications() {
 
   if (unassigned.length > 0) {
     const body = unassigned.length === 1 ? unassigned[0].title : `${unassigned.length} tasks due today`
-    const shouldSend = await recordNotificationForAll('Tasks due today', body, 'tasks_due_today', `${todayKey}:all`)
-    if (shouldSend) await sendPushToAll({ title: 'Tasks due today', body, url: '/household/tasks/all' })
+    const allUsers = await db.query.users.findMany({ columns: { id: true } })
+    for (const user of allUsers) {
+      const prefs = await notificationPreferences(user.id)
+      if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) continue
+      const shouldSend = await recordNotificationForUser(user.id, 'Tasks due today', body, 'tasks_due_today', `${todayKey}:all:${user.id}`)
+      if (shouldSend) await sendPushToUser(user.id, { title: 'Tasks due today', body, url: '/household/tasks/all' })
+    }
   }
 }
 
 export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder) {
-  const prefs = await notificationPreferences()
-  if (!prefs.taskDue.enabled) return
-
   const now = new Date()
   const lookbackStart = new Date(now.getTime() - 10 * 60_000)
   const dueTasks = await db.query.items.findMany({
@@ -291,8 +276,17 @@ export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder)
   for (const task of pending) {
     if (!task.dueDate) continue
     const payload: PushPayload = { title: 'Task due', body: task.title, url: `/household/tasks/${task.listId ?? 'all'}` }
-    if (task.assigneeId) await sendPushToUser(task.assigneeId, payload)
-    else await sendPushToAll(payload)
+    if (task.assigneeId) {
+      const prefs = await notificationPreferences(task.assigneeId)
+      if (!prefs.taskDue.enabled) continue
+      await sendPushToUser(task.assigneeId, payload)
+    } else {
+      const allUsers = await db.query.users.findMany({ columns: { id: true } })
+      for (const user of allUsers) {
+        const prefs = await notificationPreferences(user.id)
+        if (prefs.taskDue.enabled) await sendPushToUser(user.id, payload)
+      }
+    }
 
     await db.update(items).set({
       metadata: withSentMetadata(task.metadata, task.dueDate, now),
@@ -304,9 +298,6 @@ export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder)
 }
 
 export async function dispatchBinNotifications() {
-  const prefs = await notificationPreferences()
-  if (!prefs.bins.enabled || !isAtOrAfterLocalTime(prefs.bins.time)) return
-
   const tomorrow = BIN_SCHEDULES
     .map(bin => ({ ...bin, next: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks) }))
     .filter(bin => daysUntil(bin.next) === 1)
@@ -314,14 +305,16 @@ export async function dispatchBinNotifications() {
 
   const names = tomorrow.map(bin => bin.name).join(' & ')
   const entityId = `${londonParts(new Date(Date.now() + 86_400_000)).dateKey}:${tomorrow.map(bin => bin.id).join(',')}`
-  const shouldSend = await recordNotificationForAll('Bin day tomorrow', names, 'bin_day', entityId)
-  if (shouldSend) await sendPushToAll({ title: 'Bin day tomorrow', body: names, url: '/' })
+  const allUsers = await db.query.users.findMany({ columns: { id: true } })
+  for (const user of allUsers) {
+    const prefs = await notificationPreferences(user.id)
+    if (!prefs.bins.enabled || !isAtOrAfterLocalTime(prefs.bins.time)) continue
+    const shouldSend = await recordNotificationForUser(user.id, 'Bin day tomorrow', names, 'bin_day', `${entityId}:${user.id}`)
+    if (shouldSend) await sendPushToUser(user.id, { title: 'Bin day tomorrow', body: names, url: '/' })
+  }
 }
 
 export async function dispatchTvNotifications() {
-  const prefs = await notificationPreferences()
-  if (!prefs.tv.enabled || (!prefs.tv.individualEnabled && !prefs.tv.summaryEnabled)) return
-
   const followed = await db.query.items.findMany({
     where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
     columns: { title: true, metadata: true },
@@ -343,24 +336,31 @@ export async function dispatchTvNotifications() {
   })
   const today = londonParts(now).dateKey
 
-  if (prefs.tv.summaryEnabled && isAtOrAfterLocalTime(prefs.tv.summaryTime) && matches.length > 0) {
-    const lines = matches.slice(0, 4).map(programme => `${programme.title} ${formatAirtime(programme.startsAt)}`)
-    const extra = matches.length > 4 ? ` +${matches.length - 4} more` : ''
-    const body = `${lines.join(', ')}${extra}`
-    const shouldSend = await recordNotificationForAll('On tonight', body, 'tv_tonight_summary', today)
-    if (shouldSend) await sendPushToAll({ title: 'On tonight', body, url: '/watch' })
-  }
+  const allUsers = await db.query.users.findMany({ columns: { id: true } })
 
-  if (!prefs.tv.individualEnabled) return
+  for (const user of allUsers) {
+    const prefs = await notificationPreferences(user.id)
+    if (!prefs.tv.enabled || (!prefs.tv.individualEnabled && !prefs.tv.summaryEnabled)) continue
 
-  const leadStart = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 - 60_000)
-  const leadEnd = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 + 60_000)
-  for (const programme of matches) {
-    if (programme.startsAt < leadStart || programme.startsAt > leadEnd) continue
-    const channel = channelName(programme.channelId)
-    const entityId = `${programme.title.toLowerCase()}:${today}:${programme.startsAt.getTime()}`
-    const body = `${programme.title} - starts at ${formatAirtime(programme.startsAt)} on ${channel}`
-    const shouldSend = await recordNotificationForAll(programme.title, body, 'tv_tonight', entityId)
-    if (shouldSend) await sendPushToAll({ title: programme.title, body, url: '/watch' })
+    if (prefs.tv.summaryEnabled && isAtOrAfterLocalTime(prefs.tv.summaryTime) && matches.length > 0) {
+      const lines = matches.slice(0, 4).map(programme => `${programme.title} ${formatAirtime(programme.startsAt)}`)
+      const extra = matches.length > 4 ? ` +${matches.length - 4} more` : ''
+      const body = `${lines.join(', ')}${extra}`
+      const shouldSend = await recordNotificationForUser(user.id, 'On tonight', body, 'tv_tonight_summary', `${today}:${user.id}`)
+      if (shouldSend) await sendPushToUser(user.id, { title: 'On tonight', body, url: '/watch' })
+    }
+
+    if (!prefs.tv.individualEnabled) continue
+
+    const leadStart = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 - 60_000)
+    const leadEnd = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 + 60_000)
+    for (const programme of matches) {
+      if (programme.startsAt < leadStart || programme.startsAt > leadEnd) continue
+      const channel = channelName(programme.channelId)
+      const entityId = `${programme.title.toLowerCase()}:${today}:${programme.startsAt.getTime()}:${user.id}`
+      const body = `${programme.title} - starts at ${formatAirtime(programme.startsAt)} on ${channel}`
+      const shouldSend = await recordNotificationForUser(user.id, programme.title, body, 'tv_tonight', entityId)
+      if (shouldSend) await sendPushToUser(user.id, { title: programme.title, body, url: '/watch' })
+    }
   }
 }

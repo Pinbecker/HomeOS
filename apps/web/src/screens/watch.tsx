@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SwipeRow } from '../components/swipe-row'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 const WATCH_CACHE_KEY = 'homeos:watch-cache:v1'
@@ -171,6 +172,7 @@ function ChannelLogo({ logo, name, compact = false }: { logo: string | null; nam
 }
 
 export function WatchPage() {
+  const currentUser = useSessionState(state => state.user)
   const stateFollowed = useAppState(state => state.data.items
     .filter(item => item.type === 'watchlist_tv' && item.status === 'active' && !item.deletedAt)
     .sort((a, b) => a.title.localeCompare(b.title)) as FollowedShow[])
@@ -238,7 +240,7 @@ export function WatchPage() {
     const payload = {
       id,
       householdId,
-      createdById: users[0]?.id ?? 'system',
+      createdById: currentUser?.id ?? 'system',
       type: 'watchlist_tv',
       title: cleanTitle,
       status: 'active',

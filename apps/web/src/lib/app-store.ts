@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from 'react'
-import { bootstrap, openSyncStream, pull, push, type SyncMutation } from './sync-client'
+import { bootstrap, openSyncStream, pull, push, setSyncUserContext, type SyncMutation } from './sync-client'
 
 type User = { id: string; name: string; email?: string | null }
 type Household = {
@@ -172,6 +172,7 @@ type SyncChange = {
 const STORAGE_KEY = 'homeos:app-state'
 const MUTATION_QUEUE_KEY = 'homeos:mutation-queue'
 const listeners = new Set<() => void>()
+let activeUserId: string | null = null
 
 const emptyData: AppData = {
   users: [],
@@ -206,9 +207,10 @@ function loadState(): AppState {
   if (typeof window === 'undefined') {
     return { ready: false, syncing: false, error: null, data: emptyData }
   }
+  if (!activeUserId) return { ready: false, syncing: false, error: null, data: emptyData }
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey())
     if (!raw) return { ready: false, syncing: false, error: null, data: emptyData }
     const parsed = JSON.parse(raw) as AppState
     return {
@@ -225,9 +227,10 @@ function loadState(): AppState {
 
 function loadMutationQueue(): SyncMutation[] {
   if (typeof window === 'undefined') return []
+  if (!activeUserId) return []
 
   try {
-    const raw = localStorage.getItem(MUTATION_QUEUE_KEY)
+    const raw = localStorage.getItem(mutationQueueKey())
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed as SyncMutation[] : []
@@ -238,8 +241,9 @@ function loadMutationQueue(): SyncMutation[] {
 
 function persist() {
   if (typeof window === 'undefined') return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  localStorage.setItem(MUTATION_QUEUE_KEY, JSON.stringify(mutationQueue))
+  if (!activeUserId) return
+  localStorage.setItem(storageKey(), JSON.stringify(state))
+  localStorage.setItem(mutationQueueKey(), JSON.stringify(mutationQueue))
 }
 
 function emit() {
@@ -260,6 +264,32 @@ function mergeCollection<T extends { id: string }>(existing: T[], incoming: T) {
 
 function removeCollection<T extends { id: string }>(existing: T[], id: string) {
   return existing.filter(row => row.id !== id)
+}
+
+function storageKey() {
+  return activeUserId ? `${STORAGE_KEY}:${activeUserId}` : STORAGE_KEY
+}
+
+function mutationQueueKey() {
+  return activeUserId ? `${MUTATION_QUEUE_KEY}:${activeUserId}` : MUTATION_QUEUE_KEY
+}
+
+export function setAppUserContext(userId: string | null) {
+  if (activeUserId === userId) return
+
+  if (stream) {
+    stream.close()
+    stream = null
+  }
+  activeUserId = userId
+  setSyncUserContext(userId)
+  bootstrapped = false
+  flushPromise = null
+  refreshPromise = null
+  postPushRefreshTimer = null
+  mutationQueue = loadMutationQueue()
+  state = loadState()
+  emit()
 }
 
 function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entityType' | 'entityId' | 'operation' | 'payload'>) {

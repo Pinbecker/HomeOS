@@ -2,20 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { changePassword, signOut } from '@homeos/auth/client'
 import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
-import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, type ThemeMode, watchAutoTheme } from '../lib/appearance'
+import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
-import { resetSession } from '../lib/session-store'
+import { resetSession, useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
-type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string }
+type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
 type CalEvent = { id: string; title: string; startsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null; color: string }
-  | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string }
+  | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 type DayGroup = { key: string; label: string; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
 
@@ -122,6 +122,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       assignee: task.assignee,
       overdue: dayDiffFrom(task.dueDate.getTime(), now) < 0,
       color: task.color,
+      completed: task.completed,
     })
   }
 
@@ -239,6 +240,11 @@ function settingObject(value: unknown) {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
+function userSettings(settings: Record<string, unknown> | null | undefined, userId: string | null | undefined) {
+  const all = settingObject(settings?.userSettings)
+  return settingObject(userId ? all[userId] : null)
+}
+
 function asBool(value: unknown, fallback: boolean) {
   return typeof value === 'boolean' ? value : fallback
 }
@@ -253,7 +259,7 @@ function asLeadMinutes(value: unknown, fallback: number) {
 }
 
 function notificationPreferencesFromSettings(settings: Record<string, unknown> | null | undefined): NotificationPreferences {
-  const raw = settingObject(settings?.notificationPreferences)
+  const raw = settingObject(settings?.notificationPreferences ?? settings)
   const reminders = settingObject(raw.reminders)
   const taskDue = settingObject(raw.taskDue)
   const tasksDaily = settingObject(raw.tasksDaily)
@@ -284,7 +290,7 @@ function notificationPreferencesFromSettings(settings: Record<string, unknown> |
 function Switch({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   return (
     <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${checked ? 'bg-accent' : 'bg-surface-2'}`}>
-      <span className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.22)] transition-transform ${checked ? 'translate-x-[21px]' : 'translate-x-[2px]'}`} />
+      <span className={`absolute left-0 top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.22)] transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
     </button>
   )
 }
@@ -292,11 +298,13 @@ function Switch({ checked, onChange, disabled = false }: { checked: boolean; onC
 function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'menu' | 'appearance' | 'notifications' | 'password'>('menu')
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('theme') as ThemeMode | null) ?? 'auto')
+  const currentUser = useSessionState(state => state.user)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => currentThemeMode())
   const [isDark, setIsDark] = useState(() => actualThemeIsDark())
   const [accent, setAccent] = useState(() => currentAccent())
   const householdRow = useAppState(state => state.data.household[0] ?? null)
-  const notificationPreferences = notificationPreferencesFromSettings(householdRow?.settings)
+  const personalSettings = userSettings(householdRow?.settings, currentUser?.id)
+  const notificationPreferences = notificationPreferencesFromSettings(personalSettings.notificationPreferences as Record<string, unknown> | null | undefined)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -333,6 +341,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   }
 
   async function saveNotificationPreferences(next: NotificationPreferences) {
+    if (!currentUser) return
     const householdId = householdRow?.id ?? 'default'
     const now = new Date().toISOString()
     const payload = {
@@ -340,7 +349,13 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
       name: householdRow?.name ?? 'Home',
       settings: {
         ...(householdRow?.settings ?? {}),
-        notificationPreferences: next,
+        userSettings: {
+          ...settingObject(householdRow?.settings?.userSettings),
+          [currentUser.id]: {
+            ...personalSettings,
+            notificationPreferences: next,
+          },
+        },
       },
       createdAt: householdRow?.createdAt ?? now,
     }
@@ -671,7 +686,7 @@ function TimelineRow({ entry, doneIds, onToggle, hasBorder }: { entry: TimelineE
   }
 
   if (entry.kind === 'task') {
-    const done = doneIds.has(entry.taskId)
+    const done = entry.completed || doneIds.has(entry.taskId)
     return (
       <div className={`flex items-center gap-3 px-4 py-3 ${border}`}>
         <button onClick={() => onToggle(entry.taskId)} className="flex h-8 w-8 shrink-0 items-center justify-center transition-transform active:scale-90" aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
@@ -731,6 +746,10 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    setDoneIds(new Set(tasks.filter(task => task.completed).map(task => task.id)))
+  }, [tasks])
+
+  useEffect(() => {
     const savedRange = Number(localStorage.getItem('homeos:schedule-range'))
     if ([1, 3, 7].includes(savedRange)) setRangeDaysState(savedRange)
     const savedMode = localStorage.getItem('homeos:schedule-mode')
@@ -748,6 +767,8 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
   }
 
   async function toggleTask(id: string) {
+    const task = tasks.find(row => row.id === id)
+    if (!task) return
     const willComplete = !doneIds.has(id)
     setDoneIds(prev => {
       const next = new Set(prev)
@@ -755,8 +776,6 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
       else next.delete(id)
       return next
     })
-    const task = tasks.find(row => row.id === id)
-    if (!task) return
     await enqueueMutation({
       id: makeId('mutation'),
       name: 'task.upsert',
@@ -850,6 +869,7 @@ function OnTonightCard({ shows }: { shows: Array<{ title: string; channel: strin
 }
 
 export function DashboardPage() {
+  const sessionUser = useSessionState(state => state.user)
   const snapshot = useAppState(state => {
     const now = new Date()
     const startToday = startOfLocalDay(now)
@@ -857,15 +877,16 @@ export function DashboardPage() {
     const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
     const lists = state.data.lists
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
-    const defaultCalendarColor = normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem('homeos:cal-color') : null) ?? '#007AFF'
-    const feedColorMap = new Map(state.data.calendarFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
+    const defaultCalendarColor = normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? window.localStorage.getItem('homeos:cal-color') : null) ?? '#007AFF'
+    const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
+    const feedColorMap = new Map(userFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
     const shopMap = new Map(lists.filter(list => list.type === 'shopping' && !list.archived).map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
     const shoppingAll = state.data.listItems
       .filter(item => !item.deletedAt && !item.checked && shopMap.has(item.listId))
       .sort((a, b) => a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
       .map(item => ({ id: item.id, title: item.title, shopName: shopMap.get(item.listId)!.name, shopColor: shopMap.get(item.listId)!.color }))
     const tasks = state.data.items
-      .filter(item => item.type === 'task' && item.status === 'active' && !item.deletedAt && item.dueDate)
+      .filter(item => item.type === 'task' && (item.status === 'active' || item.status === 'completed') && !item.deletedAt && item.dueDate)
       .map(item => {
         const dueDate = toDate(item.dueDate)!
         return {
@@ -875,6 +896,7 @@ export function DashboardPage() {
           listId: item.listId ?? null,
           assignee: item.assigneeId ? state.data.users.find(user => user.id === item.assigneeId)?.name ?? null : null,
           color: item.listId ? listColorMap.get(item.listId) ?? '#FF9500' : '#FF9500',
+          completed: item.status === 'completed',
         }
       })
       .filter(task => task.dueDate <= scheduleWindow)
@@ -883,6 +905,7 @@ export function DashboardPage() {
     const calendarEvents = state.data.calendarEvents
       .map(event => ({ ...event, startsAtDate: toDate(event.startsAt)! }))
       .filter(event => event.startsAtDate >= startToday && event.startsAtDate <= scheduleWindow)
+      .filter(event => !event.calendarId?.startsWith('ics:') || feedColorMap.has(event.calendarId.slice(4)))
       .sort((a, b) => a.startsAtDate.getTime() - b.startsAtDate.getTime())
       .slice(0, 60)
       .map(event => ({
@@ -915,7 +938,7 @@ export function DashboardPage() {
       .map(item => ({ id: item.id, title: item.title, body: item.body }))
 
     return {
-      user: state.data.users[0],
+      user: sessionUser ?? state.data.users[0],
       shoppingItems: shoppingAll.slice(0, 12) as ShoppingItem[],
       shoppingTotal: shoppingAll.length,
       tasks: tasks as Task[],

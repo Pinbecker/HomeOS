@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { SwipeRow } from '../components/swipe-row'
 import { ScreenShell } from './shell'
 
@@ -594,6 +595,7 @@ export function LifeCategoryPage() {
 }
 
 export function LifeEntityPage() {
+  const currentUser = useSessionState(state => state.user)
   const pathname = typeof window === 'undefined' ? '' : window.location.pathname
   const entityId = pathname.split('/').pop() ?? ''
   const snapshot = useAppState(state => {
@@ -649,7 +651,6 @@ export function LifeEntityPage() {
   }
 
   const visibleFields = (snapshot.record.fields ?? []).filter(field => field.label || field.value)
-  const currentUser = getCurrentState().data.users[0]
   const householdId = getCurrentState().data.household[0]?.id ?? 'default'
 
   function openRenewalPanel() {

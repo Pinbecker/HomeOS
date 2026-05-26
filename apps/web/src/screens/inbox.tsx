@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AiCapture } from '../components/ai-capture'
 import { enqueueMutation, refreshAppState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 function formatRelativeTime(value: string | number | Date) {
@@ -24,14 +25,14 @@ export function InboxPage() {
   const items = useAppState(state => state.data.items
     .filter(item => item.type === 'inbox' && item.status === 'active' && !item.deletedAt)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
-  const users = useAppState(state => state.data.users)
+  const currentUser = useSessionState(state => state.user)
   const [triageItemId, setTriageItemId] = useState<string | null>(null)
   const [reply, setReply] = useState('')
   const [panelError, setPanelError] = useState<string | null>(null)
   const [panelMessage, setPanelMessage] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
 
-  const firstName = useMemo(() => users[0]?.name?.split(' ')[0] ?? 'You', [users])
+  const firstName = useMemo(() => currentUser?.name?.split(' ')[0] ?? 'You', [currentUser?.name])
   const triageItem = triageItemId ? items.find(item => item.id === triageItemId) ?? null : null
 
   async function archiveItem(itemId: string) {

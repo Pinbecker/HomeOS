@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 type StaticBinSchedule = {
@@ -220,6 +221,7 @@ export function BinsPage() {
 type Plan = { id: string; title: string; status: string; listId?: string | null; createdAt?: string | number | Date; updatedAt?: string | number | Date }
 
 export function HousePlansPage() {
+  const currentUser = useSessionState(state => state.user)
   const snapshot = useAppState(state => {
     const planList = state.data.lists.find(list => list.type === 'house_plans' && !list.archived) ?? null
     const plans = state.data.items
@@ -230,7 +232,7 @@ export function HousePlansPage() {
       active: plans.filter(plan => plan.status !== 'completed'),
       done: plans.filter(plan => plan.status === 'completed'),
       householdId: state.data.household[0]?.id ?? 'default',
-      userId: state.data.users[0]?.id ?? 'system',
+      userId: currentUser?.id ?? 'system',
     }
   })
 

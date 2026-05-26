@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
+import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 type CalEvent = {
@@ -343,17 +344,22 @@ function syncTimeLabel(value: string | number | Date | null | undefined) {
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
     <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={`relative inline-flex h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200 ${checked ? 'bg-accent' : 'bg-surface-2'}`}>
-      <span className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.22)] transition-transform duration-200 ${checked ? 'translate-x-[21px]' : 'translate-x-[2px]'}`} />
+      <span className={`absolute left-0 top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.22)] transition-transform duration-200 ${checked ? 'translate-x-[22px]' : 'translate-x-[2px]'}`} />
     </button>
   )
 }
 
 function CalendarPageInner() {
+  const sessionUser = useSessionState(state => state.user)
   const today = useMemo(() => new Date(), [])
   const todayKey = localDayKey(today)
   const snapshot = useAppState(state => {
     const listColors = new Map(state.data.lists.map(list => [list.id, list.color ?? '#FF9500']))
-    const events: CalEvent[] = state.data.calendarEvents.map(event => ({
+    const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
+    const userFeedIds = new Set(userFeeds.map(feed => feed.id))
+    const events: CalEvent[] = state.data.calendarEvents
+      .filter(event => !event.calendarId?.startsWith('ics:') || userFeedIds.has(event.calendarId.slice(4)))
+      .map(event => ({
       id: event.id,
       householdId: event.householdId,
       title: event.title,
@@ -376,10 +382,10 @@ function CalendarPageInner() {
       }))
     return {
       householdId: state.data.household[0]?.id ?? 'default',
-      userId: state.data.users[0]?.id ?? 'system',
+      userId: sessionUser?.id ?? 'system',
       events,
       tasks,
-      feeds: state.data.calendarFeeds as CalFeed[],
+      feeds: userFeeds as CalFeed[],
     }
   })
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_H)
@@ -401,10 +407,10 @@ function CalendarPageInner() {
 
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
   useEffect(() => {
-    const saved = localStorage.getItem('homeos:cal-color')
+    const saved = localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? localStorage.getItem('homeos:cal-color')
     const hex = normalizeHex(saved)
     if (hex) setCalColor(hex)
-  }, [])
+  }, [sessionUser?.id])
   useEffect(() => {
     async function syncGoogleNow() {
       if (googleSyncRef.current || document.visibilityState !== 'visible' || !navigator.onLine) return
@@ -1000,7 +1006,7 @@ function CalendarPageInner() {
       {calendarsOpen ? (
         <CalendarsSheet
           calColor={calColor}
-          onCalColorChange={color => { setCalColor(color); localStorage.setItem('homeos:cal-color', color) }}
+          onCalColorChange={color => { setCalColor(color); localStorage.setItem(`homeos:user:${snapshot.userId}:cal-color`, color) }}
           feeds={snapshot.feeds}
           householdId={snapshot.householdId}
           userId={snapshot.userId}
@@ -1436,8 +1442,8 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
                       <p className="truncate text-[15px] font-semibold text-text-1">{feed.name}</p>
                       {feed.errorMessage ? <p className="truncate text-[11.5px] leading-snug text-red">! {feed.errorMessage}</p> : <p className="text-[11.5px] text-text-3">{syncTimeLabel(feed.lastSyncedAt)}</p>}
                     </div>
-                    <button onClick={() => patchFeed(feed, { enabled: !feed.enabled })} className={`h-7 w-12 shrink-0 rounded-full transition-colors ${feed.enabled ? 'bg-sage' : 'bg-surface-2'}`} aria-label={feed.enabled ? 'Disable' : 'Enable'}>
-                      <div className={`mx-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${feed.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                    <button onClick={() => patchFeed(feed, { enabled: !feed.enabled })} className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${feed.enabled ? 'bg-sage' : 'bg-surface-2'}`} aria-label={feed.enabled ? 'Disable' : 'Enable'}>
+                      <div className={`absolute left-0 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${feed.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                     </button>
                   </div>
                   {pickerFor === feed.id ? <ColorPickerPanel value={feed.color} onChange={color => { void patchFeed(feed, { color }) }} /> : null}
