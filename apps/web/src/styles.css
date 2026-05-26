@@ -163,6 +163,20 @@ body {
   letter-spacing: -0.01em;   /* iOS SF tracking */
 }
 
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Safe area insets for iPhone notch / home indicator */
 .safe-top    { padding-top:    env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
