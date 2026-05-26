@@ -569,8 +569,14 @@ export function TaskDetailPage() {
                     </div>
                     <input
                       type="date"
-                      value={dueDate ? toInputDate(dueDate) : ''}
-                      onChange={event => setDueDate(task, event.target.value)}
+                      key={`date-${task.id}-${dueDate ? toInputDate(dueDate) : 'none'}`}
+                      defaultValue={dueDate ? toInputDate(dueDate) : ''}
+                      onBlur={event => {
+                        const next = event.currentTarget.value
+                        if (next !== (dueDate ? toInputDate(dueDate) : '')) {
+                          setDueDate(task, next)
+                        }
+                      }}
                       className="absolute inset-0 h-full w-full cursor-pointer rounded-lg"
                       style={{ opacity: 0.01, colorScheme: 'light dark' }}
                     />
@@ -589,8 +595,14 @@ export function TaskDetailPage() {
                       </div>
                       <input
                         type="time"
-                        value={hasSetTime(dueDate) ? toInputTime(dueDate) : ''}
-                        onChange={event => setDueTime(task, event.target.value)}
+                        key={`time-${task.id}-${hasSetTime(dueDate) ? toInputTime(dueDate) : 'none'}`}
+                        defaultValue={hasSetTime(dueDate) ? toInputTime(dueDate) : ''}
+                        onBlur={event => {
+                          const next = event.currentTarget.value
+                          if (next !== (hasSetTime(dueDate) ? toInputTime(dueDate) : '')) {
+                            setDueTime(task, next)
+                          }
+                        }}
                         className="absolute inset-0 h-full w-full cursor-pointer rounded-lg"
                         style={{ opacity: 0.01, colorScheme: 'light dark' }}
                       />
