@@ -564,7 +564,6 @@ export function TaskDetailPage() {
                     </div>
                     <input
                       type="date"
-                      key={`date-${task.id}-${dueDate ? toInputDate(dueDate) : 'none'}`}
                       defaultValue={dueDate ? toInputDate(dueDate) : ''}
                       onBlur={event => {
                         const next = event.currentTarget.value
@@ -590,7 +589,6 @@ export function TaskDetailPage() {
                       </div>
                       <input
                         type="time"
-                        key={`time-${task.id}-${hasSetTime(dueDate) ? toInputTime(dueDate) : 'none'}`}
                         defaultValue={hasSetTime(dueDate) ? toInputTime(dueDate) : ''}
                         onBlur={event => {
                           const next = event.currentTarget.value

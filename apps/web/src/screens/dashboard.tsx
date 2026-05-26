@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { changePassword, signOut } from '@homeos/auth/client'
 import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
+import { SwipeRow } from '../components/swipe-row'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
@@ -295,6 +296,32 @@ function Switch({ checked, onChange, disabled = false }: { checked: boolean; onC
   )
 }
 
+function TimeCommitInput({ value, disabled, onCommit }: { value: string; disabled?: boolean; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
+
+  function commit(next = draft) {
+    if (next && next !== value) onCommit(next)
+  }
+
+  return (
+    <input
+      type="time"
+      value={draft}
+      disabled={disabled}
+      onChange={event => setDraft(event.target.value)}
+      onBlur={() => commit()}
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40"
+    />
+  )
+}
+
 function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'menu' | 'appearance' | 'notifications' | 'password'>('menu')
@@ -530,7 +557,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       </div>
                       <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
                         <span className="text-[13px] font-semibold text-text-2">Time</span>
-                        <input type="time" value={notificationPreferences.tasksDaily.time} disabled={!notificationPreferences.tasksDaily.enabled} onChange={event => updateNotificationPreferences(current => ({ ...current, tasksDaily: { ...current.tasksDaily, time: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                        <TimeCommitInput value={notificationPreferences.tasksDaily.time} disabled={!notificationPreferences.tasksDaily.enabled} onCommit={time => updateNotificationPreferences(current => ({ ...current, tasksDaily: { ...current.tasksDaily, time } }))} />
                       </label>
                     </div>
                     <div className="border-t border-border px-4 py-3.5">
@@ -543,7 +570,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       </div>
                       <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
                         <span className="text-[13px] font-semibold text-text-2">Time</span>
-                        <input type="time" value={notificationPreferences.bins.time} disabled={!notificationPreferences.bins.enabled} onChange={event => updateNotificationPreferences(current => ({ ...current, bins: { ...current.bins, time: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                        <TimeCommitInput value={notificationPreferences.bins.time} disabled={!notificationPreferences.bins.enabled} onCommit={time => updateNotificationPreferences(current => ({ ...current, bins: { ...current.bins, time } }))} />
                       </label>
                     </div>
                   </div>
@@ -581,7 +608,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       </div>
                       <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
                         <span className="text-[13px] font-semibold text-text-2">Time</span>
-                        <input type="time" value={notificationPreferences.tv.summaryTime} disabled={!notificationPreferences.tv.enabled || !notificationPreferences.tv.summaryEnabled} onChange={event => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, summaryTime: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                        <TimeCommitInput value={notificationPreferences.tv.summaryTime} disabled={!notificationPreferences.tv.enabled || !notificationPreferences.tv.summaryEnabled} onCommit={summaryTime => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, summaryTime } }))} />
                       </label>
                     </div>
                   </div>
@@ -665,7 +692,7 @@ function PinnedBoardLite({ pins }: { pins: Array<{ id: string; title: string; bo
   )
 }
 
-function TimelineRow({ entry, doneIds, onToggle, hasBorder }: { entry: TimelineEntry; doneIds: Set<string>; onToggle: (id: string) => void; hasBorder: boolean }) {
+function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry: TimelineEntry; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void; hasBorder: boolean }) {
   const border = hasBorder ? 'border-t border-border' : ''
 
   if (entry.kind === 'calendar') {
@@ -688,18 +715,20 @@ function TimelineRow({ entry, doneIds, onToggle, hasBorder }: { entry: TimelineE
   if (entry.kind === 'task') {
     const done = entry.completed || doneIds.has(entry.taskId)
     return (
-      <div className={`flex items-center gap-3 px-4 py-3 ${border}`}>
-        <button onClick={() => onToggle(entry.taskId)} className="flex h-8 w-8 shrink-0 items-center justify-center transition-transform active:scale-90" aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
-          <span className="flex h-[19px] w-[19px] items-center justify-center rounded-full" style={done ? { background: entry.color } : { border: `2px solid ${entry.color}` }}>
-            {done ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
-          </span>
-        </button>
-        <a href={`/household/tasks/${entry.listId ?? 'all'}`} className="min-w-0 flex-1 active:opacity-70">
-          <p className={`truncate text-[13.5px] font-semibold ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{entry.title}</p>
-          {entry.assignee && !done ? <p className="mt-0.5 text-[11.5px] text-text-2">{entry.assignee}</p> : null}
-        </a>
-        {entry.overdue && !done ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : null}
-      </div>
+      <SwipeRow onDelete={() => onDelete(entry.taskId)} wrapClassName={border} className="bg-surface">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button onClick={() => onToggle(entry.taskId)} className="flex h-8 w-8 shrink-0 items-center justify-center transition-transform active:scale-90" aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
+            <span className="flex h-[19px] w-[19px] items-center justify-center rounded-full" style={done ? { background: entry.color } : { border: `2px solid ${entry.color}` }}>
+              {done ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
+            </span>
+          </button>
+          <a href={`/household/tasks/${entry.listId ?? 'all'}`} className="min-w-0 flex-1 active:opacity-70">
+            <p className={`truncate text-[13.5px] font-semibold ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{entry.title}</p>
+            {entry.assignee && !done ? <p className="mt-0.5 text-[11.5px] text-text-2">{entry.assignee}</p> : null}
+          </a>
+          {entry.overdue && !done ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : null}
+        </div>
+      </SwipeRow>
     )
   }
 
@@ -719,7 +748,7 @@ function TimelineRow({ entry, doneIds, onToggle, hasBorder }: { entry: TimelineE
   )
 }
 
-function GroupedTimeline({ groups, doneIds, onToggle }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void }) {
+function GroupedTimeline({ groups, doneIds, onToggle, onDelete }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
   return (
     <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
       {groups.map((group, groupIndex) => (
@@ -733,7 +762,7 @@ function GroupedTimeline({ groups, doneIds, onToggle }: { groups: DayGroup[]; do
           >
             <p className={`text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
           </div>
-          {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} hasBorder={entryIndex > 0} />)}
+          {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
         </div>
       ))}
     </div>
@@ -792,6 +821,28 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
     })
   }
 
+  async function deleteTask(id: string) {
+    setDoneIds(prev => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'task.delete',
+      entityType: 'item',
+      entityId: id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        items: prev.data.items.filter(row => row.id !== id),
+      },
+    }))
+  }
+
   const cutoff = rangeCutoffMs(now, rangeDays)
   const calendarIn = calendarEvents.filter(event => event.startsAt.getTime() <= cutoff)
   const tasksIn = tasks.filter(task => task.dueDate.getTime() <= cutoff)
@@ -831,12 +882,12 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
         </a>
       ) : mode === 'combined' ? (
-        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} />
+        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} />
       ) : (
         <div className="flex flex-col gap-4">
-          {eventGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} /></div> : null}
-          {taskGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} /></div> : null}
-          {renewalGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} /></div> : null}
+          {eventGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
+          {taskGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
+          {renewalGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
         </div>
       )}
     </section>
@@ -885,8 +936,15 @@ export function DashboardPage() {
       .filter(item => !item.deletedAt && !item.checked && shopMap.has(item.listId))
       .sort((a, b) => a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
       .map(item => ({ id: item.id, title: item.title, shopName: shopMap.get(item.listId)!.name, shopColor: shopMap.get(item.listId)!.color }))
+    const completedCutoff = now.getTime() - 6 * 60 * 60 * 1000
     const tasks = state.data.items
-      .filter(item => item.type === 'task' && (item.status === 'active' || item.status === 'completed') && !item.deletedAt && item.dueDate)
+      .filter(item => {
+        if (item.type !== 'task' || item.deletedAt || !item.dueDate) return false
+        if (item.status === 'active') return true
+        if (item.status !== 'completed') return false
+        const completedAt = toDate(item.completedAt)
+        return Boolean(completedAt && completedAt.getTime() >= completedCutoff)
+      })
       .map(item => {
         const dueDate = toDate(item.dueDate)!
         return {
