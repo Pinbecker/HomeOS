@@ -253,9 +253,14 @@ async function upsertTask(userId: string, mutation: SyncMutation) {
     await db.update(items).set({
       title: (payload.title as string | undefined) ?? existing.title,
       status: (payload.status as 'active' | 'completed' | 'archived' | 'snoozed' | undefined) ?? existing.status,
-      listId: (payload.listId as string | null | undefined) ?? existing.listId,
-      assigneeId: (payload.assigneeId as string | null | undefined) ?? existing.assigneeId,
-      dueDate: payload.dueDate ? new Date(payload.dueDate as string | number) : existing.dueDate,
+      listId: payload.listId === undefined ? existing.listId : (payload.listId as string | null),
+      assigneeId: payload.assigneeId === undefined ? existing.assigneeId : (payload.assigneeId as string | null),
+      dueDate: payload.dueDate === undefined
+        ? existing.dueDate
+        : (payload.dueDate ? new Date(payload.dueDate as string | number) : null),
+      completedAt: payload.completedAt === undefined
+        ? existing.completedAt
+        : (payload.completedAt ? new Date(payload.completedAt as string | number) : null),
       updatedAt: now,
       deletedAt: payload.deletedAt ? new Date(payload.deletedAt as string | number) : existing.deletedAt,
     }).where(eq(items.id, mutation.entityId))
