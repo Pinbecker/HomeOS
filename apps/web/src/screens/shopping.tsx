@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { ScreenShell } from './shell'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { SwipeRow } from '../components/swipe-row'
 
 const LIST_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#8E8E93'] as const
 const DEFAULT_LIST_COLOR = '#007AFF'
@@ -159,6 +160,7 @@ export function ShoppingDetailPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [movingItemId, setMovingItemId] = useState<string | null>(null)
+  const [targetShop, setTargetShop] = useState('')
 
   const isAll = shopId === 'all'
   const currentShop = isAll ? null : shops.find(shop => shop.id === shopId) ?? null
@@ -169,10 +171,12 @@ export function ShoppingDetailPage() {
   const [color, setColor] = useState(currentShop?.color ?? DEFAULT_LIST_COLOR)
   const otherShops = isAll ? [] : shops.filter(shop => shop.id !== shopId)
   const canEdit = Boolean(currentShop && currentShop.icon !== GENERAL_SHOPPING_ICON)
+  const shopMeta = new Map(shops.map(shop => [shop.id, { name: shop.icon === GENERAL_SHOPPING_ICON ? 'General' : shop.name, color: shop.color ?? DEFAULT_LIST_COLOR }]))
+  const activeTargetShop = targetShop || shops[0]?.id || ''
 
   async function addItem(refocus = false) {
     const title = textRef.current.trim()
-    const targetListId = isAll ? shops[0]?.id : shopId
+    const targetListId = isAll ? activeTargetShop : shopId
     if (!title || !targetListId) return
     textRef.current = ''
     const id = makeId('shopping')
@@ -325,41 +329,45 @@ export function ShoppingDetailPage() {
     setEditing(true)
   }
 
-  function ItemRow({ item, checkedRow, index }: { item: typeof visibleItems[number]; checkedRow: boolean; index: number }) {
+  function ItemRow({ item, checkedRow, index, showShopLabel = false }: { item: typeof visibleItems[number]; checkedRow: boolean; index: number; showShopLabel?: boolean }) {
     return (
-      <div className={`flex items-center ${index > 0 ? 'border-t border-border' : ''}`}>
-        <button
-          onClick={() => toggleItem(item.id)}
-          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-[13px] text-left active:bg-surface-2"
-        >
-          {checkedRow ? (
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] bg-sage">
-              <svg viewBox="0 0 10 10" fill="none" className="h-[10px] w-[10px]">
-                <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          ) : (
-            <span className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border" />
-          )}
-          <span className={`truncate text-[14.5px] font-medium ${checkedRow ? 'text-text-3 line-through' : 'text-text-1'}`}>
-            {item.title}
-          </span>
-        </button>
-        {otherShops.length > 0 ? (
+      <SwipeRow onDelete={() => deleteItem(item.id)} className={index > 0 ? 'border-t border-border' : ''}>
+        <div className="flex items-center">
           <button
-            onClick={() => setMovingItemId(item.id)}
-            className="shrink-0 px-3 py-[13px] text-text-3 active:text-text-1"
-            aria-label="Move to another shop"
+            onClick={() => toggleItem(item.id)}
+            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-[13px] text-left transition-colors active:bg-surface-2"
           >
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-              <path d="M4 10h12M10 4l6 6-6 6" />
-            </svg>
+            {checkedRow ? (
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] bg-sage">
+                <svg viewBox="0 0 10 10" fill="none" className="h-[10px] w-[10px]">
+                  <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            ) : (
+              <span className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border" />
+            )}
+            <span className={`min-w-0 flex-1 truncate text-[14.5px] font-medium ${checkedRow ? 'text-text-3 line-through' : 'text-text-1'}`}>
+              {item.title}
+            </span>
           </button>
-        ) : null}
-        <button onClick={() => deleteItem(item.id)} className="shrink-0 px-3 py-[13px] text-[13px] font-medium text-red active:opacity-60">
-          Delete
-        </button>
-      </div>
+          {showShopLabel ? (
+            <span className="shrink-0 pr-4 text-[11px] font-medium" style={{ color: shopMeta.get(item.listId)?.color ?? DEFAULT_LIST_COLOR }}>
+              {shopMeta.get(item.listId)?.name}
+            </span>
+          ) : null}
+          {otherShops.length > 0 ? (
+            <button
+              onClick={() => setMovingItemId(item.id)}
+              className="shrink-0 px-3 py-[13px] text-text-3 active:text-text-1"
+              aria-label="Move to another shop"
+            >
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M4 10h12M10 4l6 6-6 6" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
+      </SwipeRow>
     )
   }
 
@@ -430,6 +438,22 @@ export function ShoppingDetailPage() {
             </header>
 
             <div className="mx-4 mb-4">
+              {isAll && shops.length > 1 ? (
+                <div className="no-scrollbar mb-2 flex gap-1.5 overflow-x-auto">
+                  {shops.map(shop => (
+                    <button
+                      key={shop.id}
+                      onClick={() => setTargetShop(shop.id)}
+                      className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                        activeTargetShop === shop.id ? 'text-white' : 'border border-border bg-surface text-text-2'
+                      }`}
+                      style={activeTargetShop === shop.id ? { background: shop.color ?? DEFAULT_LIST_COLOR } : undefined}
+                    >
+                      {shop.icon === GENERAL_SHOPPING_ICON ? 'General' : shop.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <form onSubmit={event => { event.preventDefault(); addItem(true).catch(() => undefined) }} className="flex gap-2">
                 <input
                   ref={inputRef}
@@ -439,7 +463,7 @@ export function ShoppingDetailPage() {
                     textRef.current = event.target.value
                   }}
                   onBlur={() => { addItem(false).catch(() => undefined) }}
-                  placeholder={isAll ? 'Add item…' : `Add to ${currentShop?.name ?? 'shop'}…`}
+                  placeholder={isAll ? `Add to ${shopMeta.get(activeTargetShop)?.name ?? 'shop'}…` : `Add to ${currentShop?.name ?? 'shop'}…`}
                   autoComplete="off"
                   className="h-12 flex-1 rounded-xl border border-border bg-surface px-4 text-[14px] font-medium text-text-1 outline-none transition-colors placeholder:text-text-3 focus:border-accent"
                 />
@@ -452,7 +476,43 @@ export function ShoppingDetailPage() {
               </form>
             </div>
 
-            {unchecked.length === 0 && checked.length === 0 ? (
+            {isAll ? (
+              <>
+                {shops.map(shop => {
+                  const shopUnchecked = unchecked.filter(item => item.listId === shop.id)
+                  if (shopUnchecked.length === 0) return null
+                  return (
+                    <div key={shop.id} className="mx-4 mb-3">
+                      <div className="mb-2 flex items-center gap-2 px-1">
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ background: shop.color ?? DEFAULT_LIST_COLOR }} />
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">
+                          {shop.icon === GENERAL_SHOPPING_ICON ? 'General' : shop.name} · {shopUnchecked.length}
+                        </p>
+                      </div>
+                      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+                        {shopUnchecked.map((item, index) => <ItemRow key={item.id} item={item} checkedRow={false} index={index} />)}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {unchecked.length === 0 ? (
+                  <div className="mx-4 rounded-2xl border border-border bg-surface px-5 py-8 text-center">
+                    <p className="mb-1 text-[15px] font-semibold text-text-1">Nothing to buy</p>
+                    <p className="text-[13px] text-text-2">Add items above or inside a shop</p>
+                  </div>
+                ) : null}
+
+                {checked.length > 0 ? (
+                  <div className="mx-4 mb-3">
+                    <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Got it · {checked.length}</p>
+                    <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+                      {checked.map((item, index) => <ItemRow key={item.id} item={item} checkedRow index={index} showShopLabel />)}
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : unchecked.length === 0 && checked.length === 0 ? (
               <div className="mx-4 rounded-2xl border border-border bg-surface px-5 py-8 text-center">
                 <p className="mb-1 text-[15px] font-semibold text-text-1">Nothing here yet</p>
                 <p className="text-[13px] text-text-2">Add items above to get started</p>

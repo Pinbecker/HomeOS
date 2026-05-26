@@ -166,6 +166,7 @@ let bootstrapped = false
 let mutationQueue: SyncMutation[] = loadMutationQueue()
 let flushPromise: Promise<void> | null = null
 let refreshPromise: Promise<void> | null = null
+let postPushRefreshTimer: number | null = null
 let onlineListenerRegistered = false
 let fallbackSyncRegistered = false
 
@@ -317,6 +318,19 @@ function mergeBootstrap(payload: BootstrapPayload) {
   }))
 }
 
+function schedulePostPushRefresh() {
+  if (typeof window === 'undefined') return
+  if (postPushRefreshTimer !== null) {
+    window.clearTimeout(postPushRefreshTimer)
+  }
+
+  postPushRefreshTimer = window.setTimeout(() => {
+    postPushRefreshTimer = null
+    if (document.hidden || !navigator.onLine) return
+    refreshFromServer({ silent: true }).catch(() => undefined)
+  }, 5000)
+}
+
 async function flushMutationQueue() {
   if (!mutationQueue.length) return
   if (flushPromise) return flushPromise
@@ -326,7 +340,7 @@ async function flushMutationQueue() {
       await push(mutationQueue)
       mutationQueue = []
       persist()
-      await refreshFromServer()
+      schedulePostPushRefresh()
     } finally {
       flushPromise = null
     }
@@ -339,6 +353,10 @@ function startSyncStream() {
   if (typeof window === 'undefined' || stream) return
 
   stream = openSyncStream(() => {
+    if (flushPromise) {
+      schedulePostPushRefresh()
+      return
+    }
     refreshFromServer({ silent: true }).catch(() => undefined)
   })
 
