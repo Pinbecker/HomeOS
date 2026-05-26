@@ -151,7 +151,29 @@ async function toMirrorRow(event: {
   }
 }
 
-async function upsertMirror(row: typeof calendarEvents.$inferInsert): Promise<CalendarMirrorChange> {
+function sameGoogleMirror(existing: typeof calendarEvents.$inferSelect, row: typeof calendarEvents.$inferInsert) {
+  return existing.calendarId === row.calendarId
+    && existing.title === row.title
+    && existing.description === row.description
+    && existing.location === row.location
+    && existing.startsAt.getTime() === row.startsAt.getTime()
+    && (existing.endsAt?.getTime() ?? null) === (row.endsAt?.getTime() ?? null)
+    && existing.allDay === row.allDay
+    && existing.recurrenceRule === row.recurrenceRule
+}
+
+async function upsertMirror(row: typeof calendarEvents.$inferInsert): Promise<CalendarMirrorChange | null> {
+  const existing = row.externalId
+    ? await db.query.calendarEvents.findFirst({ where: eq(calendarEvents.externalId, row.externalId) })
+    : null
+
+  if (existing && sameGoogleMirror(existing, row)) {
+    await db.update(calendarEvents)
+      .set({ lastSyncedAt: row.lastSyncedAt })
+      .where(eq(calendarEvents.id, existing.id))
+    return null
+  }
+
   await db.insert(calendarEvents).values(row).onConflictDoUpdate({
     target: calendarEvents.externalId,
     set: {
@@ -203,7 +225,8 @@ export async function syncGoogleCalendar(): Promise<CalendarMirrorChange[]> {
     for (const event of response.data.items ?? []) {
       const row = await toMirrorRow(event, calendarId, now)
       if (row) {
-        changes.push(await upsertMirror(row))
+        const change = await upsertMirror(row)
+        if (change) changes.push(change)
         count++
       }
     }

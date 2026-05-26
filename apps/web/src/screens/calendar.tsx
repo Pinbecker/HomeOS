@@ -417,11 +417,41 @@ function CalendarPageInner() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinchRef = useRef<{ dist: number; height: number } | null>(null)
   const zoomAnchorRef = useRef<{ key: string; rowsScrolled: number; offsetAboveGrid: number } | null>(null)
+  const googleSyncRef = useRef(false)
 
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
   useEffect(() => {
     const saved = localStorage.getItem('homeos:cal-color')
     if (saved && CAL_COLORS.includes(saved)) setCalColor(saved)
+  }, [])
+  useEffect(() => {
+    async function syncGoogleNow() {
+      if (googleSyncRef.current || document.visibilityState !== 'visible' || !navigator.onLine) return
+      googleSyncRef.current = true
+      try {
+        const response = await fetch('/api/calendar/google/sync', {
+          method: 'POST',
+          credentials: 'include',
+        })
+        if (response.ok) await refreshAppState()
+      } catch {
+        // Background refresh is best-effort; the server also polls Google.
+      } finally {
+        googleSyncRef.current = false
+      }
+    }
+
+    void syncGoogleNow()
+    const interval = window.setInterval(() => { void syncGoogleNow() }, 60_000)
+    const onVisible = () => { void syncGoogleNow() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', onVisible)
+
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', onVisible)
+    }
   }, [])
 
   const feedMap = useMemo(() => new Map(snapshot.feeds.map(feed => [feed.id, feed])), [snapshot.feeds])

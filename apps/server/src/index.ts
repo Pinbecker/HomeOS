@@ -16,6 +16,8 @@ const app = Fastify({
   logger: true,
 })
 const webDist = path.resolve(process.cwd(), 'apps/web/dist')
+const GOOGLE_SYNC_INTERVAL_MS = Number(process.env.GOOGLE_SYNC_INTERVAL_MS ?? 60_000)
+let googleSyncInFlight: Promise<number> | null = null
 
 app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', process.env.VITE_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '*')
@@ -302,8 +304,11 @@ app.listen({ port, host: '0.0.0.0' }).catch(error => {
 
 setInterval(() => {
   syncAllIcsFeeds().catch(error => app.log.error(error))
-  syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
 }, 10 * 60 * 1000)
+
+setInterval(() => {
+  syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
+}, GOOGLE_SYNC_INTERVAL_MS)
 
 setTimeout(() => {
   syncAllIcsFeeds().catch(error => app.log.error(error))
@@ -319,11 +324,21 @@ function cookieValue(cookieHeader: string, name: string) {
 }
 
 async function syncAndRecordGoogleCalendar() {
-  const changes = await syncGoogleCalendar()
-  for (const change of changes) {
-    await recordExternalChange(change)
+  if (googleSyncInFlight) return googleSyncInFlight
+
+  googleSyncInFlight = (async () => {
+    const changes = await syncGoogleCalendar()
+    for (const change of changes) {
+      await recordExternalChange(change)
+    }
+    return changes.length
+  })()
+
+  try {
+    return await googleSyncInFlight
+  } finally {
+    googleSyncInFlight = null
   }
-  return changes.length
 }
 
 function requestLog(error: unknown) {
