@@ -3,11 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.9",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
+    "dev": "pnpm --parallel dev:server dev:web dev:worker",
+    "dev:web": "pnpm --filter @homeos/web dev",
+    "dev:server": "pnpm --filter @homeos/server dev",
+    "dev:worker": "pnpm --filter @homeos/worker dev",
+    "build": "pnpm --filter @homeos/web build && pnpm --filter @homeos/server build && pnpm --filter @homeos/worker build",
+    "build:web": "pnpm --filter @homeos/web build",
+    "build:server": "pnpm --filter @homeos/server build",
+    "build:worker": "pnpm --filter @homeos/worker build",
+    "lint": "pnpm --filter @homeos/web lint && pnpm --filter @homeos/server lint && pnpm --filter @homeos/worker lint",
+    "legacy:dev": "next dev --turbopack",
+    "legacy:build": "next build",
+    "legacy:start": "next start",
+    "legacy:lint": "next lint",
     "test:ai": "tsx scripts/ai-triage-smoke.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -15,7 +28,7 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
-    "better-auth": "^1.2.8",
+    "better-auth": "1.2.8",
     "better-sqlite3": "^11.10.0",
     "drizzle-orm": "^0.43.1",
     "fast-xml-parser": "^5.8.0",
@@ -33,6 +46,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tailwindcss/oxide-linux-x64-gnu": "4.3.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/node-cron": "^3.0.11",

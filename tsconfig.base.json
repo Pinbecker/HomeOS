@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@homeos/db": ["./packages/db/src/index.ts"],
+      "@homeos/db/*": ["./packages/db/src/*"],
+      "@homeos/auth": ["./packages/auth/src/server.ts"],
+      "@homeos/auth/client": ["./packages/auth/src/client.ts"]
+    }
+  }
+}

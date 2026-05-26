@@ -1,0 +1,20 @@
+{
+  "name": "@homeos/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@homeos/auth": "workspace:*",
+    "@homeos/db": "workspace:*",
+    "better-auth": "1.2.8",
+    "drizzle-orm": "^0.43.1",
+    "fastify": "^5.3.3",
+    "googleapis": "^172.0.0",
+    "zod": "^3.25.28"
+  }
+}

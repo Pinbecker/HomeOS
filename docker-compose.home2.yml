@@ -1,0 +1,31 @@
+name: homeos-home2
+
+services:
+  app_home2:
+    build:
+      context: .
+      dockerfile: Dockerfile.home2
+    container_name: homeapp_home2
+    restart: unless-stopped
+    env_file: .env.home2
+    ports:
+      - "127.0.0.1:8094:3000"
+    volumes:
+      - ./data/home2:/data/db
+      - homeos_file_data:/data/files:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  homeos_file_data:
+    external: true

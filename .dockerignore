@@ -1,0 +1,15 @@
+.git
+.agents
+.codex
+.claude
+.next
+.turbo
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/*/dist
+data
+.env
+.env.*
+npm-debug.log*
+pnpm-debug.log*

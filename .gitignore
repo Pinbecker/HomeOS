@@ -11,6 +11,7 @@ dist/
 
 # Environment
 .env
+.env.home2
 .env.local
 .env.development.local
 .env.test.local

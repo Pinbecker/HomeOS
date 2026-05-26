@@ -51,10 +51,9 @@ export function useSyncQueue() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(op.body),
         })
-        // 5xx = server error → keep and retry later
-        // 4xx = bad data or item already gone → discard (don't retry)
-        // 2xx = success → discard
-        if (res.status >= 500) remaining.push(op)
+        // Keep auth and server failures. Dropping a 401/5xx makes optimistic
+        // local writes vanish on the next refresh even though they never synced.
+        if (res.status === 401 || res.status >= 500) remaining.push(op)
       } catch {
         // True network failure → stop here, keep everything from this op onward
         networkError = true
