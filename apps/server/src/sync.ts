@@ -8,6 +8,7 @@ import {
   appliedMutations,
   bins,
   calendarEvents,
+  calendarFeeds,
   household,
   householdMembers,
   items,
@@ -57,6 +58,7 @@ export async function buildBootstrap() {
     allRecords,
     allReminders,
     allCalendarEvents,
+    allCalendarFeeds,
     allBins,
   ] = await Promise.all([
     db.select().from(users),
@@ -68,6 +70,7 @@ export async function buildBootstrap() {
     db.select().from(records),
     db.select().from(reminders),
     db.select().from(calendarEvents),
+    db.select().from(calendarFeeds),
     db.select().from(bins),
   ])
 
@@ -83,6 +86,7 @@ export async function buildBootstrap() {
       records: allRecords,
       reminders: allReminders,
       calendarEvents: allCalendarEvents,
+      calendarFeeds: allCalendarFeeds,
       bins: allBins,
     },
   }
@@ -187,6 +191,14 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
       const row = await db.query.reminders.findFirst({ where: eq(reminders.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
+    case 'calendar_event': {
+      const row = await db.query.calendarEvents.findFirst({ where: eq(calendarEvents.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'calendar_feed': {
+      const row = await db.query.calendarFeeds.findFirst({ where: eq(calendarFeeds.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     default:
       return mutation
   }
@@ -238,6 +250,19 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       break
     case 'shopping.delete':
       await db.update(listItems).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(listItems.id, mutation.entityId))
+      break
+    case 'calendar.event.upsert':
+      await upsertCalendarEvent(mutation)
+      break
+    case 'calendar.event.delete':
+      await db.delete(calendarEvents).where(eq(calendarEvents.id, mutation.entityId))
+      break
+    case 'calendar.feed.upsert':
+      await upsertCalendarFeed(userId, mutation)
+      break
+    case 'calendar.feed.delete':
+      await db.delete(calendarFeeds).where(eq(calendarFeeds.id, mutation.entityId))
+      await db.delete(calendarEvents).where(eq(calendarEvents.calendarId, `ics:${mutation.entityId}`))
       break
     default:
       break
@@ -465,6 +490,83 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
       createdAt: now,
       updatedAt: now,
       deletedAt: payload.deletedAt ? new Date(payload.deletedAt as string | number) : null,
+    })
+  }
+}
+
+async function upsertCalendarEvent(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.calendarEvents.findFirst({ where: eq(calendarEvents.id, mutation.entityId) })
+
+  if (existing) {
+    await db.update(calendarEvents).set({
+      externalId: payload.externalId === undefined ? existing.externalId : (payload.externalId as string | null),
+      calendarId: payload.calendarId === undefined ? existing.calendarId : (payload.calendarId as string | null),
+      title: (payload.title as string | undefined) ?? existing.title,
+      description: payload.description === undefined ? existing.description : (payload.description as string | null),
+      location: payload.location === undefined ? existing.location : (payload.location as string | null),
+      startsAt: payload.startsAt ? new Date(payload.startsAt as string | number) : existing.startsAt,
+      endsAt: payload.endsAt === undefined ? existing.endsAt : (payload.endsAt ? new Date(payload.endsAt as string | number) : null),
+      allDay: (payload.allDay as boolean | undefined) ?? existing.allDay,
+      recurrenceRule: payload.recurrenceRule === undefined ? existing.recurrenceRule : (payload.recurrenceRule as string | null),
+      rawIcal: payload.rawIcal === undefined ? existing.rawIcal : (payload.rawIcal as string | null),
+      lastSyncedAt: payload.lastSyncedAt === undefined
+        ? existing.lastSyncedAt
+        : (payload.lastSyncedAt ? new Date(payload.lastSyncedAt as string | number) : null),
+      updatedAt: now,
+    }).where(eq(calendarEvents.id, mutation.entityId))
+  } else {
+    await db.insert(calendarEvents).values({
+      id: mutation.entityId,
+      householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
+      externalId: (payload.externalId as string | null | undefined) ?? null,
+      calendarId: (payload.calendarId as string | null | undefined) ?? null,
+      title: (payload.title as string | undefined) ?? '',
+      description: (payload.description as string | null | undefined) ?? null,
+      location: (payload.location as string | null | undefined) ?? null,
+      startsAt: payload.startsAt ? new Date(payload.startsAt as string | number) : now,
+      endsAt: payload.endsAt ? new Date(payload.endsAt as string | number) : null,
+      allDay: (payload.allDay as boolean | undefined) ?? false,
+      recurrenceRule: (payload.recurrenceRule as string | null | undefined) ?? null,
+      rawIcal: (payload.rawIcal as string | null | undefined) ?? null,
+      lastSyncedAt: payload.lastSyncedAt ? new Date(payload.lastSyncedAt as string | number) : null,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+}
+
+async function upsertCalendarFeed(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.calendarFeeds.findFirst({ where: eq(calendarFeeds.id, mutation.entityId) })
+
+  if (existing) {
+    await db.update(calendarFeeds).set({
+      name: (payload.name as string | undefined) ?? existing.name,
+      url: (payload.url as string | undefined) ?? existing.url,
+      color: (payload.color as string | undefined) ?? existing.color,
+      enabled: (payload.enabled as boolean | undefined) ?? existing.enabled,
+      lastSyncedAt: payload.lastSyncedAt === undefined
+        ? existing.lastSyncedAt
+        : (payload.lastSyncedAt ? new Date(payload.lastSyncedAt as string | number) : null),
+      errorMessage: payload.errorMessage === undefined ? existing.errorMessage : (payload.errorMessage as string | null),
+      updatedAt: now,
+    }).where(eq(calendarFeeds.id, mutation.entityId))
+  } else {
+    await db.insert(calendarFeeds).values({
+      id: mutation.entityId,
+      householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
+      userId: (payload.userId as string | null | undefined) ?? userId,
+      name: (payload.name as string | undefined) ?? '',
+      url: (payload.url as string | undefined) ?? '',
+      color: (payload.color as string | undefined) ?? '#007AFF',
+      enabled: (payload.enabled as boolean | undefined) ?? true,
+      lastSyncedAt: payload.lastSyncedAt ? new Date(payload.lastSyncedAt as string | number) : null,
+      errorMessage: (payload.errorMessage as string | null | undefined) ?? null,
+      createdAt: now,
+      updatedAt: now,
     })
   }
 }

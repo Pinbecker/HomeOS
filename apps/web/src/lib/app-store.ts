@@ -98,6 +98,19 @@ type CalendarEvent = {
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
 }
+type CalendarFeed = {
+  id: string
+  householdId: string
+  userId?: string | null
+  name: string
+  url: string
+  color: string
+  enabled: boolean
+  lastSyncedAt?: string | number | Date | null
+  errorMessage?: string | null
+  createdAt?: string | number | Date
+  updatedAt?: string | number | Date
+}
 type Bin = {
   id: string
   householdId: string
@@ -122,6 +135,7 @@ type AppData = {
   records: RecordRow[]
   reminders: ReminderRow[]
   calendarEvents: CalendarEvent[]
+  calendarFeeds: CalendarFeed[]
   bins: Bin[]
 }
 
@@ -157,6 +171,7 @@ const emptyData: AppData = {
   records: [],
   reminders: [],
   calendarEvents: [],
+  calendarFeeds: [],
   bins: [],
 }
 
@@ -182,7 +197,14 @@ function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ready: false, syncing: false, error: null, data: emptyData }
-    return JSON.parse(raw) as AppState
+    const parsed = JSON.parse(raw) as AppState
+    return {
+      ...parsed,
+      data: {
+        ...emptyData,
+        ...parsed.data,
+      },
+    }
   } catch {
     return { ready: false, syncing: false, error: null, data: emptyData }
   }
@@ -256,6 +278,16 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.lists, mutation.entityId)
         : mergeCollection(next.lists, mutation.payload as List)
       break
+    case 'calendar_event':
+      next.calendarEvents = mutation.operation === 'delete'
+        ? removeCollection(next.calendarEvents, mutation.entityId)
+        : mergeCollection(next.calendarEvents, mutation.payload as CalendarEvent)
+      break
+    case 'calendar_feed':
+      next.calendarFeeds = mutation.operation === 'delete'
+        ? removeCollection(next.calendarFeeds, mutation.entityId)
+        : mergeCollection(next.calendarFeeds, mutation.payload as CalendarFeed)
+      break
     default:
       break
   }
@@ -299,6 +331,16 @@ function applyChange(change: SyncChange) {
         next.data.lists = change.operation === 'delete'
           ? removeCollection(next.data.lists, change.entityId)
           : mergeCollection(next.data.lists, change.payload as List)
+        break
+      case 'calendar_event':
+        next.data.calendarEvents = change.operation === 'delete'
+          ? removeCollection(next.data.calendarEvents, change.entityId)
+          : mergeCollection(next.data.calendarEvents, change.payload as CalendarEvent)
+        break
+      case 'calendar_feed':
+        next.data.calendarFeeds = change.operation === 'delete'
+          ? removeCollection(next.data.calendarFeeds, change.entityId)
+          : mergeCollection(next.data.calendarFeeds, change.payload as CalendarFeed)
         break
       default:
         break
