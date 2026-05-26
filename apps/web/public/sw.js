@@ -1,4 +1,4 @@
-const CACHE_NAME = 'homeos-web-shell-v3'
+const CACHE_NAME = 'homeos-web-shell-v4'
 const APP_SHELL = [
   '/',
   '/login',
@@ -36,7 +36,14 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(async () => {
+      fetch(request).then(async response => {
+        if (response.ok) {
+          const cache = await caches.open(CACHE_NAME)
+          await cache.put(request, response.clone())
+          await cache.put('/', response.clone())
+        }
+        return response
+      }).catch(async () => {
         const cached = await caches.match(request)
         if (cached) return cached
         return (await caches.match('/')) || new Response('Offline', { status: 503 })
