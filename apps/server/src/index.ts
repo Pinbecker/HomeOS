@@ -1,18 +1,19 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import Fastify from 'fastify'
 import { fromNodeHeaders } from 'better-auth/node'
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import { auth } from '@homeos/auth'
 import { db } from '@homeos/db'
-import { calendarFeeds, items, tvChannels, tvProgrammes } from '@homeos/db/schema'
+import { calendarFeeds, items, pushSubscriptions, tvChannels, tvProgrammes } from '@homeos/db/schema'
 import { exchangeCode, isGoogleConfigured, saveConnection, consentUrl } from './google-oauth'
 import { syncGoogleCalendar } from './google-calendar'
 import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
-import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, type SyncMutation } from './sync'
+import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, sweepOrphanedRecordReminders, type SyncMutation } from './sync'
 import { transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
+import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
 
 const app = Fastify({
   logger: true,
@@ -26,7 +27,7 @@ app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', process.env.VITE_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '*')
   reply.header('Access-Control-Allow-Credentials', 'true')
   reply.header('Access-Control-Allow-Headers', 'Content-Type')
-  reply.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  reply.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
 
   if (request.url.startsWith('/api/')) {
     reply.header('Cache-Control', 'no-store')
@@ -142,6 +143,49 @@ app.get('/api/google/connect', async (request, reply) => {
   const state = randomBytes(16).toString('hex')
   reply.header('Set-Cookie', `g_oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`)
   return reply.redirect(consentUrl(state))
+})
+
+app.get('/api/push/config', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+  return reply.send({ publicKey: process.env.VAPID_PUBLIC_KEY ?? process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? '' })
+})
+
+app.post('/api/push/subscribe', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const body = (request.body ?? {}) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
+  if (!body.endpoint || !body.keys?.p256dh || !body.keys.auth) {
+    return reply.status(400).send({ error: 'Invalid push subscription' })
+  }
+
+  const now = new Date()
+  const existing = await db.query.pushSubscriptions.findFirst({ where: eq(pushSubscriptions.endpoint, body.endpoint) })
+  if (existing) {
+    await db.update(pushSubscriptions)
+      .set({ userId: session.user.id, p256dh: body.keys.p256dh, auth: body.keys.auth })
+      .where(eq(pushSubscriptions.endpoint, body.endpoint))
+  } else {
+    await db.insert(pushSubscriptions).values({
+      id: `push-${randomUUID()}`,
+      userId: session.user.id,
+      endpoint: body.endpoint,
+      p256dh: body.keys.p256dh,
+      auth: body.keys.auth,
+      createdAt: now,
+    })
+  }
+  return reply.send({ ok: true })
+})
+
+app.delete('/api/push/subscribe', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const body = (request.body ?? {}) as { endpoint?: string }
+  if (body.endpoint) await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, body.endpoint))
+  return reply.send({ ok: true })
 })
 
 app.get('/auth/callback', async (request, reply) => {
@@ -428,9 +472,26 @@ setInterval(() => {
   syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
 }, GOOGLE_SYNC_INTERVAL_MS)
 
+setInterval(() => {
+  dispatchReminders(recordExternalChange).catch(error => app.log.error(error))
+  dispatchTaskDueNotifications(recordExternalChange).catch(error => app.log.error(error))
+}, 60_000)
+
+setInterval(() => {
+  dispatchBinNotifications().catch(error => app.log.error(error))
+  dispatchDailyTaskNotifications().catch(error => app.log.error(error))
+  dispatchTvNotifications().catch(error => app.log.error(error))
+}, 60 * 60 * 1000)
+
 setTimeout(() => {
+  sweepOrphanedRecordReminders().catch(error => app.log.error(error))
   syncAllIcsFeeds().catch(error => app.log.error(error))
   syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
+  dispatchReminders(recordExternalChange).catch(error => app.log.error(error))
+  dispatchTaskDueNotifications(recordExternalChange).catch(error => app.log.error(error))
+  dispatchBinNotifications().catch(error => app.log.error(error))
+  dispatchDailyTaskNotifications().catch(error => app.log.error(error))
+  dispatchTvNotifications().catch(error => app.log.error(error))
 }, 15_000)
 
 function cookieValue(cookieHeader: string, name: string) {
@@ -621,7 +682,7 @@ function channelName(feedId: string) {
 }
 
 function formatAirtime(date: Date) {
-  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
+  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
 }
 
 function ymd(date: Date) {

@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { PushManager } from './components/push-manager'
 import { ensureBootstrap, useAppState } from './lib/app-store'
 import { ensureSession, useSessionState } from './lib/session-store'
 import { DashboardPage } from './screens/dashboard'
@@ -18,6 +19,7 @@ import { WatchPage } from './screens/watch'
 function RootLayout() {
   const syncState = useAppState(state => state.error ? 'error' : state.syncing ? 'syncing' : 'idle')
   const sessionStatus = useSessionState(state => state.status)
+  const [syncCollapsed, setSyncCollapsed] = useState(false)
 
   useEffect(() => {
     ensureSession().catch(() => undefined)
@@ -30,21 +32,45 @@ function RootLayout() {
     return undefined
   }, [sessionStatus])
 
+  useEffect(() => {
+    if (syncState !== 'error') {
+      setSyncCollapsed(false)
+      return undefined
+    }
+    setSyncCollapsed(false)
+    const timer = window.setTimeout(() => setSyncCollapsed(true), 5000)
+    return () => window.clearTimeout(timer)
+  }, [syncState])
+
   return (
     <div className="min-h-dvh bg-bg text-text-1">
       <div className="safe-top fixed inset-x-0 top-0 z-50 pointer-events-none">
         <div className="mx-auto max-w-lg px-4 pt-2">
-          {syncState !== 'idle' && (
+          {syncState !== 'idle' && !syncCollapsed && (
             <div className={`rounded-full border px-3 py-2 text-[12px] font-medium backdrop-blur ${
               syncState === 'error'
                 ? 'border-amber-border bg-amber-bg text-amber'
                 : 'border-accent-border bg-accent-bg text-accent'
             }`}>
-              {syncState === 'error' ? 'Offline data sync paused' : 'Syncing changes…'}
+              {syncState === 'error' ? 'Offline: Sync Paused' : 'Syncing changes…'}
             </div>
           )}
         </div>
       </div>
+      {syncState === 'error' && syncCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setSyncCollapsed(false)}
+          aria-label="Offline: Sync Paused"
+          className="safe-top fixed right-4 top-0 z-50 mt-2 flex h-9 w-9 items-center justify-center rounded-full border border-amber-border bg-amber-bg text-amber shadow-sm"
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <rect x="4" y="3" width="2.5" height="10" rx="0.8" />
+            <rect x="9.5" y="3" width="2.5" height="10" rx="0.8" />
+          </svg>
+        </button>
+      ) : null}
+      <PushManager enabled={sessionStatus === 'authenticated'} />
       <Outlet />
     </div>
   )

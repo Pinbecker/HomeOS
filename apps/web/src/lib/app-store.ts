@@ -81,6 +81,16 @@ type ReminderRow = {
   dismissedAt?: string | number | Date | null
   createdAt: string | number | Date
 }
+type EntityLink = {
+  id: string
+  fromType: string
+  fromId: string
+  toType: string
+  toId: string
+  linkType: string
+  createdById: string
+  createdAt: string | number | Date
+}
 type CalendarEvent = {
   id: string
   householdId?: string
@@ -134,6 +144,7 @@ type AppData = {
   listItems: ListItem[]
   records: RecordRow[]
   reminders: ReminderRow[]
+  entityLinks: EntityLink[]
   calendarEvents: CalendarEvent[]
   calendarFeeds: CalendarFeed[]
   bins: Bin[]
@@ -170,6 +181,7 @@ const emptyData: AppData = {
   listItems: [],
   records: [],
   reminders: [],
+  entityLinks: [],
   calendarEvents: [],
   calendarFeeds: [],
   bins: [],
@@ -263,6 +275,11 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.reminders, mutation.entityId)
         : mergeCollection(next.reminders, mutation.payload as ReminderRow)
       break
+    case 'entity_link':
+      next.entityLinks = mutation.operation === 'delete'
+        ? removeCollection(next.entityLinks, mutation.entityId)
+        : mergeCollection(next.entityLinks, mutation.payload as EntityLink)
+      break
     case 'item':
       next.items = mutation.operation === 'delete'
         ? removeCollection(next.items, mutation.entityId)
@@ -316,6 +333,11 @@ function applyChange(change: SyncChange) {
         next.data.reminders = change.operation === 'delete'
           ? removeCollection(next.data.reminders, change.entityId)
           : mergeCollection(next.data.reminders, change.payload as ReminderRow)
+        break
+      case 'entity_link':
+        next.data.entityLinks = change.operation === 'delete'
+          ? removeCollection(next.data.entityLinks, change.entityId)
+          : mergeCollection(next.data.entityLinks, change.payload as EntityLink)
         break
       case 'item':
         next.data.items = change.operation === 'delete'

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { SwipeRow } from '../components/swipe-row'
 import { ScreenShell } from './shell'
 
 type CategoryMeta = {
@@ -28,6 +29,31 @@ type LifeRecord = {
   sortOrder?: number
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
+}
+type VaultTask = {
+  id: string
+  householdId: string
+  createdById: string
+  title: string
+  status: string
+  listId?: string | null
+  assigneeId?: string | null
+  dueDate?: string | number | Date | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+  deletedAt?: string | number | Date | null
+}
+type VaultReminder = {
+  id: string
+  householdId: string
+  createdById: string
+  entityType: string
+  entityId: string
+  message?: string | null
+  triggerAt: string | number | Date
+  dispatchedAt?: string | number | Date | null
+  dismissedAt?: string | number | Date | null
+  createdAt: string | number | Date
 }
 
 const BASE_CATEGORIES: CategoryMeta[] = [
@@ -139,6 +165,64 @@ function buildCategories(settingsRaw: Record<string, unknown> | null | undefined
 function formatRenewal(value: string | number | Date | null | undefined) {
   if (!value) return null
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function toInputDate(value: string | number | Date | null | undefined) {
+  if (!value) return ''
+  const date = new Date(value)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function toInputTime(value: string | number | Date | null | undefined) {
+  if (!value) return '09:00'
+  const date = new Date(value)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function dateFromInput(value: string) {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day).toISOString()
+}
+
+function dateTimeFromInputs(dateValue: string, timeValue: string) {
+  if (!dateValue) return null
+  const [year, month, day] = dateValue.split('-').map(Number)
+  const [hour, minute] = (timeValue || '09:00').split(':').map(Number)
+  return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString()
+}
+
+function formatShortDate(value: string | number | Date) {
+  const date = new Date(value)
+  const datePart = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  if (date.getHours() === 0 && date.getMinutes() === 0) return datePart
+  return `${datePart} · ${date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })}`
+}
+
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="mx-4 mb-5">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">{title}</p>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function EmptyRow({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-surface-2 text-[17px] text-text-2">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-[14px] font-semibold text-text-1">{title}</p>
+        <p className="mt-0.5 text-[12px] text-text-2">{subtitle}</p>
+      </div>
+    </div>
+  )
 }
 
 function Chevron() {
@@ -518,9 +602,39 @@ export function LifeEntityPage() {
     const category = record
       ? categories.find(entry => entry.key === record.category) ?? BASE_CATEGORIES[BASE_CATEGORIES.length - 1]
       : BASE_CATEGORIES[BASE_CATEGORIES.length - 1]
-    return { category, record }
+    const linkRows = state.data.entityLinks.filter(link =>
+      (link.fromType === 'record' && link.fromId === entityId) ||
+      (link.toType === 'record' && link.toId === entityId),
+    )
+    const taskIds = new Set(linkRows.flatMap(link => {
+      const ids: string[] = []
+      if (link.fromType === 'item') ids.push(link.fromId)
+      if (link.toType === 'item') ids.push(link.toId)
+      return ids
+    }))
+    const linkedTasks = state.data.items
+      .filter(item => taskIds.has(item.id) && item.type === 'task' && item.status !== 'completed' && !item.deletedAt)
+      .sort((a, b) => {
+        const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+        const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER
+        return aDue - bDue
+      }) as VaultTask[]
+    const linkedReminders = state.data.reminders
+      .filter(reminder => reminder.entityType === 'record' && reminder.entityId === entityId && !reminder.dismissedAt)
+      .sort((a, b) => new Date(a.triggerAt).getTime() - new Date(b.triggerAt).getTime()) as VaultReminder[]
+    return { category, record, linkedTasks, linkedReminders }
   })
   const [editing, setEditing] = useState(false)
+  const [openPanel, setOpenPanel] = useState<null | 'reminder' | 'renewal' | 'task'>(null)
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null)
+  const [reminderMessage, setReminderMessage] = useState('')
+  const [reminderDate, setReminderDate] = useState('')
+  const [reminderTime, setReminderTime] = useState('09:00')
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDueDate, setTaskDueDate] = useState('')
+  const [renewalLabel, setRenewalLabel] = useState('')
+  const [renewalDate, setRenewalDate] = useState('')
+  const [savingPanel, setSavingPanel] = useState(false)
 
   if (!snapshot.record) {
     return (
@@ -535,6 +649,198 @@ export function LifeEntityPage() {
   }
 
   const visibleFields = (snapshot.record.fields ?? []).filter(field => field.label || field.value)
+  const currentUser = getCurrentState().data.users[0]
+  const householdId = getCurrentState().data.household[0]?.id ?? 'default'
+
+  function openRenewalPanel() {
+    setRenewalLabel(snapshot.record?.renewalLabel ?? '')
+    setRenewalDate(toInputDate(snapshot.record?.renewalDate))
+    setOpenPanel(prev => prev === 'renewal' ? null : 'renewal')
+  }
+
+  async function saveRenewal(nextLabel = renewalLabel, nextDate = renewalDate) {
+    if (!snapshot.record || savingPanel) return
+    setSavingPanel(true)
+    const now = new Date().toISOString()
+    const payload = {
+      ...snapshot.record,
+      renewalLabel: nextLabel.trim() || null,
+      renewalDate: dateFromInput(nextDate),
+      updatedAt: now,
+    }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'record.upsert',
+      entityType: 'record',
+      entityId: snapshot.record.id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        records: prev.data.records.map(record => record.id === snapshot.record!.id ? { ...record, ...payload } : record),
+      },
+    }))
+    setSavingPanel(false)
+    setOpenPanel(null)
+  }
+
+  async function clearRenewal() {
+    setRenewalLabel('')
+    setRenewalDate('')
+    await saveRenewal('', '')
+  }
+
+  async function addReminder() {
+    if (!snapshot.record || !reminderDate || savingPanel) return
+    const triggerAt = dateTimeFromInputs(reminderDate, reminderTime)
+    if (!triggerAt) return
+    setSavingPanel(true)
+    const now = new Date().toISOString()
+    const id = makeId('reminder')
+    const payload = {
+      id,
+      householdId,
+      createdById: currentUser?.id ?? 'system',
+      entityType: 'record',
+      entityId: snapshot.record.id,
+      message: reminderMessage.trim() || null,
+      triggerAt,
+      dispatchedAt: null,
+      dismissedAt: null,
+      createdAt: now,
+    }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'reminder.upsert',
+      entityType: 'reminder',
+      entityId: id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({ ...prev, data: { ...prev.data, reminders: [...prev.data.reminders, payload] } }))
+    setReminderMessage('')
+    setReminderDate('')
+    setReminderTime('09:00')
+    setSavingPanel(false)
+    setOpenPanel(null)
+  }
+
+  async function updateReminder(reminder: VaultReminder) {
+    if (!reminderDate || savingPanel) return
+    const triggerAt = dateTimeFromInputs(reminderDate, reminderTime)
+    if (!triggerAt) return
+    setSavingPanel(true)
+    const payload = {
+      ...reminder,
+      message: reminderMessage.trim() || null,
+      triggerAt,
+    }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'reminder.upsert',
+      entityType: 'reminder',
+      entityId: reminder.id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        reminders: prev.data.reminders.map(row => row.id === reminder.id ? { ...row, ...payload } : row),
+      },
+    }))
+    setSavingPanel(false)
+    setEditingReminderId(null)
+  }
+
+  async function deleteReminder(reminderId: string) {
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'reminder.delete',
+      entityType: 'reminder',
+      entityId: reminderId,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({ ...prev, data: { ...prev.data, reminders: prev.data.reminders.filter(row => row.id !== reminderId) } }))
+  }
+
+  function startEditReminder(reminder: VaultReminder) {
+    setEditingReminderId(prev => prev === reminder.id ? null : reminder.id)
+    setReminderMessage(reminder.message ?? '')
+    setReminderDate(toInputDate(reminder.triggerAt))
+    setReminderTime(toInputTime(reminder.triggerAt))
+  }
+
+  async function addTask() {
+    if (!snapshot.record || !taskTitle.trim() || savingPanel) return
+    setSavingPanel(true)
+    const now = new Date().toISOString()
+    const taskId = makeId('task')
+    const linkId = makeId('link')
+    const taskPayload = {
+      id: taskId,
+      householdId,
+      createdById: currentUser?.id ?? 'system',
+      type: 'task',
+      title: taskTitle.trim(),
+      status: 'active',
+      listId: null,
+      assigneeId: null,
+      dueDate: dateFromInput(taskDueDate),
+      createdAt: now,
+      updatedAt: now,
+    }
+    const linkPayload = {
+      id: linkId,
+      fromType: 'record',
+      fromId: snapshot.record.id,
+      toType: 'item',
+      toId: taskId,
+      linkType: 'related_to',
+      createdById: currentUser?.id ?? 'system',
+      createdAt: now,
+    }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'task.upsert',
+      entityType: 'item',
+      entityId: taskId,
+      operation: 'upsert',
+      payload: taskPayload,
+    }, prev => ({ ...prev, data: { ...prev.data, items: [...prev.data.items, taskPayload] } }))
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'entity_link.upsert',
+      entityType: 'entity_link',
+      entityId: linkId,
+      operation: 'upsert',
+      payload: linkPayload,
+    }, prev => ({ ...prev, data: { ...prev.data, entityLinks: [...prev.data.entityLinks, linkPayload] } }))
+    setTaskTitle('')
+    setTaskDueDate('')
+    setSavingPanel(false)
+    setOpenPanel(null)
+  }
+
+  async function completeTask(task: VaultTask) {
+    const now = new Date().toISOString()
+    const payload = { ...task, status: 'completed', completedAt: now, updatedAt: now }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'task.upsert',
+      entityType: 'item',
+      entityId: task.id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        items: prev.data.items.map(row => row.id === task.id ? { ...row, ...payload } : row),
+      },
+    }))
+  }
 
   return (
     <ScreenShell title="Vault">
@@ -560,10 +866,7 @@ export function LifeEntityPage() {
           </p>
         </header>
 
-        <section className="mx-4 mb-5">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">Key facts</p>
-          </div>
+        <Section title="Key facts">
           <div className="overflow-hidden rounded-2xl bg-surface">
             {visibleFields.length > 0 ? visibleFields.map((field, index) => (
               <div key={`${field.label}-${field.value}-${index}`} className={`flex items-baseline justify-between gap-4 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
@@ -576,34 +879,144 @@ export function LifeEntityPage() {
               </div>
             )}
           </div>
-        </section>
+        </Section>
 
-        <section className="mx-4 mb-5">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">Renewal</p>
-          </div>
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            {snapshot.record.renewalDate ? (
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-[13.5px] font-semibold text-amber">{snapshot.record.renewalLabel || 'Due date'}</p>
-                <p className="text-[14.5px] font-bold text-text-1">{formatRenewal(snapshot.record.renewalDate)}</p>
+        <Section title="Renewal" action={<button onClick={openRenewalPanel} className="text-[12px] font-semibold text-accent">{snapshot.record.renewalDate ? 'Edit' : 'Add renewal'}</button>}>
+          {openPanel === 'renewal' ? (
+            <div className="mb-3 rounded-2xl bg-surface p-4">
+              <div className="flex flex-col gap-3">
+                <input value={renewalLabel} onChange={event => setRenewalLabel(event.target.value)} placeholder="Label, e.g. Renews, Expires" className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
+                <label className="rounded-xl bg-surface-2 px-3 py-2">
+                  <span className="mb-1 block text-[12px] font-semibold text-text-2">Date</span>
+                  <input type="date" value={renewalDate} onChange={event => setRenewalDate(event.target.value)} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={() => { void saveRenewal() }} disabled={savingPanel} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Save renewal</button>
+                  <button onClick={() => setOpenPanel(null)} className="h-11 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+                </div>
               </div>
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-2xl bg-surface">
+            {snapshot.record.renewalDate ? (
+              <SwipeRow onDelete={() => { void clearRenewal() }} deleteLabel="Clear" onEdit={openRenewalPanel}>
+                <div className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-amber-bg text-[17px] text-amber">📅</div>
+                    <p className="truncate text-[13.5px] font-semibold text-amber">{snapshot.record.renewalLabel || 'Due date'}</p>
+                  </div>
+                  <p className="shrink-0 text-right text-[14.5px] font-bold text-text-1">{formatRenewal(snapshot.record.renewalDate)}</p>
+                </div>
+              </SwipeRow>
             ) : (
-              <p className="text-[14px] text-text-2">No renewal set.</p>
+              <EmptyRow icon="📅" title="No renewal set" subtitle="Add a due date or renewal date for this record." />
             )}
           </div>
-        </section>
+        </Section>
 
         {snapshot.record.notes ? (
-          <section className="mx-4 mb-5">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">Notes</p>
-            </div>
+          <Section title="Notes">
             <div className="rounded-2xl bg-surface px-4 py-3">
               <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-text-1">{snapshot.record.notes}</p>
             </div>
-          </section>
+          </Section>
         ) : null}
+
+        <Section title="Tasks" action={<button onClick={() => setOpenPanel(prev => prev === 'task' ? null : 'task')} className="text-[12px] font-semibold text-accent">Add task</button>}>
+          {openPanel === 'task' ? (
+            <div className="mb-3 rounded-2xl bg-surface p-4">
+              <div className="flex flex-col gap-3">
+                <input value={taskTitle} onChange={event => setTaskTitle(event.target.value)} placeholder={`Task for ${snapshot.record.title}`} className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
+                <label className="rounded-xl bg-surface-2 px-3 py-2">
+                  <span className="mb-1 block text-[12px] font-semibold text-text-2">Due date</span>
+                  <input type="date" value={taskDueDate} onChange={event => setTaskDueDate(event.target.value)} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={() => { void addTask() }} disabled={!taskTitle.trim() || savingPanel} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Add task</button>
+                  <button onClick={() => setOpenPanel(null)} className="h-11 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-2xl bg-surface">
+            {snapshot.linkedTasks.length > 0 ? snapshot.linkedTasks.map((task, index) => (
+              <SwipeRow key={task.id} wrapClassName={index > 0 ? 'border-t border-border' : ''} actions={[{ key: 'done', label: 'Done', bg: '#34C759', onClick: () => { void completeTask(task) } }]}>
+                <a href={task.listId ? `/household/tasks/${task.listId}` : '/household/tasks/all'} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
+                  <div className="h-[22px] w-[22px] shrink-0 rounded-full border-2 border-border" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14.5px] font-semibold text-text-1">{task.title}</p>
+                    {task.dueDate ? <p className="mt-0.5 text-[12px] text-text-2">{formatShortDate(task.dueDate)}</p> : null}
+                  </div>
+                  <Chevron />
+                </a>
+              </SwipeRow>
+            )) : <EmptyRow icon="✓" title="No linked tasks" subtitle="Add jobs connected to this vault item." />}
+          </div>
+        </Section>
+
+        <Section title="Reminders" action={<button onClick={() => setOpenPanel(prev => prev === 'reminder' ? null : 'reminder')} className="text-[12px] font-semibold text-accent">Add reminder</button>}>
+          {openPanel === 'reminder' ? (
+            <div className="mb-3 rounded-2xl bg-surface p-4">
+              <div className="flex flex-col gap-3">
+                <input value={reminderMessage} onChange={event => setReminderMessage(event.target.value)} placeholder={`Remind me about ${snapshot.record.title}`} className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
+                <div className="overflow-hidden rounded-xl bg-surface-2">
+                  <label className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span className="shrink-0 text-[13px] font-semibold text-text-2">Date</span>
+                    <input type="date" required value={reminderDate} onChange={event => setReminderDate(event.target.value)} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+                    <span className="shrink-0 text-[13px] font-semibold text-text-2">Time</span>
+                    <input type="time" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { void addReminder() }} disabled={!reminderDate || savingPanel} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Add reminder</button>
+                  <button onClick={() => setOpenPanel(null)} className="h-11 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-2xl bg-surface">
+            {snapshot.linkedReminders.length > 0 ? snapshot.linkedReminders.map((reminder, index) => (
+              <div key={reminder.id}>
+                <SwipeRow
+                  wrapClassName={index > 0 ? 'border-t border-border' : ''}
+                  onDelete={() => { void deleteReminder(reminder.id) }}
+                  onEdit={() => startEditReminder(reminder)}
+                >
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-amber-bg text-[17px] text-amber">⏱</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14.5px] font-semibold text-text-1">{reminder.message || snapshot.record!.title}</p>
+                      <p className="mt-0.5 text-[12px] text-text-2">{formatShortDate(reminder.triggerAt)}</p>
+                    </div>
+                  </div>
+                </SwipeRow>
+                {editingReminderId === reminder.id ? (
+                  <div className="border-t border-border bg-surface-2 p-4">
+                    <div className="flex flex-col gap-3">
+                      <input value={reminderMessage} onChange={event => setReminderMessage(event.target.value)} placeholder={`Remind me about ${snapshot.record!.title}`} className="h-11 rounded-xl border border-border bg-surface px-3 text-[15px] text-text-1 outline-none" />
+                      <div className="overflow-hidden rounded-xl border border-border bg-surface">
+                        <label className="flex items-center justify-between gap-3 px-3 py-2">
+                          <span className="shrink-0 text-[13px] font-semibold text-text-2">Date</span>
+                          <input type="date" required value={reminderDate} onChange={event => setReminderDate(event.target.value)} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+                        </label>
+                        <label className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+                          <span className="shrink-0 text-[13px] font-semibold text-text-2">Time</span>
+                          <input type="time" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+                        </label>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => { void updateReminder(reminder) }} disabled={!reminderDate || savingPanel} className="h-11 rounded-xl bg-accent px-4 text-[15px] font-bold text-white disabled:opacity-50">Save</button>
+                        <button onClick={() => setEditingReminderId(null)} className="h-11 rounded-xl border border-border bg-surface px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )) : <EmptyRow icon="⏱" title="No reminders yet" subtitle="Add renewals, services and follow-ups here." />}
+          </div>
+        </Section>
       </div>
 
       {editing ? (

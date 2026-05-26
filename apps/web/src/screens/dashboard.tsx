@@ -65,7 +65,7 @@ function rangeCutoffMs(now: Date, rangeDays: number) {
 
 function eventTimeLabel(date: Date, allDay: boolean) {
   if (allDay) return 'All day'
-  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
+  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
 }
 
 function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number) {
@@ -641,6 +641,8 @@ export function DashboardPage() {
     const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
     const lists = state.data.lists
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
+    const defaultCalendarColor = normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem('homeos:cal-color') : null) ?? '#007AFF'
+    const feedColorMap = new Map(state.data.calendarFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
     const shopMap = new Map(lists.filter(list => list.type === 'shopping' && !list.archived).map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
     const shoppingAll = state.data.listItems
       .filter(item => !item.deletedAt && !item.checked && shopMap.has(item.listId))
@@ -674,7 +676,9 @@ export function DashboardPage() {
         allDay: event.allDay ?? false,
         location: event.location ?? null,
         timeLabel: eventTimeLabel(event.startsAtDate, event.allDay ?? false),
-        color: '#007AFF',
+        color: event.calendarId?.startsWith('ics:')
+          ? feedColorMap.get(event.calendarId.slice(4)) ?? defaultCalendarColor
+          : defaultCalendarColor,
       }))
     const renewals = state.data.records
       .flatMap(record => {

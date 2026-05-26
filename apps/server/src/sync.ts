@@ -9,6 +9,7 @@ import {
   bins,
   calendarEvents,
   calendarFeeds,
+  entityLinks,
   household,
   householdMembers,
   items,
@@ -58,6 +59,7 @@ export async function buildBootstrap() {
     allListItems,
     allRecords,
     allReminders,
+    allEntityLinks,
     allCalendarEvents,
     allCalendarFeeds,
     allBins,
@@ -70,6 +72,7 @@ export async function buildBootstrap() {
     db.select().from(listItems),
     db.select().from(records),
     db.select().from(reminders),
+    db.select().from(entityLinks),
     db.select().from(calendarEvents),
     db.select().from(calendarFeeds),
     db.select().from(bins),
@@ -86,6 +89,7 @@ export async function buildBootstrap() {
       listItems: allListItems,
       records: allRecords,
       reminders: allReminders,
+      entityLinks: allEntityLinks,
       calendarEvents: allCalendarEvents,
       calendarFeeds: allCalendarFeeds,
       bins: allBins,
@@ -165,6 +169,20 @@ export async function recordExternalChange(mutation: RecordedChange) {
   return recordChange(mutation)
 }
 
+export async function sweepOrphanedRecordReminders() {
+  const [recordRows, reminderRows] = await Promise.all([
+    db.query.records.findMany({ columns: { id: true } }),
+    db.query.reminders.findMany({ where: eq(reminders.entityType, 'record'), columns: { id: true, entityId: true } }),
+  ])
+  const validRecordIds = new Set(recordRows.map(record => record.id))
+
+  for (const reminder of reminderRows) {
+    if (validRecordIds.has(reminder.entityId)) continue
+    await db.delete(reminders).where(eq(reminders.id, reminder.id))
+    await recordExternalChange({ entityType: 'reminder', entityId: reminder.id, operation: 'delete', payload: null })
+  }
+}
+
 async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChange> {
   if (mutation.operation === 'delete') {
     return {
@@ -194,6 +212,10 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
     }
     case 'reminder': {
       const row = await db.query.reminders.findFirst({ where: eq(reminders.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'entity_link': {
+      const row = await db.query.entityLinks.findFirst({ where: eq(entityLinks.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
     case 'calendar_event': {
@@ -248,7 +270,34 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       await upsertRecord(mutation)
       break
     case 'record.delete':
+      for (const reminder of await db.query.reminders.findMany({ where: eq(reminders.entityId, mutation.entityId), columns: { id: true } })) {
+        await db.delete(reminders).where(eq(reminders.id, reminder.id))
+        await recordExternalChange({ entityType: 'reminder', entityId: reminder.id, operation: 'delete', payload: null })
+      }
+      for (const link of await db.query.entityLinks.findMany({ where: eq(entityLinks.fromId, mutation.entityId), columns: { id: true } })) {
+        await db.delete(entityLinks).where(eq(entityLinks.id, link.id))
+        await recordExternalChange({ entityType: 'entity_link', entityId: link.id, operation: 'delete', payload: null })
+      }
+      for (const link of await db.query.entityLinks.findMany({ where: eq(entityLinks.toId, mutation.entityId), columns: { id: true } })) {
+        await db.delete(entityLinks).where(eq(entityLinks.id, link.id))
+        await recordExternalChange({ entityType: 'entity_link', entityId: link.id, operation: 'delete', payload: null })
+      }
+      await db.delete(reminders).where(eq(reminders.entityId, mutation.entityId))
+      await db.delete(entityLinks).where(eq(entityLinks.fromId, mutation.entityId))
+      await db.delete(entityLinks).where(eq(entityLinks.toId, mutation.entityId))
       await db.delete(records).where(eq(records.id, mutation.entityId))
+      break
+    case 'reminder.upsert':
+      await upsertReminder(userId, mutation)
+      break
+    case 'reminder.delete':
+      await db.delete(reminders).where(eq(reminders.id, mutation.entityId))
+      break
+    case 'entity_link.upsert':
+      await upsertEntityLink(userId, mutation)
+      break
+    case 'entity_link.delete':
+      await db.delete(entityLinks).where(eq(entityLinks.id, mutation.entityId))
       break
     case 'shopping.upsert':
       await upsertShoppingItem(userId, mutation)
@@ -608,6 +657,67 @@ async function upsertCalendarFeed(userId: string, mutation: SyncMutation) {
       errorMessage: (payload.errorMessage as string | null | undefined) ?? null,
       createdAt: now,
       updatedAt: now,
+    })
+  }
+}
+
+async function upsertReminder(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.reminders.findFirst({ where: eq(reminders.id, mutation.entityId) })
+  const triggerAt = payload.triggerAt ? new Date(payload.triggerAt as string | number) : existing?.triggerAt ?? now
+
+  if (existing) {
+    await db.update(reminders).set({
+      entityType: (payload.entityType as string | undefined) ?? existing.entityType,
+      entityId: (payload.entityId as string | undefined) ?? existing.entityId,
+      message: payload.message === undefined ? existing.message : (payload.message as string | null),
+      triggerAt,
+      dispatchedAt: payload.dispatchedAt === undefined
+        ? existing.dispatchedAt
+        : (payload.dispatchedAt ? new Date(payload.dispatchedAt as string | number) : null),
+      dismissedAt: payload.dismissedAt === undefined
+        ? existing.dismissedAt
+        : (payload.dismissedAt ? new Date(payload.dismissedAt as string | number) : null),
+    }).where(eq(reminders.id, mutation.entityId))
+  } else {
+    await db.insert(reminders).values({
+      id: mutation.entityId,
+      householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
+      createdById: (payload.createdById as string | undefined) ?? userId,
+      entityType: (payload.entityType as string | undefined) ?? 'record',
+      entityId: (payload.entityId as string | undefined) ?? '',
+      message: (payload.message as string | null | undefined) ?? null,
+      triggerAt,
+      dispatchedAt: payload.dispatchedAt ? new Date(payload.dispatchedAt as string | number) : null,
+      dismissedAt: payload.dismissedAt ? new Date(payload.dismissedAt as string | number) : null,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertEntityLink(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const existing = await db.query.entityLinks.findFirst({ where: eq(entityLinks.id, mutation.entityId) })
+
+  if (existing) {
+    await db.update(entityLinks).set({
+      fromType: (payload.fromType as string | undefined) ?? existing.fromType,
+      fromId: (payload.fromId as string | undefined) ?? existing.fromId,
+      toType: (payload.toType as string | undefined) ?? existing.toType,
+      toId: (payload.toId as string | undefined) ?? existing.toId,
+      linkType: (payload.linkType as typeof existing.linkType | undefined) ?? existing.linkType,
+    }).where(eq(entityLinks.id, mutation.entityId))
+  } else {
+    await db.insert(entityLinks).values({
+      id: mutation.entityId,
+      fromType: (payload.fromType as string | undefined) ?? '',
+      fromId: (payload.fromId as string | undefined) ?? '',
+      toType: (payload.toType as string | undefined) ?? '',
+      toId: (payload.toId as string | undefined) ?? '',
+      linkType: (payload.linkType as typeof entityLinks.$inferInsert.linkType | undefined) ?? 'related_to',
+      createdById: (payload.createdById as string | undefined) ?? userId,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : new Date(),
     })
   }
 }

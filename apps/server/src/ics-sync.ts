@@ -44,6 +44,25 @@ function parseLines(text: string): Prop[] {
     .filter(Boolean) as Prop[]
 }
 
+function londonOffsetMs(instant: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    timeZoneName: 'shortOffset',
+  }).formatToParts(instant)
+  const value = parts.find(part => part.type === 'timeZoneName')?.value ?? 'GMT'
+  const match = /^GMT([+-])?(\d{1,2})?(?::?(\d{2}))?$/.exec(value)
+  if (!match) return 0
+  const sign = match[1] === '-' ? -1 : 1
+  const hours = Number(match[2] ?? 0)
+  const minutes = Number(match[3] ?? 0)
+  return sign * ((hours * 60) + minutes) * 60_000
+}
+
+function londonWallTimeToDate(year: number, month: number, day: number, hour: number, minute: number, second: number) {
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
+  return new Date(guess.getTime() - londonOffsetMs(guess))
+}
+
 function parseIcsDate(value: string, params: string): { date: Date; allDay: boolean } {
   if (params.includes('VALUE=DATE') || /^\d{8}$/.test(value)) {
     return {
@@ -60,7 +79,7 @@ function parseIcsDate(value: string, params: string): { date: Date; allDay: bool
   const floating = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/)
   if (floating) {
     const [, year, month, day, hour, minute, second] = floating.map(Number)
-    return { date: new Date(year, month - 1, day, hour, minute, second), allDay: false }
+    return { date: londonWallTimeToDate(year, month, day, hour, minute, second), allDay: false }
   }
   return { date: new Date(value), allDay: false }
 }
