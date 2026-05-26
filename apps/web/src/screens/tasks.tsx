@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { ScreenShell } from './shell'
+import { ColorField } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 
-const LIST_COLORS = ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#8E8E93'] as const
 const DEFAULT_LIST_COLOR = '#007AFF'
 
 type TaskItem = {
@@ -195,15 +195,8 @@ export function TasksOverviewPage() {
               className="flex-1 bg-transparent text-[17px] font-semibold text-text-1 placeholder:text-text-3 outline-none"
             />
           </div>
-          <div className="flex flex-wrap gap-2.5 mb-4">
-            {LIST_COLORS.map(nextColor => (
-              <button
-                key={nextColor}
-                onClick={() => setColor(nextColor)}
-                className="w-8 h-8 rounded-full transition-transform active:scale-90"
-                style={{ background: nextColor, boxShadow: color === nextColor ? `0 0 0 2.5px var(--surface), 0 0 0 4.5px ${nextColor}` : 'none' }}
-              />
-            ))}
+          <div className="mb-4">
+            <ColorField value={color} onChange={setColor} />
           </div>
           <div className="flex gap-2">
             <button onClick={() => { setAdding(false); setName('') }} className="flex-1 h-10 rounded-xl bg-surface-2 text-[15px] font-semibold text-text-1 active:opacity-70">Cancel</button>
@@ -678,16 +671,8 @@ export function TaskDetailPage() {
                 className="flex-1 bg-transparent text-[17px] font-semibold text-text-1 placeholder:text-text-3 outline-none"
               />
             </div>
-            <div className="mb-4 flex flex-wrap gap-2.5">
-              {LIST_COLORS.map(nextColor => (
-                <button
-                  key={nextColor}
-                  onClick={() => setListColor(nextColor)}
-                  className="h-8 w-8 rounded-full transition-transform active:scale-90"
-                  style={{ background: nextColor, boxShadow: listColor === nextColor ? `0 0 0 2.5px var(--surface), 0 0 0 4.5px ${nextColor}` : 'none' }}
-                  aria-label={`Colour ${nextColor}`}
-                />
-              ))}
+            <div className="mb-4">
+              <ColorField value={listColor} onChange={setListColor} />
             </div>
             <button onClick={saveListEdit} disabled={!listName.trim()} className="h-10 w-full rounded-xl bg-accent text-[15px] font-semibold text-white active:opacity-80 disabled:opacity-40">
               Save

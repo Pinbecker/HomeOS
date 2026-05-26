@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
 import { ScreenShell } from './shell'
 
@@ -37,7 +38,7 @@ type CalFeed = {
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const CAL_COLORS = ['#007AFF', '#34C759', '#FF3B30', '#FF9500', '#FF2D55', '#AF52DE', '#5856D6', '#00C7BE', '#FFCC00', '#8E8E93']
+const CAL_COLORS = DEFAULT_COLORS
 const DEFAULT_CAL_COLOR = '#007AFF'
 const DEFAULT_ROW_H = 112
 const MIN_ROW_H = 40
@@ -347,27 +348,6 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (value: boo
   )
 }
 
-function ColorSwatch({ color, current, onPick }: { color: string; current: string; onPick: (color: string) => void }) {
-  return (
-    <button
-      onClick={() => onPick(color)}
-      className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-90 active:opacity-70"
-      style={{ background: color, boxShadow: current === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none' }}
-      aria-label={color}
-    >
-      {current === color ? <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3"><path d="M3 8l3.5 3.5L13 5" stroke="white" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></svg> : null}
-    </button>
-  )
-}
-
-function ColorPicker({ current, onPick }: { current: string; onPick: (color: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-2.5 border-t border-border px-4 pt-3 pb-3.5">
-      {CAL_COLORS.map(color => <ColorSwatch key={color} color={color} current={current} onPick={onPick} />)}
-    </div>
-  )
-}
-
 function CalendarPageInner() {
   const today = useMemo(() => new Date(), [])
   const todayKey = localDayKey(today)
@@ -422,7 +402,8 @@ function CalendarPageInner() {
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
   useEffect(() => {
     const saved = localStorage.getItem('homeos:cal-color')
-    if (saved && CAL_COLORS.includes(saved)) setCalColor(saved)
+    const hex = normalizeHex(saved)
+    if (hex) setCalColor(hex)
   }, [])
   useEffect(() => {
     async function syncGoogleNow() {
@@ -1430,13 +1411,13 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-text-3">Google Calendar</p>
           <div className="overflow-hidden rounded-2xl bg-bg">
             <div className="flex items-center gap-3 px-4 py-3">
-              <button className="h-9 w-9 shrink-0 rounded-full transition-opacity active:opacity-70" style={{ background: calColor }} onClick={() => togglePicker('google')} aria-label="Change colour" />
+              <ColorWheelButton color={calColor} onClick={() => togglePicker('google')} label="Change calendar colour" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-text-1">Family Calendar</p>
                 <p className="truncate text-[12px] text-text-2">Connected</p>
               </div>
             </div>
-            {pickerFor === 'google' ? <ColorPicker current={calColor} onPick={color => { onCalColorChange(color); setPickerFor(null) }} /> : null}
+            {pickerFor === 'google' ? <ColorPickerPanel value={calColor} onChange={color => { onCalColorChange(color) }} /> : null}
             <div className="flex items-center gap-4 px-4 pb-3">
               <button onClick={() => { void syncGoogle() }} disabled={syncingGoogle} className="text-[12px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{syncingGoogle ? 'Syncing...' : 'Sync now'}</button>
               <a href="/api/google/connect" className="text-[12px] font-semibold text-accent active:opacity-60">Reconnect</a>
@@ -1450,7 +1431,7 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
               {feeds.map((feed, index) => (
                 <div key={feed.id} className={index > 0 ? 'border-t border-border' : ''}>
                   <div className="flex items-center gap-3 px-4 py-3">
-                    <button className="h-9 w-9 shrink-0 rounded-full transition-opacity active:opacity-70" style={{ background: feed.color }} onClick={() => togglePicker(feed.id)} aria-label="Change colour" />
+                    <ColorWheelButton color={feed.color} onClick={() => togglePicker(feed.id)} label={`Change ${feed.name} colour`} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] font-semibold text-text-1">{feed.name}</p>
                       {feed.errorMessage ? <p className="truncate text-[11.5px] leading-snug text-red">! {feed.errorMessage}</p> : <p className="text-[11.5px] text-text-3">{syncTimeLabel(feed.lastSyncedAt)}</p>}
@@ -1459,7 +1440,7 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
                       <div className={`mx-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${feed.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
                     </button>
                   </div>
-                  {pickerFor === feed.id ? <ColorPicker current={feed.color} onPick={color => { patchFeed(feed, { color }); setPickerFor(null) }} /> : null}
+                  {pickerFor === feed.id ? <ColorPickerPanel value={feed.color} onChange={color => { void patchFeed(feed, { color }) }} /> : null}
                   <div className="flex items-center gap-4 px-4 pb-3">
                     <button onClick={() => { void syncFeed(feed) }} disabled={syncingFeedId === feed.id} className="text-[12px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{syncingFeedId === feed.id ? 'Syncing...' : 'Sync now'}</button>
                     <button onClick={() => deleteFeed(feed)} className="text-[12px] font-semibold text-red active:opacity-60">Remove</button>
@@ -1469,10 +1450,10 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
               {addOpen ? (
                 <div className={feeds.length > 0 ? 'border-t border-border' : ''}>
                   <div className="flex items-center gap-3 px-4 py-3">
-                    <button className="h-9 w-9 shrink-0 rounded-full transition-opacity active:opacity-70" style={{ background: addingColor }} onClick={() => togglePicker('new')} aria-label="Choose colour" />
+                    <ColorWheelButton color={addingColor} onClick={() => togglePicker('new')} label="Choose calendar colour" />
                     <input value={addingName} onChange={event => setAddingName(event.target.value)} placeholder="Name (e.g. School holidays)" className="flex-1 bg-transparent text-[15px] text-text-1 outline-none placeholder:text-text-3" autoFocus />
                   </div>
-                  {pickerFor === 'new' ? <ColorPicker current={addingColor} onPick={color => { setAddingColor(color); setPickerFor(null) }} /> : null}
+                  {pickerFor === 'new' ? <ColorPickerPanel value={addingColor} onChange={setAddingColor} /> : null}
                   <div className="border-t border-border"><input value={addingUrl} onChange={event => setAddingUrl(event.target.value)} placeholder="ICS / iCal URL" type="url" className="w-full bg-transparent px-4 py-3 text-[15px] text-text-1 outline-none placeholder:text-text-3" /></div>
                   <div className="flex border-t border-border">
                     <button onClick={() => { setAddOpen(false); setAddingName(''); setAddingUrl(''); setPickerFor(null) }} className="flex-1 border-r border-border py-3 text-[15px] font-semibold text-text-2 active:bg-surface-2">Cancel</button>

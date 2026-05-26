@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { changePassword, signOut } from '@homeos/auth/client'
+import { ColorPickerPanel, normalizeHex } from '../components/color-control'
+import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { resetSession } from '../lib/session-store'
 import { ScreenShell } from './shell'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
@@ -175,8 +179,104 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
   })
 }
 
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+      <circle cx="11" cy="11" r="4" />
+      <path d="M11 1.5v2M11 18.5v2M3.1 3.1l1.4 1.4M17.5 17.5l1.4 1.4M1.5 11h2M18.5 11h2M3.1 18.9l1.4-1.4M17.5 4.5l1.4-1.4" />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+      <path d="M19 11.5A8.5 8.5 0 1 1 10.5 3a6.5 6.5 0 0 0 8.5 8.5z" />
+    </svg>
+  )
+}
+
+function AutoIcon() {
+  return (
+    <svg viewBox="0 0 22 22" fill="none" strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+      <path d="M11 2a9 9 0 0 0 0 18V2z" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="11" r="9" stroke="currentColor" strokeWidth={1.8} />
+    </svg>
+  )
+}
+
 function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'menu' | 'appearance' | 'password'>('menu')
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('theme') as ThemeMode | null) ?? 'auto')
+  const [isDark, setIsDark] = useState(() => actualThemeIsDark())
+  const [accent, setAccent] = useState(() => currentAccent())
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => watchAutoTheme(() => setIsDark(actualThemeIsDark())), [])
+
+  function close() {
+    setOpen(false)
+    window.setTimeout(() => {
+      setView('menu')
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      setError('')
+      setDone(false)
+      setBusy(false)
+    }, 180)
+  }
+
+  function pickTheme(mode: ThemeMode) {
+    setThemeMode(mode)
+    applyThemeMode(mode)
+    setIsDark(actualThemeIsDark())
+  }
+
+  function pickAccent(hex: string) {
+    const normalized = normalizeHex(hex)
+    if (!normalized) return
+    setAccent(normalized)
+    applyAccent(normalized)
+  }
+
+  async function handleLogout() {
+    setBusy(true)
+    await signOut()
+    resetSession()
+    window.location.assign('/login')
+  }
+
+  async function handleChangePassword(event: React.FormEvent) {
+    event.preventDefault()
+    setError('')
+    if (next.length < 8) {
+      setError('New password must be at least 8 characters.')
+      return
+    }
+    if (next !== confirm) {
+      setError('New passwords do not match.')
+      return
+    }
+    setBusy(true)
+    const result = await changePassword({ currentPassword: current, newPassword: next, revokeOtherSessions: false })
+    setBusy(false)
+    if (result.error) {
+      setError(result.error.message ?? 'Could not change password.')
+      return
+    }
+    setDone(true)
+    setCurrent('')
+    setNext('')
+    setConfirm('')
+  }
+
   return (
     <>
       <button onClick={() => setOpen(true)} className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-white transition-transform active:scale-95" aria-label="Account menu">
@@ -184,16 +284,109 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
       </button>
       {open ? (
         <div className="fixed inset-0 z-[70] mx-auto flex max-w-lg flex-col justify-end">
-          <button className="absolute inset-0 bg-black/30" aria-label="Close" onClick={() => setOpen(false)} />
-          <div className="relative rounded-t-3xl bg-bg px-4 pt-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
-            <div className="mb-2 flex items-center gap-3 px-2 py-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-[18px] font-bold text-white">{name.charAt(0).toUpperCase()}</div>
-              <div className="min-w-0">
-                <p className="truncate text-[17px] font-bold text-text-1">{name}</p>
-                {email ? <p className="truncate text-[13px] text-text-2">{email}</p> : null}
-              </div>
+          <button className="absolute inset-0 bg-black/30" aria-label="Close" onClick={close} />
+          <div className="relative flex max-h-[90dvh] flex-col rounded-t-3xl bg-bg">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-2">
+              {view === 'menu' ? (
+                <>
+                  <div className="mb-2 flex items-center gap-3 px-2 py-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-[18px] font-bold text-white">{name.charAt(0).toUpperCase()}</div>
+                    <div className="min-w-0">
+                      <p className="truncate text-[17px] font-bold text-text-1">{name}</p>
+                      {email ? <p className="truncate text-[13px] text-text-2">{email}</p> : null}
+                    </div>
+                  </div>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    <button onClick={() => setView('appearance')} className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-surface-2">
+                      <span className="text-text-2">{isDark ? <MoonIcon /> : <SunIcon />}</span>
+                      <span className="flex-1 text-[15px] font-medium text-text-1">Appearance</span>
+                      <span className="text-[13px] capitalize text-text-2">{themeMode}</span>
+                      <span className="h-4 w-4 rounded-full border-2 border-white/70" style={{ background: accent }} />
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+                    </button>
+                    <button onClick={() => setView('password')} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-text-2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                      <span className="flex-1 text-[15px] font-medium text-text-1">Change Password</span>
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+                    </button>
+                    <button onClick={handleLogout} disabled={busy} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2 disabled:opacity-50">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-red"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                      <span className="flex-1 text-[15px] font-semibold text-red">{busy ? 'Logging out...' : 'Log Out'}</span>
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {view === 'appearance' ? (
+                <>
+                  <div className="mb-1 flex items-center justify-between px-1 py-2">
+                    <button onClick={() => setView('menu')} className="text-[16px] text-accent active:opacity-60">Back</button>
+                    <span className="text-[16px] font-semibold text-text-1">Appearance</span>
+                    <span className="w-10" />
+                  </div>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    <div className="px-4 py-3.5">
+                      <p className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-text-2">Theme</p>
+                      <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
+                        {[
+                          { mode: 'light' as ThemeMode, label: 'Light', icon: <SunIcon /> },
+                          { mode: 'auto' as ThemeMode, label: 'Auto', icon: <AutoIcon /> },
+                          { mode: 'dark' as ThemeMode, label: 'Dark', icon: <MoonIcon /> },
+                        ].map(option => (
+                          <button key={option.mode} onClick={() => pickTheme(option.mode)} className={`flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-2 text-[13px] font-semibold ${themeMode === option.mode ? 'bg-surface text-text-1 shadow-sm' : 'text-text-2 active:bg-surface/50'}`}>
+                            {option.icon}
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: 'conic-gradient(#ff3b30, #ff9500, #ffcc00, #34c759, #00c7be, #007aff, #5856d6, #af52de, #ff2d55, #ff3b30)' }}>
+                        <span className="h-5 w-5 rounded-full border-2 border-white shadow-sm" style={{ background: accent }} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-semibold text-text-1">Accent Colour</p>
+                        <p className="font-mono text-[12px] font-semibold uppercase text-text-2">{accent}</p>
+                      </div>
+                    </div>
+                    <ColorPickerPanel value={accent} onChange={pickAccent} />
+                  </div>
+                </>
+              ) : null}
+
+              {view === 'password' ? (
+                <>
+                  <div className="mb-1 flex items-center justify-between px-1 py-2">
+                    <button onClick={() => { setView('menu'); setError(''); setDone(false) }} className="text-[16px] text-accent active:opacity-60">Back</button>
+                    <span className="text-[16px] font-semibold text-text-1">Change Password</span>
+                    <span className="w-10" />
+                  </div>
+                  {done ? (
+                    <div className="mb-3 rounded-2xl bg-surface px-4 py-6 text-center">
+                      <p className="text-[15px] font-semibold text-text-1">Password updated</p>
+                      <button onClick={close} className="mt-4 text-[15px] font-semibold text-accent active:opacity-60">Done</button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleChangePassword} className="mb-3 flex flex-col gap-3">
+                      <div className="overflow-hidden rounded-2xl bg-surface">
+                        <input type="password" value={current} onChange={event => setCurrent(event.target.value)} placeholder="Current password" autoComplete="current-password" required className="w-full bg-transparent px-4 py-3 text-[16px] text-text-1 outline-none placeholder:text-text-3" />
+                        <input type="password" value={next} onChange={event => setNext(event.target.value)} placeholder="New password" autoComplete="new-password" required className="w-full border-t border-border bg-transparent px-4 py-3 text-[16px] text-text-1 outline-none placeholder:text-text-3" />
+                        <input type="password" value={confirm} onChange={event => setConfirm(event.target.value)} placeholder="Confirm new password" autoComplete="new-password" required className="w-full border-t border-border bg-transparent px-4 py-3 text-[16px] text-text-1 outline-none placeholder:text-text-3" />
+                      </div>
+                      {error ? <p className="px-1 text-[13px] font-medium text-red">{error}</p> : null}
+                      <button type="submit" disabled={busy || !current || !next || !confirm} className="h-12 w-full rounded-2xl bg-accent text-[16px] font-bold text-white active:opacity-80 disabled:opacity-40">{busy ? 'Updating...' : 'Update Password'}</button>
+                    </form>
+                  )}
+                </>
+              ) : null}
             </div>
-            <button onClick={() => setOpen(false)} className="h-11 w-full rounded-xl bg-surface text-[15px] font-semibold text-accent active:bg-surface-2">Done</button>
+            {view !== 'password' ? (
+              <div className="shrink-0 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                <button onClick={close} className="h-12 w-full rounded-2xl bg-surface text-[16px] font-semibold text-accent active:opacity-70">{view === 'appearance' ? 'Done' : 'Cancel'}</button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
