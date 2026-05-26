@@ -1,13 +1,16 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { randomBytes } from 'node:crypto'
 import Fastify from 'fastify'
 import { fromNodeHeaders } from 'better-auth/node'
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import { auth } from '@homeos/auth'
 import { db } from '@homeos/db'
 import { calendarFeeds, items, tvChannels, tvProgrammes } from '@homeos/db/schema'
+import { exchangeCode, isGoogleConfigured, saveConnection, consentUrl } from './google-oauth'
+import { syncGoogleCalendar } from './google-calendar'
 import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
-import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, subscribe, type SyncMutation } from './sync'
+import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, type SyncMutation } from './sync'
 
 const app = Fastify({
   logger: true,
@@ -126,6 +129,48 @@ app.get('/api/me', async (request, reply) => {
   return reply.send(session)
 })
 
+app.get('/api/google/connect', async (request, reply) => {
+  if (!isGoogleConfigured()) return reply.status(500).send({ error: 'Google Calendar is not configured' })
+  const session = await getSession(request)
+  if (!session) return reply.redirect('/login')
+
+  const state = randomBytes(16).toString('hex')
+  reply.header('Set-Cookie', `g_oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`)
+  return reply.redirect(consentUrl(state))
+})
+
+app.get('/auth/callback', async (request, reply) => {
+  const session = await getSession(request)
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VITE_APP_URL ?? `https://${request.headers.host}`
+  const back = new URL('/calendar', base)
+  if (!session) return reply.redirect('/login')
+
+  const query = request.query as { code?: string; state?: string; error?: string }
+  const expectedState = cookieValue(request.headers.cookie ?? '', 'g_oauth_state')
+  reply.header('Set-Cookie', 'g_oauth_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0')
+
+  if (query.error) {
+    back.searchParams.set('google', 'denied')
+    return reply.redirect(back.toString())
+  }
+  if (!query.code || !query.state || !expectedState || query.state !== expectedState) {
+    back.searchParams.set('google', 'error')
+    return reply.redirect(back.toString())
+  }
+
+  try {
+    const { tokens, email } = await exchangeCode(query.code)
+    await saveConnection(session.user.id, tokens, email)
+    await syncAndRecordGoogleCalendar()
+    back.searchParams.set('google', 'connected')
+  } catch (error) {
+    requestLog(error)
+    back.searchParams.set('google', 'error')
+  }
+
+  return reply.redirect(back.toString())
+})
+
 app.get('/api/watch/initial', async (request, reply) => {
   const session = await getSession(request)
   if (!session) return reply.status(401).send({ error: 'Unauthorized' })
@@ -209,6 +254,19 @@ app.post('/api/calendar/feeds/:id/sync', async (request, reply) => {
   return reply.status(result.error ? 500 : 200).send(result)
 })
 
+app.post('/api/calendar/google/sync', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  try {
+    const changes = await syncAndRecordGoogleCalendar()
+    return reply.send({ count: changes })
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: 'sync_failed' })
+  }
+})
+
 app.get('/*', async (request, reply) => {
   if (request.url.startsWith('/api/')) {
     return reply.status(404).send({ error: 'Not found' })
@@ -244,11 +302,29 @@ app.listen({ port, host: '0.0.0.0' }).catch(error => {
 
 setInterval(() => {
   syncAllIcsFeeds().catch(error => app.log.error(error))
+  syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
 }, 10 * 60 * 1000)
 
 setTimeout(() => {
   syncAllIcsFeeds().catch(error => app.log.error(error))
+  syncAndRecordGoogleCalendar().catch(error => app.log.error(error))
 }, 15_000)
+
+function cookieValue(cookieHeader: string, name: string) {
+  const found = cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.startsWith(`${name}=`))
+  return found ? decodeURIComponent(found.slice(name.length + 1)) : null
+}
+
+async function syncAndRecordGoogleCalendar() {
+  const changes = await syncGoogleCalendar()
+  for (const change of changes) {
+    await recordExternalChange(change)
+  }
+  return changes.length
+}
 
 function requestLog(error: unknown) {
   app.log.error(error)

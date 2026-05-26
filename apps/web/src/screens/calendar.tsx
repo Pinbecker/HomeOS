@@ -158,6 +158,16 @@ function parseDateTime(date: string, time: string) {
   return new Date(year, month - 1, day, hour, minute).getTime()
 }
 
+function parseAllDayDateUtc(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  return Date.UTC(year, month - 1, day)
+}
+
+function dateTimeParts(ms: number) {
+  const date = new Date(ms)
+  return { date: dateInput(date), time: timeInput(date) }
+}
+
 function scrollOffsetWithin(container: HTMLElement, element: HTMLElement) {
   return container.scrollTop + element.getBoundingClientRect().top - container.getBoundingClientRect().top
 }
@@ -1141,6 +1151,54 @@ function EventEditor({ event, initialDate, householdId, onClose, onSaved }: { ev
   const [location, setLocation] = useState(initial.location)
   const [notes, setNotes] = useState(initial.notes)
   const [error, setError] = useState<string | null>(null)
+  const currentDuration = () => {
+    const start = parseDateTime(startDate, startTime)
+    const end = parseDateTime(endDate, endTime)
+    return end > start ? end - start : 3_600_000
+  }
+  const setEndFromMs = (ms: number) => {
+    const next = dateTimeParts(ms)
+    setEndDate(next.date)
+    setEndTime(next.time)
+  }
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value)
+    if (allDay) {
+      if (value > endDate) setEndDate(value)
+      return
+    }
+
+    const newStart = parseDateTime(value, startTime)
+    if (parseDateTime(endDate, endTime) <= newStart) setEndFromMs(newStart + currentDuration())
+  }
+  const handleStartTimeChange = (value: string) => {
+    setStartTime(value)
+    const newStart = parseDateTime(startDate, value)
+    if (!allDay && parseDateTime(endDate, endTime) <= newStart) setEndFromMs(newStart + currentDuration())
+  }
+  const handleEndDateChange = (value: string) => {
+    if (allDay) {
+      setEndDate(value < startDate ? startDate : value)
+      return
+    }
+
+    const newEnd = parseDateTime(value, endTime)
+    const start = parseDateTime(startDate, startTime)
+    if (newEnd <= start) {
+      setEndFromMs(start + currentDuration())
+      return
+    }
+    setEndDate(value)
+  }
+  const handleEndTimeChange = (value: string) => {
+    const newEnd = parseDateTime(endDate, value)
+    const start = parseDateTime(startDate, startTime)
+    if (!allDay && newEnd <= start) {
+      setEndFromMs(start + 3_600_000)
+      return
+    }
+    setEndTime(value)
+  }
 
   async function save() {
     if (!title.trim()) {
@@ -1149,12 +1207,11 @@ function EventEditor({ event, initialDate, householdId, onClose, onSaved }: { ev
     }
     const id = event?.id ?? makeId('calendar')
     const now = new Date().toISOString()
-    const startsAt = allDay
-      ? new Date(Date.UTC(...startDate.split('-').map(Number).map((value, index) => index === 1 ? value - 1 : value) as [number, number, number])).toISOString()
-      : new Date(parseDateTime(startDate, startTime)).toISOString()
-    const endsAt = allDay
-      ? new Date(Date.UTC(...endDate.split('-').map(Number).map((value, index) => index === 1 ? value - 1 : value) as [number, number, number]) + 86_400_000).toISOString()
-      : new Date(parseDateTime(endDate, endTime)).toISOString()
+    const startMs = allDay ? parseAllDayDateUtc(startDate) : parseDateTime(startDate, startTime)
+    const rawEndMs = allDay ? parseAllDayDateUtc(endDate) + 86_400_000 : parseDateTime(endDate, endTime)
+    const endMs = rawEndMs > startMs ? rawEndMs : startMs + (allDay ? 86_400_000 : 3_600_000)
+    const startsAt = new Date(startMs).toISOString()
+    const endsAt = new Date(endMs).toISOString()
     const payload = {
       id,
       householdId,
@@ -1208,15 +1265,15 @@ function EventEditor({ event, initialDate, householdId, onClose, onSaved }: { ev
             <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3.5">
               <span className="shrink-0 text-[15px] text-text-2">Starts</span>
               <div className="flex items-center gap-2.5">
-                <input type="date" value={startDate} onChange={event => setStartDate(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" />
-                {!allDay ? <><span className="text-[13px] text-text-3">·</span><input type="time" value={startTime} onChange={event => setStartTime(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" /></> : null}
+                <input type="date" value={startDate} onChange={event => handleStartDateChange(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" />
+                {!allDay ? <><span className="text-[13px] text-text-3">·</span><input type="time" value={startTime} onChange={event => handleStartTimeChange(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" /></> : null}
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3.5">
               <span className="shrink-0 text-[15px] text-text-2">Ends</span>
               <div className="flex items-center gap-2.5">
-                <input type="date" value={endDate} min={startDate} onChange={event => setEndDate(event.target.value < startDate ? startDate : event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" />
-                {!allDay ? <><span className="text-[13px] text-text-3">·</span><input type="time" value={endTime} onChange={event => setEndTime(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" /></> : null}
+                <input type="date" value={endDate} min={startDate} onChange={event => handleEndDateChange(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" />
+                {!allDay ? <><span className="text-[13px] text-text-3">·</span><input type="time" value={endTime} onChange={event => handleEndTimeChange(event.target.value)} className="min-w-0 cursor-pointer border-0 bg-transparent text-[15px] font-medium text-accent outline-none" /></> : null}
               </div>
             </div>
           </div>
@@ -1237,6 +1294,7 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
   const [addingUrl, setAddingUrl] = useState('')
   const [addingColor, setAddingColor] = useState(CAL_COLORS[1])
   const [syncingFeedId, setSyncingFeedId] = useState<string | null>(null)
+  const [syncingGoogle, setSyncingGoogle] = useState(false)
 
   function togglePicker(id: string) {
     setPickerFor(prev => prev === id ? null : id)
@@ -1317,6 +1375,19 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
     }
   }
 
+  async function syncGoogle() {
+    setSyncingGoogle(true)
+    try {
+      const response = await fetch('/api/calendar/google/sync', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (response.ok) await refreshAppState()
+    } finally {
+      setSyncingGoogle(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[70] flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={onClose}>
       <div className="mx-auto max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-[22px] bg-surface" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)' }} onClick={event => event.stopPropagation()}>
@@ -1336,6 +1407,10 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
               </div>
             </div>
             {pickerFor === 'google' ? <ColorPicker current={calColor} onPick={color => { onCalColorChange(color); setPickerFor(null) }} /> : null}
+            <div className="flex items-center gap-4 px-4 pb-3">
+              <button onClick={() => { void syncGoogle() }} disabled={syncingGoogle} className="text-[12px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{syncingGoogle ? 'Syncing...' : 'Sync now'}</button>
+              <a href="/api/google/connect" className="text-[12px] font-semibold text-accent active:opacity-60">Reconnect</a>
+            </div>
           </div>
         </div>
         {(feeds.length > 0 || addOpen) ? (

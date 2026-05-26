@@ -19,6 +19,7 @@ import {
   syncChanges,
   users,
 } from '@homeos/db/schema'
+import { createGoogleEvent, deleteGoogleEvent, updateGoogleEvent } from './google-calendar'
 
 const stream = new EventEmitter()
 
@@ -256,10 +257,10 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       await db.update(listItems).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(listItems.id, mutation.entityId))
       break
     case 'calendar.event.upsert':
-      await upsertCalendarEvent(mutation)
+      await upsertCalendarEvent(userId, mutation)
       break
     case 'calendar.event.delete':
-      await db.delete(calendarEvents).where(eq(calendarEvents.id, mutation.entityId))
+      await deleteCalendarEvent(userId, mutation)
       break
     case 'calendar.feed.upsert':
       await upsertCalendarFeed(userId, mutation)
@@ -498,21 +499,42 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
   }
 }
 
-async function upsertCalendarEvent(mutation: SyncMutation) {
+async function upsertCalendarEvent(userId: string, mutation: SyncMutation) {
   const payload = mutation.payload ?? {}
   const now = new Date()
   const existing = await db.query.calendarEvents.findFirst({ where: eq(calendarEvents.id, mutation.entityId) })
+  const allDay = (payload.allDay as boolean | undefined) ?? existing?.allDay ?? false
+  const range = normalizeCalendarRange(
+    payload.startsAt ? new Date(payload.startsAt as string | number) : existing?.startsAt ?? now,
+    payload.endsAt === undefined ? existing?.endsAt ?? null : (payload.endsAt ? new Date(payload.endsAt as string | number) : null),
+    allDay,
+  )
+  const nextCalendarId = payload.calendarId === undefined ? existing?.calendarId ?? null : (payload.calendarId as string | null)
+
+  if (!nextCalendarId?.startsWith('ics:')) {
+    const input = {
+      title: (payload.title as string | undefined) ?? existing?.title ?? '',
+      description: payload.description === undefined ? existing?.description ?? null : (payload.description as string | null),
+      location: payload.location === undefined ? existing?.location ?? null : (payload.location as string | null),
+      allDay,
+      start: range.startsAt.getTime(),
+      end: range.endsAt.getTime(),
+    }
+    if (existing) await updateGoogleEvent(userId, mutation.entityId, input)
+    else await createGoogleEvent(userId, input, mutation.entityId)
+    return
+  }
 
   if (existing) {
     await db.update(calendarEvents).set({
       externalId: payload.externalId === undefined ? existing.externalId : (payload.externalId as string | null),
-      calendarId: payload.calendarId === undefined ? existing.calendarId : (payload.calendarId as string | null),
+      calendarId: nextCalendarId,
       title: (payload.title as string | undefined) ?? existing.title,
       description: payload.description === undefined ? existing.description : (payload.description as string | null),
       location: payload.location === undefined ? existing.location : (payload.location as string | null),
-      startsAt: payload.startsAt ? new Date(payload.startsAt as string | number) : existing.startsAt,
-      endsAt: payload.endsAt === undefined ? existing.endsAt : (payload.endsAt ? new Date(payload.endsAt as string | number) : null),
-      allDay: (payload.allDay as boolean | undefined) ?? existing.allDay,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
+      allDay,
       recurrenceRule: payload.recurrenceRule === undefined ? existing.recurrenceRule : (payload.recurrenceRule as string | null),
       rawIcal: payload.rawIcal === undefined ? existing.rawIcal : (payload.rawIcal as string | null),
       lastSyncedAt: payload.lastSyncedAt === undefined
@@ -525,13 +547,13 @@ async function upsertCalendarEvent(mutation: SyncMutation) {
       id: mutation.entityId,
       householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
       externalId: (payload.externalId as string | null | undefined) ?? null,
-      calendarId: (payload.calendarId as string | null | undefined) ?? null,
+      calendarId: nextCalendarId,
       title: (payload.title as string | undefined) ?? '',
       description: (payload.description as string | null | undefined) ?? null,
       location: (payload.location as string | null | undefined) ?? null,
-      startsAt: payload.startsAt ? new Date(payload.startsAt as string | number) : now,
-      endsAt: payload.endsAt ? new Date(payload.endsAt as string | number) : null,
-      allDay: (payload.allDay as boolean | undefined) ?? false,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
+      allDay,
       recurrenceRule: (payload.recurrenceRule as string | null | undefined) ?? null,
       rawIcal: (payload.rawIcal as string | null | undefined) ?? null,
       lastSyncedAt: payload.lastSyncedAt ? new Date(payload.lastSyncedAt as string | number) : null,
@@ -539,6 +561,21 @@ async function upsertCalendarEvent(mutation: SyncMutation) {
       updatedAt: now,
     })
   }
+}
+
+async function deleteCalendarEvent(userId: string, mutation: SyncMutation) {
+  const existing = await db.query.calendarEvents.findFirst({ where: eq(calendarEvents.id, mutation.entityId) })
+  if (existing && !existing.calendarId?.startsWith('ics:')) {
+    await deleteGoogleEvent(userId, mutation.entityId)
+    return
+  }
+  await db.delete(calendarEvents).where(eq(calendarEvents.id, mutation.entityId))
+}
+
+function normalizeCalendarRange(startsAt: Date, endsAt: Date | null, allDay: boolean) {
+  const minimumDurationMs = allDay ? 86_400_000 : 3_600_000
+  if (endsAt && endsAt.getTime() > startsAt.getTime()) return { startsAt, endsAt }
+  return { startsAt, endsAt: new Date(startsAt.getTime() + minimumDurationMs) }
 }
 
 async function upsertCalendarFeed(userId: string, mutation: SyncMutation) {
