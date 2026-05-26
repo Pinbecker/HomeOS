@@ -159,6 +159,42 @@ const menuItems: MenuItem[] = [
 const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
 const CLOSE_THRESHOLD = 90
 
+function isTextEntryElement(element: Element | null) {
+  if (!element) return false
+  if (element instanceof HTMLTextAreaElement) return true
+  if (element instanceof HTMLElement && element.isContentEditable) return true
+  if (!(element instanceof HTMLInputElement)) return false
+  return !['button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden', 'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'].includes(element.type)
+}
+
+function useKeyboardNavHidden() {
+  const [hidden, setHidden] = useState(false)
+
+  useEffect(() => {
+    const update = () => {
+      const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
+      const focusedTextEntry = isTextEntryElement(document.activeElement)
+      const viewport = window.visualViewport
+      const keyboardCompressed = viewport ? viewport.height < window.innerHeight - 80 : false
+      setHidden(coarsePointer && focusedTextEntry && (keyboardCompressed || window.innerWidth < 768))
+    }
+
+    update()
+    window.addEventListener('focusin', update)
+    window.addEventListener('focusout', update)
+    window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
+    return () => {
+      window.removeEventListener('focusin', update)
+      window.removeEventListener('focusout', update)
+      window.visualViewport?.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  return hidden
+}
+
 function NavTab({ tab, active, onClick }: { tab: Tab; active: boolean; onClick?: () => void }) {
   return (
     <a href={tab.href} onClick={onClick} aria-label={tab.label} className="flex-1 flex items-center justify-center py-[10px]">
@@ -182,6 +218,8 @@ export function BottomNav() {
   const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
   const dragStartRef = useRef<number | null>(null)
+  const keyboardNavHidden = useKeyboardNavHidden()
+  const hideNav = keyboardNavHidden && !open
 
   function isActive(href: string, exact = false) {
     if (exact) return pathname === href
@@ -206,6 +244,11 @@ export function BottomNav() {
       window.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  useEffect(() => {
+    if (!keyboardNavHidden || !open) return
+    close()
+  }, [keyboardNavHidden, open])
 
   function onTouchStart(e: React.TouchEvent) {
     dragStartRef.current = e.touches[0].clientY
@@ -310,6 +353,10 @@ export function BottomNav() {
           borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
           boxShadow: '0 -4px 20px rgba(0,0,0,0.10)',
           paddingBottom: 'env(safe-area-inset-bottom)',
+          opacity: hideNav ? 0 : 1,
+          pointerEvents: hideNav ? 'none' : 'auto',
+          transform: hideNav ? 'translateY(calc(100% + env(safe-area-inset-bottom) + 12px))' : 'translateY(0)',
+          transition: 'transform 0.22s ease, opacity 0.18s ease',
         }}
       >
         <div className="flex items-center max-w-lg mx-auto" style={{ paddingLeft: 4, paddingRight: 4 }}>
