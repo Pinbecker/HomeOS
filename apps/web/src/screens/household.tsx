@@ -25,6 +25,7 @@ const BIN_COLOURS: Record<string, { bg: string; text: string; label: string }> =
   black: { bg: '#1F2937', text: '#fff', label: 'Black bin' },
   pink: { bg: '#EC4899', text: '#fff', label: 'Nappy bin' },
 }
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function Chevron() {
   return (
@@ -70,6 +71,20 @@ function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number
   return next
 }
 
+function getBinReminderDate(collectionDate: Date) {
+  const reminder = new Date(collectionDate)
+  reminder.setDate(reminder.getDate() - 1)
+  return reminder
+}
+
+function describeSchedule(intervalWeeks: number, date: Date) {
+  const weekday = WEEKDAYS[date.getDay()]
+  if (intervalWeeks === 1) return `Weekly · ${weekday}`
+  if (intervalWeeks === 2) return `Every 2 weeks · ${weekday}`
+  if (intervalWeeks === 3) return `Every 3 weeks · ${weekday}`
+  return `Every ${intervalWeeks} weeks · ${weekday}`
+}
+
 function whenLabel(days: number) {
   if (days <= 0) return 'Today'
   if (days === 1) return 'Tomorrow'
@@ -78,34 +93,6 @@ function whenLabel(days: number) {
 
 function formatLongDate(date: Date) {
   return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-}
-
-function buildBins(bins: Array<{
-  id: string
-  name: string
-  colour: string
-  intervalWeeks: number
-  anchorDate?: string | null
-  active?: boolean
-}>) {
-  const activeBins = bins.filter(bin => bin.active !== false && bin.anchorDate)
-  if (activeBins.length === 0) {
-    return STATIC_BIN_SCHEDULES.map(bin => ({
-      id: bin.id,
-      name: bin.name,
-      colour: bin.colour,
-      intervalWeeks: bin.intervalWeeks,
-      next: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks),
-    }))
-  }
-
-  return activeBins.map(bin => ({
-    id: bin.id,
-    name: bin.name,
-    colour: bin.colour,
-    intervalWeeks: bin.intervalWeeks,
-    next: getNextRecurringDate(bin.anchorDate as string, Math.max(1, bin.intervalWeeks)),
-  }))
 }
 
 export function HouseholdPage() {
@@ -175,35 +162,31 @@ export function HouseholdPage() {
 }
 
 export function BinsPage() {
-  const bins = useAppState(state => buildBins(state.data.bins as Array<{
-    id: string
-    name: string
-    colour: string
-    intervalWeeks: number
-    anchorDate?: string | null
-    active?: boolean
-  }>).sort((a, b) => a.next.getTime() - b.next.getTime()))
+  const bins = STATIC_BIN_SCHEDULES
+    .map(bin => ({ ...bin, next: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks) }))
+    .sort((a, b) => a.next.getTime() - b.next.getTime())
 
   return (
-    <ScreenShell title="Bins">
-      <div className="px-4">
-        <div className="mb-3 px-1">
-          <a href="/household" className="flex w-fit items-center gap-1 text-accent active:opacity-60">
+    <ScreenShell title="Bins" showHeader={false}>
+      <div className="flex flex-col">
+        <div className="px-3 pt-3 pb-1">
+          <a href="/household" className="-ml-1 flex w-fit items-center gap-1 text-accent active:opacity-60">
             <BackChevron />
             <span className="text-[16px]">Household</span>
           </a>
         </div>
 
-        <div className="mb-4 px-1">
+        <header className="px-5 pt-1 pb-3">
+          <h1 className="text-[28px] font-bold tracking-tight text-text-1">Bins</h1>
           <p className="text-[13px] text-text-2">Fixed collection schedule. Home reminders show the day before.</p>
-        </div>
+        </header>
 
-        <div className="flex flex-col gap-3">
+        <div className="mx-4 flex flex-col gap-3">
           {bins.map(bin => {
             const days = daysUntil(bin.next)
             const colour = BIN_COLOURS[bin.colour]?.bg ?? '#6B7280'
             const nextStr = formatLongDate(bin.next)
-            const reminder = new Date(bin.next.getFullYear(), bin.next.getMonth(), bin.next.getDate() - 1)
+            const reminderStr = formatLongDate(getBinReminderDate(bin.next))
             const putOut = days <= 1
 
             return (
@@ -216,11 +199,9 @@ export function BinsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-[16px] font-semibold text-text-1">{bin.name}</p>
-                    <p className="text-[12.5px] text-text-2">
-                      {bin.intervalWeeks === 1 ? 'Weekly' : `Every ${bin.intervalWeeks} weeks`}
-                    </p>
+                    <p className="text-[12.5px] text-text-2">{describeSchedule(bin.intervalWeeks, bin.next)}</p>
                     <p className="mt-0.5 text-[12.5px] text-text-2">Next: {nextStr}</p>
-                    <p className="mt-0.5 text-[12.5px] text-text-2">Reminder: {formatLongDate(reminder)}</p>
+                    <p className="mt-0.5 text-[12.5px] text-text-2">Reminder: {reminderStr}</p>
                   </div>
                   <span className={`shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-bold ${putOut ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>
                     {whenLabel(days)}
@@ -230,6 +211,7 @@ export function BinsPage() {
             )
           })}
         </div>
+        <div className="h-4" />
       </div>
     </ScreenShell>
   )

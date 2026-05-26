@@ -154,6 +154,28 @@ app.get('/api/watch/initial', async (request, reply) => {
   })
 })
 
+app.get('/api/watch/tonight', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const followedShows = await db.query.items.findMany({
+    where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
+    columns: { title: true, metadata: true },
+  })
+  const tonight = await getTodayMatches(followedShows.map(show => ({
+    title: show.title,
+    channel: typeof show.metadata?.channel === 'string' ? show.metadata.channel : null,
+  })), new Date())
+
+  return reply.send(tonight.map(programme => ({
+    title: programme.title,
+    channel: channelName(programme.channelId),
+    airtime: formatAirtime(programme.startsAt),
+    channelId: programme.channelId,
+    atMs: programme.startsAt.getTime(),
+  })))
+})
+
 app.get('/api/watch/grid/:date', async (request, reply) => {
   const session = await getSession(request)
   if (!session) return reply.status(401).send({ error: 'Unauthorized' })
@@ -387,6 +409,10 @@ function getMainChannelDefs() {
 
 function channelName(feedId: string) {
   return channelById.get(feedId)?.name ?? feedId
+}
+
+function formatAirtime(date: Date) {
+  return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
 }
 
 function ymd(date: Date) {

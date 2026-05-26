@@ -7,6 +7,7 @@ type Task = { id: string; title: string; dueDate: Date; listId: string | null; a
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
 type CalEvent = { id: string; title: string; startsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
+type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null; color: string }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string }
@@ -32,6 +33,7 @@ const STATIC_BIN_SCHEDULES = [
   { id: 'green-bin', name: 'Green bin', colour: 'green', firstCollectionDate: '2026-06-02', intervalWeeks: 2 },
   { id: 'hygiene-nappy', name: 'Hygiene and nappy waste bag', colour: 'pink', firstCollectionDate: '2026-06-03', intervalWeeks: 2 },
 ]
+const TONIGHT_CACHE_KEY = 'homeos:dashboard-tonight:v1'
 
 function toDate(value: string | number | Date | null | undefined) {
   if (!value) return null
@@ -67,6 +69,25 @@ function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number
   const intervalDays = intervalWeeks * 7
   while (next < today) next.setDate(next.getDate() + intervalDays)
   return next
+}
+
+function loadTonightCache(): TonightShow[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(TONIGHT_CACHE_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    return Array.isArray(parsed?.shows) ? parsed.shows : []
+  } catch {
+    return []
+  }
+}
+
+function saveTonightCache(shows: TonightShow[]) {
+  try {
+    window.localStorage.setItem(TONIGHT_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), shows }))
+  } catch {
+    // Cache is best-effort only.
+  }
 }
 
 function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Renewal[], now: Date): DayGroup[] {
@@ -529,26 +550,16 @@ export function DashboardPage() {
         return [{ id: record.id, title: record.title, label: record.renewalLabel ?? null, date: renewalDate, href: `/life/admin/${record.id}` }]
       })
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-    const binsSource = state.data.bins.filter(bin => bin.active !== false && bin.anchorDate)
-    const bins = (binsSource.length > 0 ? binsSource.map(bin => ({
-      id: bin.id,
-      name: bin.name,
-      colour: bin.colour,
-      nextCollection: getNextRecurringDate(bin.anchorDate as string, Math.max(1, bin.intervalWeeks)),
-    })) : STATIC_BIN_SCHEDULES.map(bin => ({
+    const bins = STATIC_BIN_SCHEDULES.map(bin => ({
       id: bin.id,
       name: bin.name,
       colour: bin.colour,
       nextCollection: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks),
-    }))).filter(bin => dayDiffFrom(bin.nextCollection.getTime(), now) === 1)
+    })).filter(bin => dayDiffFrom(bin.nextCollection.getTime(), now) === 1)
     const pins = state.data.items
       .filter(item => item.type === 'note' && item.pinned && item.status === 'active' && !item.deletedAt)
       .sort((a, b) => new Date(b.pinnedAt ?? b.updatedAt).getTime() - new Date(a.pinnedAt ?? a.updatedAt).getTime())
       .map(item => ({ id: item.id, title: item.title, body: item.body }))
-    const watch = state.data.items
-      .filter(item => item.type === 'watchlist_tv' && item.status === 'active' && !item.deletedAt)
-      .slice(0, 0)
-      .map(item => ({ title: item.title, channel: 'TV', airtime: 'Tonight', channelId: String(item.metadata?.channel ?? ''), atMs: now.getTime() }))
 
     return {
       user: state.data.users[0],
@@ -561,16 +572,33 @@ export function DashboardPage() {
       renewals: renewals as Renewal[],
       bins: bins as BinWithDate[],
       pins,
-      tonightShows: watch,
     }
   })
   const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
+  const [tonightShows, setTonightShows] = useState<TonightShow[]>(() => loadTonightCache())
   const now = useMemo(() => new Date(), [])
   const firstName = snapshot.user?.name?.split(' ')[0] ?? 'Dan'
   const hour = now.getHours()
   const greeting = hour < 12 ? `Good morning, ${firstName}` : hour < 17 ? `Good afternoon, ${firstName}` : `Good evening, ${firstName}`
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
   const hasAlerts = snapshot.bins.length > 0 || snapshot.inboxCount > 0
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch('/api/watch/tonight', { credentials: 'include', cache: 'no-store' })
+      .then(response => response.ok ? response.json() as Promise<TonightShow[]> : [])
+      .then(shows => {
+        if (cancelled || !Array.isArray(shows)) return
+        setTonightShows(shows)
+        saveTonightCache(shows)
+      })
+      .catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function toggleShopItem(item: ShoppingItem) {
     const willCheck = !checkedShopIds.has(item.id)
@@ -644,7 +672,7 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      {snapshot.tonightShows.length > 0 ? <OnTonightCard shows={snapshot.tonightShows} /> : null}
+      {tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null}
 
       <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} />
 
