@@ -206,12 +206,97 @@ function AutoIcon() {
   )
 }
 
+type NotificationPreferences = {
+  reminders: { enabled: boolean }
+  taskDue: { enabled: boolean }
+  tasksDaily: { enabled: boolean; time: string }
+  bins: { enabled: boolean; time: string }
+  tv: {
+    enabled: boolean
+    individualEnabled: boolean
+    leadMinutes: number
+    summaryEnabled: boolean
+    summaryTime: string
+  }
+}
+
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  reminders: { enabled: true },
+  taskDue: { enabled: true },
+  tasksDaily: { enabled: true, time: '08:30' },
+  bins: { enabled: true, time: '19:00' },
+  tv: {
+    enabled: true,
+    individualEnabled: true,
+    leadMinutes: 30,
+    summaryEnabled: false,
+    summaryTime: '18:00',
+  },
+}
+const TV_LEAD_OPTIONS = [10, 15, 30, 45, 60, 90, 120]
+
+function settingObject(value: unknown) {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+}
+
+function asBool(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function asTime(value: unknown, fallback: string) {
+  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value) ? value : fallback
+}
+
+function asLeadMinutes(value: unknown, fallback: number) {
+  const next = typeof value === 'number' ? value : Number(value)
+  return TV_LEAD_OPTIONS.includes(next) ? next : fallback
+}
+
+function notificationPreferencesFromSettings(settings: Record<string, unknown> | null | undefined): NotificationPreferences {
+  const raw = settingObject(settings?.notificationPreferences)
+  const reminders = settingObject(raw.reminders)
+  const taskDue = settingObject(raw.taskDue)
+  const tasksDaily = settingObject(raw.tasksDaily)
+  const bins = settingObject(raw.bins)
+  const tv = settingObject(raw.tv)
+
+  return {
+    reminders: { enabled: asBool(reminders.enabled, DEFAULT_NOTIFICATION_PREFERENCES.reminders.enabled) },
+    taskDue: { enabled: asBool(taskDue.enabled, DEFAULT_NOTIFICATION_PREFERENCES.taskDue.enabled) },
+    tasksDaily: {
+      enabled: asBool(tasksDaily.enabled, DEFAULT_NOTIFICATION_PREFERENCES.tasksDaily.enabled),
+      time: asTime(tasksDaily.time, DEFAULT_NOTIFICATION_PREFERENCES.tasksDaily.time),
+    },
+    bins: {
+      enabled: asBool(bins.enabled, DEFAULT_NOTIFICATION_PREFERENCES.bins.enabled),
+      time: asTime(bins.time, DEFAULT_NOTIFICATION_PREFERENCES.bins.time),
+    },
+    tv: {
+      enabled: asBool(tv.enabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.enabled),
+      individualEnabled: asBool(tv.individualEnabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.individualEnabled),
+      leadMinutes: asLeadMinutes(tv.leadMinutes, DEFAULT_NOTIFICATION_PREFERENCES.tv.leadMinutes),
+      summaryEnabled: asBool(tv.summaryEnabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.summaryEnabled),
+      summaryTime: asTime(tv.summaryTime, DEFAULT_NOTIFICATION_PREFERENCES.tv.summaryTime),
+    },
+  }
+}
+
+function Switch({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${checked ? 'bg-accent' : 'bg-surface-2'}`}>
+      <span className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_2px_6px_rgba(0,0,0,0.22)] transition-transform ${checked ? 'translate-x-[21px]' : 'translate-x-[2px]'}`} />
+    </button>
+  )
+}
+
 function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<'menu' | 'appearance' | 'password'>('menu')
+  const [view, setView] = useState<'menu' | 'appearance' | 'notifications' | 'password'>('menu')
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem('theme') as ThemeMode | null) ?? 'auto')
   const [isDark, setIsDark] = useState(() => actualThemeIsDark())
   const [accent, setAccent] = useState(() => currentAccent())
+  const householdRow = useAppState(state => state.data.household[0] ?? null)
+  const notificationPreferences = notificationPreferencesFromSettings(householdRow?.settings)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -245,6 +330,41 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
     if (!normalized) return
     setAccent(normalized)
     applyAccent(normalized)
+  }
+
+  async function saveNotificationPreferences(next: NotificationPreferences) {
+    const householdId = householdRow?.id ?? 'default'
+    const now = new Date().toISOString()
+    const payload = {
+      id: householdId,
+      name: householdRow?.name ?? 'Home',
+      settings: {
+        ...(householdRow?.settings ?? {}),
+        notificationPreferences: next,
+      },
+      createdAt: householdRow?.createdAt ?? now,
+    }
+
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'household.upsert',
+      entityType: 'household',
+      entityId: householdId,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        household: prev.data.household.some(row => row.id === householdId)
+          ? prev.data.household.map(row => row.id === householdId ? { ...row, ...payload } : row)
+          : [...prev.data.household, payload],
+      },
+    }))
+  }
+
+  function updateNotificationPreferences(recipe: (current: NotificationPreferences) => NotificationPreferences) {
+    void saveNotificationPreferences(recipe(notificationPreferences))
   }
 
   async function handleLogout() {
@@ -305,6 +425,12 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       <span className="h-4 w-4 rounded-full border-2 border-white/70" style={{ background: accent }} />
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
                     </button>
+                    <button onClick={() => setView('notifications')} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-text-2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                      <span className="flex-1 text-[15px] font-medium text-text-1">Notification Centre</span>
+                      <span className="text-[13px] text-text-2">{notificationPreferences.tv.summaryEnabled ? 'Summary' : 'On'}</span>
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+                    </button>
                     <button onClick={() => setView('password')} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-text-2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                       <span className="flex-1 text-[15px] font-medium text-text-1">Change Password</span>
@@ -357,6 +483,96 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                 </>
               ) : null}
 
+              {view === 'notifications' ? (
+                <>
+                  <div className="mb-1 flex items-center justify-between px-1 py-2">
+                    <button onClick={() => setView('menu')} className="text-[16px] text-accent active:opacity-60">Back</button>
+                    <span className="text-[16px] font-semibold text-text-1">Notifications</span>
+                    <span className="w-10" />
+                  </div>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    <div className="flex items-center gap-3 px-4 py-3.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-semibold text-text-1">Vault reminders</p>
+                        <p className="mt-0.5 text-[12px] text-text-2">Life admin dates and follow-ups</p>
+                      </div>
+                      <Switch checked={notificationPreferences.reminders.enabled} onChange={enabled => updateNotificationPreferences(current => ({ ...current, reminders: { enabled } }))} />
+                    </div>
+                    <div className="flex items-center gap-3 border-t border-border px-4 py-3.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-semibold text-text-1">Timed tasks</p>
+                        <p className="mt-0.5 text-[12px] text-text-2">At the exact due time</p>
+                      </div>
+                      <Switch checked={notificationPreferences.taskDue.enabled} onChange={enabled => updateNotificationPreferences(current => ({ ...current, taskDue: { enabled } }))} />
+                    </div>
+                    <div className="border-t border-border px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold text-text-1">Tasks due today</p>
+                          <p className="mt-0.5 text-[12px] text-text-2">Daily summary</p>
+                        </div>
+                        <Switch checked={notificationPreferences.tasksDaily.enabled} onChange={enabled => updateNotificationPreferences(current => ({ ...current, tasksDaily: { ...current.tasksDaily, enabled } }))} />
+                      </div>
+                      <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
+                        <span className="text-[13px] font-semibold text-text-2">Time</span>
+                        <input type="time" value={notificationPreferences.tasksDaily.time} disabled={!notificationPreferences.tasksDaily.enabled} onChange={event => updateNotificationPreferences(current => ({ ...current, tasksDaily: { ...current.tasksDaily, time: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                      </label>
+                    </div>
+                    <div className="border-t border-border px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold text-text-1">Bin day</p>
+                          <p className="mt-0.5 text-[12px] text-text-2">The day before collection</p>
+                        </div>
+                        <Switch checked={notificationPreferences.bins.enabled} onChange={enabled => updateNotificationPreferences(current => ({ ...current, bins: { ...current.bins, enabled } }))} />
+                      </div>
+                      <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
+                        <span className="text-[13px] font-semibold text-text-2">Time</span>
+                        <input type="time" value={notificationPreferences.bins.time} disabled={!notificationPreferences.bins.enabled} onChange={event => updateNotificationPreferences(current => ({ ...current, bins: { ...current.bins, time: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    <div className="flex items-center gap-3 px-4 py-3.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-semibold text-text-1">TV reminders</p>
+                        <p className="mt-0.5 text-[12px] text-text-2">Shows from your following list</p>
+                      </div>
+                      <Switch checked={notificationPreferences.tv.enabled} onChange={enabled => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, enabled } }))} />
+                    </div>
+                    <div className="border-t border-border px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold text-text-1">Before each show</p>
+                          <p className="mt-0.5 text-[12px] text-text-2">Individual reminder</p>
+                        </div>
+                        <Switch checked={notificationPreferences.tv.individualEnabled} disabled={!notificationPreferences.tv.enabled} onChange={individualEnabled => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, individualEnabled } }))} />
+                      </div>
+                      <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
+                        <span className="text-[13px] font-semibold text-text-2">Notice</span>
+                        <select value={notificationPreferences.tv.leadMinutes} disabled={!notificationPreferences.tv.enabled || !notificationPreferences.tv.individualEnabled} onChange={event => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, leadMinutes: Number(event.target.value) } }))} className="bg-transparent text-right text-[15px] font-semibold text-text-1 outline-none disabled:opacity-40">
+                          {TV_LEAD_OPTIONS.map(minutes => <option key={minutes} value={minutes}>{minutes} min</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="border-t border-border px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold text-text-1">Evening summary</p>
+                          <p className="mt-0.5 text-[12px] text-text-2">One notification for tonight</p>
+                        </div>
+                        <Switch checked={notificationPreferences.tv.summaryEnabled} disabled={!notificationPreferences.tv.enabled} onChange={summaryEnabled => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, summaryEnabled } }))} />
+                      </div>
+                      <label className="mt-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2">
+                        <span className="text-[13px] font-semibold text-text-2">Time</span>
+                        <input type="time" value={notificationPreferences.tv.summaryTime} disabled={!notificationPreferences.tv.enabled || !notificationPreferences.tv.summaryEnabled} onChange={event => updateNotificationPreferences(current => ({ ...current, tv: { ...current.tv, summaryTime: event.target.value } }))} className="bg-transparent text-right text-[15px] text-text-1 outline-none disabled:opacity-40" />
+                      </label>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
               {view === 'password' ? (
                 <>
                   <div className="mb-1 flex items-center justify-between px-1 py-2">
@@ -385,7 +601,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
             </div>
             {view !== 'password' ? (
               <div className="shrink-0 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+12px)]">
-                <button onClick={close} className="h-12 w-full rounded-2xl bg-surface text-[16px] font-semibold text-accent active:opacity-70">{view === 'appearance' ? 'Done' : 'Cancel'}</button>
+                <button onClick={close} className="h-12 w-full rounded-2xl bg-surface text-[16px] font-semibold text-accent active:opacity-70">{view === 'appearance' || view === 'notifications' ? 'Done' : 'Cancel'}</button>
               </div>
             ) : null}
           </div>

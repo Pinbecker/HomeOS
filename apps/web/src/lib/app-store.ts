@@ -6,6 +6,7 @@ type Household = {
   id: string
   name: string
   settings?: Record<string, unknown> | null
+  createdAt?: string | number | Date
 }
 type HouseholdMember = { householdId: string; userId: string; role: string }
 type List = {
@@ -265,6 +266,11 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
   const next = { ...data }
 
   switch (mutation.entityType) {
+    case 'household':
+      next.household = mutation.operation === 'delete'
+        ? removeCollection(next.household, mutation.entityId)
+        : mergeCollection(next.household, mutation.payload as Household)
+      break
     case 'record':
       next.records = mutation.operation === 'delete'
         ? removeCollection(next.records, mutation.entityId)
@@ -324,6 +330,11 @@ function applyChange(change: SyncChange) {
     const next = { ...prev, ready: true, syncing: false, error: null, data: { ...prev.data } }
 
     switch (change.entityType) {
+      case 'household':
+        next.data.household = change.operation === 'delete'
+          ? removeCollection(next.data.household, change.entityId)
+          : mergeCollection(next.data.household, change.payload as Household)
+        break
       case 'record':
         next.data.records = change.operation === 'delete'
           ? removeCollection(next.data.records, change.entityId)

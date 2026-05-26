@@ -481,7 +481,7 @@ setInterval(() => {
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))
-}, 60 * 60 * 1000)
+}, 60_000)
 
 setTimeout(() => {
   sweepOrphanedRecordReminders().catch(error => app.log.error(error))

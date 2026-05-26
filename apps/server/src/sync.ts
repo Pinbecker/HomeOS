@@ -194,6 +194,10 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
   }
 
   switch (mutation.entityType) {
+    case 'household': {
+      const row = await db.query.household.findFirst({ where: eq(household.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     case 'record': {
       const row = await db.query.records.findFirst({ where: eq(records.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
@@ -233,6 +237,9 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
 
 async function applyDomainMutation(userId: string, mutation: SyncMutation) {
   switch (mutation.name) {
+    case 'household.upsert':
+      await upsertHousehold(mutation)
+      break
     case 'list.upsert':
       await upsertList(mutation)
       break
@@ -320,6 +327,26 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       break
     default:
       break
+  }
+}
+
+async function upsertHousehold(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.household.findFirst({ where: eq(household.id, mutation.entityId) })
+
+  if (existing) {
+    await db.update(household).set({
+      name: (payload.name as string | undefined) ?? existing.name,
+      settings: payload.settings === undefined ? existing.settings : (payload.settings as Record<string, unknown> | null),
+    }).where(eq(household.id, mutation.entityId))
+  } else {
+    await db.insert(household).values({
+      id: mutation.entityId,
+      name: (payload.name as string | undefined) ?? 'Home',
+      settings: (payload.settings as Record<string, unknown> | null | undefined) ?? null,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
   }
 }
 

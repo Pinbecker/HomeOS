@@ -1,13 +1,41 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm'
 import { db } from '@homeos/db'
-import { items, notifications, reminders, tvProgrammes, users } from '@homeos/db/schema'
+import { household, items, notifications, reminders, tvProgrammes, users } from '@homeos/db/schema'
 import { sendPushToAll, sendPushToUser, type PushPayload } from './push'
 
 type ChangeRecorder = (change: { entityType: string; entityId: string; operation: 'upsert' | 'delete'; payload: Record<string, unknown> | null }) => Promise<unknown>
+type NotificationPreferences = {
+  reminders: { enabled: boolean }
+  taskDue: { enabled: boolean }
+  tasksDaily: { enabled: boolean; time: string }
+  bins: { enabled: boolean; time: string }
+  tv: {
+    enabled: boolean
+    individualEnabled: boolean
+    leadMinutes: number
+    summaryEnabled: boolean
+    summaryTime: string
+  }
+}
 
 const TASK_DUE_SENT_FOR_KEY = 'taskDueNotificationSentFor'
 const TASK_DUE_SENT_AT_KEY = 'taskDueNotificationSentAt'
+const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
+const LONDON_TIME_ZONE = 'Europe/London'
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  reminders: { enabled: true },
+  taskDue: { enabled: true },
+  tasksDaily: { enabled: true, time: '08:30' },
+  bins: { enabled: true, time: '19:00' },
+  tv: {
+    enabled: true,
+    individualEnabled: true,
+    leadMinutes: 30,
+    summaryEnabled: false,
+    summaryTime: '18:00',
+  },
+}
 const BIN_SCHEDULES = [
   { id: 'black-bin', name: 'Black bin', colour: 'black', firstCollectionDate: '2026-05-27', intervalWeeks: 3 },
   { id: 'recycling-food', name: 'Recycling containers and food bin', colour: 'blue', firstCollectionDate: '2026-05-27', intervalWeeks: 1 },
@@ -19,8 +47,76 @@ function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
-function ymd(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+function londonParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const value = (type: string) => parts.find(part => part.type === type)?.value ?? '00'
+  return {
+    dateKey: `${value('year')}-${value('month')}-${value('day')}`,
+    time: `${value('hour')}:${value('minute')}`,
+  }
+}
+
+function isAtOrAfterLocalTime(target: string, now = new Date()) {
+  return londonParts(now).time >= target
+}
+
+function toTime(value: unknown, fallback: string) {
+  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value) ? value : fallback
+}
+
+function toBool(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function toLeadMinutes(value: unknown, fallback: number) {
+  const number = typeof value === 'number' ? value : Number(value)
+  if (![10, 15, 30, 45, 60, 90, 120].includes(number)) return fallback
+  return number
+}
+
+function mergeNotificationPreferences(raw: unknown): NotificationPreferences {
+  const source = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const reminders = source.reminders && typeof source.reminders === 'object' ? source.reminders as Record<string, unknown> : {}
+  const taskDue = source.taskDue && typeof source.taskDue === 'object' ? source.taskDue as Record<string, unknown> : {}
+  const tasksDaily = source.tasksDaily && typeof source.tasksDaily === 'object' ? source.tasksDaily as Record<string, unknown> : {}
+  const bins = source.bins && typeof source.bins === 'object' ? source.bins as Record<string, unknown> : {}
+  const tv = source.tv && typeof source.tv === 'object' ? source.tv as Record<string, unknown> : {}
+
+  return {
+    reminders: { enabled: toBool(reminders.enabled, DEFAULT_NOTIFICATION_PREFERENCES.reminders.enabled) },
+    taskDue: { enabled: toBool(taskDue.enabled, DEFAULT_NOTIFICATION_PREFERENCES.taskDue.enabled) },
+    tasksDaily: {
+      enabled: toBool(tasksDaily.enabled, DEFAULT_NOTIFICATION_PREFERENCES.tasksDaily.enabled),
+      time: toTime(tasksDaily.time, DEFAULT_NOTIFICATION_PREFERENCES.tasksDaily.time),
+    },
+    bins: {
+      enabled: toBool(bins.enabled, DEFAULT_NOTIFICATION_PREFERENCES.bins.enabled),
+      time: toTime(bins.time, DEFAULT_NOTIFICATION_PREFERENCES.bins.time),
+    },
+    tv: {
+      enabled: toBool(tv.enabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.enabled),
+      individualEnabled: toBool(tv.individualEnabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.individualEnabled),
+      leadMinutes: toLeadMinutes(tv.leadMinutes, DEFAULT_NOTIFICATION_PREFERENCES.tv.leadMinutes),
+      summaryEnabled: toBool(tv.summaryEnabled, DEFAULT_NOTIFICATION_PREFERENCES.tv.summaryEnabled),
+      summaryTime: toTime(tv.summaryTime, DEFAULT_NOTIFICATION_PREFERENCES.tv.summaryTime),
+    },
+  }
+}
+
+async function notificationPreferences() {
+  const row = await db.query.household.findFirst({ where: eq(household.id, HOUSEHOLD_ID), columns: { settings: true } })
+  const raw = row?.settings && typeof row.settings === 'object'
+    ? (row.settings as { notificationPreferences?: unknown }).notificationPreferences
+    : null
+  return mergeNotificationPreferences(raw)
 }
 
 function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number) {
@@ -99,6 +195,9 @@ async function recordNotificationForUser(userId: string, title: string, body: st
 }
 
 export async function dispatchReminders(recordChange: ChangeRecorder) {
+  const prefs = await notificationPreferences()
+  if (!prefs.reminders.enabled) return
+
   const now = new Date()
   const due = await db.query.reminders.findMany({
     where: and(isNull(reminders.dispatchedAt), isNull(reminders.dismissedAt), lte(reminders.triggerAt, now)),
@@ -129,6 +228,9 @@ export async function dispatchReminders(recordChange: ChangeRecorder) {
 }
 
 export async function dispatchDailyTaskNotifications() {
+  const prefs = await notificationPreferences()
+  if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) return
+
   const now = new Date()
   const today = startOfDay(now)
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
@@ -144,7 +246,7 @@ export async function dispatchDailyTaskNotifications() {
   })
   if (dueTasks.length === 0) return
 
-  const todayKey = ymd(today)
+  const todayKey = londonParts(now).dateKey
   const assigned = dueTasks.filter(task => task.assigneeId)
   const unassigned = dueTasks.filter(task => !task.assigneeId)
   const byAssignee = new Map<string, string[]>()
@@ -169,6 +271,9 @@ export async function dispatchDailyTaskNotifications() {
 }
 
 export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder) {
+  const prefs = await notificationPreferences()
+  if (!prefs.taskDue.enabled) return
+
   const now = new Date()
   const lookbackStart = new Date(now.getTime() - 10 * 60_000)
   const dueTasks = await db.query.items.findMany({
@@ -199,18 +304,24 @@ export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder)
 }
 
 export async function dispatchBinNotifications() {
+  const prefs = await notificationPreferences()
+  if (!prefs.bins.enabled || !isAtOrAfterLocalTime(prefs.bins.time)) return
+
   const tomorrow = BIN_SCHEDULES
     .map(bin => ({ ...bin, next: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks) }))
     .filter(bin => daysUntil(bin.next) === 1)
   if (tomorrow.length === 0) return
 
   const names = tomorrow.map(bin => bin.name).join(' & ')
-  const entityId = `${ymd(startOfDay(new Date(Date.now() + 86_400_000)))}:${tomorrow.map(bin => bin.id).join(',')}`
+  const entityId = `${londonParts(new Date(Date.now() + 86_400_000)).dateKey}:${tomorrow.map(bin => bin.id).join(',')}`
   const shouldSend = await recordNotificationForAll('Bin day tomorrow', names, 'bin_day', entityId)
   if (shouldSend) await sendPushToAll({ title: 'Bin day tomorrow', body: names, url: '/' })
 }
 
 export async function dispatchTvNotifications() {
+  const prefs = await notificationPreferences()
+  if (!prefs.tv.enabled || (!prefs.tv.individualEnabled && !prefs.tv.summaryEnabled)) return
+
   const followed = await db.query.items.findMany({
     where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
     columns: { title: true, metadata: true },
@@ -224,17 +335,32 @@ export async function dispatchTvNotifications() {
     orderBy: (table, { asc }) => [asc(table.startsAt)],
   })
   const wanted = new Map(followed.map(show => [show.title.toLowerCase(), typeof show.metadata?.channel === 'string' ? show.metadata.channel : null]))
-  const today = ymd(now)
-
-  for (const programme of programmes) {
+  const matches = programmes.filter(programme => {
     const preferredChannel = wanted.get(programme.title.toLowerCase())
-    if (preferredChannel === undefined) continue
+    if (preferredChannel === undefined) return false
     const channel = channelName(programme.channelId)
-    if (preferredChannel && preferredChannel !== channel) continue
+    return !preferredChannel || preferredChannel === channel
+  })
+  const today = londonParts(now).dateKey
 
-    const entityId = `${programme.title.toLowerCase()}:${today}`
-    const body = `${programme.title} - on tonight at ${formatAirtime(programme.startsAt)} on ${channel}`
-    const shouldSend = await recordNotificationForAll('On tonight', body, 'tv_tonight', entityId)
+  if (prefs.tv.summaryEnabled && isAtOrAfterLocalTime(prefs.tv.summaryTime) && matches.length > 0) {
+    const lines = matches.slice(0, 4).map(programme => `${programme.title} ${formatAirtime(programme.startsAt)}`)
+    const extra = matches.length > 4 ? ` +${matches.length - 4} more` : ''
+    const body = `${lines.join(', ')}${extra}`
+    const shouldSend = await recordNotificationForAll('On tonight', body, 'tv_tonight_summary', today)
     if (shouldSend) await sendPushToAll({ title: 'On tonight', body, url: '/watch' })
+  }
+
+  if (!prefs.tv.individualEnabled) return
+
+  const leadStart = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 - 60_000)
+  const leadEnd = new Date(now.getTime() + prefs.tv.leadMinutes * 60_000 + 60_000)
+  for (const programme of matches) {
+    if (programme.startsAt < leadStart || programme.startsAt > leadEnd) continue
+    const channel = channelName(programme.channelId)
+    const entityId = `${programme.title.toLowerCase()}:${today}:${programme.startsAt.getTime()}`
+    const body = `${programme.title} - starts at ${formatAirtime(programme.startsAt)} on ${channel}`
+    const shouldSend = await recordNotificationForAll(programme.title, body, 'tv_tonight', entityId)
+    if (shouldSend) await sendPushToAll({ title: programme.title, body, url: '/watch' })
   }
 }
