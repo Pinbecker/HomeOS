@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
+import { readUserSettings, saveUserSettings, settingObject } from '../lib/user-preferences'
 import { ScreenShell } from './shell'
 
 type CalEvent = {
@@ -355,6 +356,8 @@ function CalendarPageInner() {
   const todayKey = localDayKey(today)
   const snapshot = useAppState(state => {
     const listColors = new Map(state.data.lists.map(list => [list.id, list.color ?? '#FF9500']))
+    const personalSettings = readUserSettings(state.data.household[0]?.settings ?? null, sessionUser?.id)
+    const savedCalendarColor = settingObject(personalSettings.calendar).color
     const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
     const userFeedIds = new Set(userFeeds.map(feed => feed.id))
     const events: CalEvent[] = state.data.calendarEvents
@@ -383,6 +386,7 @@ function CalendarPageInner() {
     return {
       householdId: state.data.household[0]?.id ?? 'default',
       userId: sessionUser?.id ?? 'system',
+      calendarColor: typeof savedCalendarColor === 'string' ? savedCalendarColor : null,
       events,
       tasks,
       feeds: userFeeds as CalFeed[],
@@ -407,10 +411,10 @@ function CalendarPageInner() {
 
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
   useEffect(() => {
-    const saved = localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? localStorage.getItem('homeos:cal-color')
+    const saved = snapshot.calendarColor ?? localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? localStorage.getItem('homeos:cal-color')
     const hex = normalizeHex(saved)
     if (hex) setCalColor(hex)
-  }, [sessionUser?.id])
+  }, [sessionUser?.id, snapshot.calendarColor])
   useEffect(() => {
     async function syncGoogleNow() {
       if (googleSyncRef.current || document.visibilityState !== 'visible' || !navigator.onLine) return
@@ -1006,7 +1010,19 @@ function CalendarPageInner() {
       {calendarsOpen ? (
         <CalendarsSheet
           calColor={calColor}
-          onCalColorChange={color => { setCalColor(color); localStorage.setItem(`homeos:user:${snapshot.userId}:cal-color`, color) }}
+          onCalColorChange={color => {
+            setCalColor(color)
+            localStorage.setItem(`homeos:user:${snapshot.userId}:cal-color`, color)
+            if (snapshot.userId !== 'system') {
+              void saveUserSettings(snapshot.userId, current => ({
+                ...current,
+                calendar: {
+                  ...settingObject(current.calendar),
+                  color,
+                },
+              }))
+            }
+          }}
           feeds={snapshot.feeds}
           householdId={snapshot.householdId}
           userId={snapshot.userId}

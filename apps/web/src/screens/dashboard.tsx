@@ -6,6 +6,7 @@ import { SwipeRow } from '../components/swipe-row'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
+import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
 import { ScreenShell } from './shell'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
@@ -241,11 +242,6 @@ function settingObject(value: unknown) {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
-function userSettings(settings: Record<string, unknown> | null | undefined, userId: string | null | undefined) {
-  const all = settingObject(settings?.userSettings)
-  return settingObject(userId ? all[userId] : null)
-}
-
 function asBool(value: unknown, fallback: boolean) {
   return typeof value === 'boolean' ? value : fallback
 }
@@ -330,7 +326,8 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [isDark, setIsDark] = useState(() => actualThemeIsDark())
   const [accent, setAccent] = useState(() => currentAccent())
   const householdRow = useAppState(state => state.data.household[0] ?? null)
-  const personalSettings = userSettings(householdRow?.settings, currentUser?.id)
+  const personalSettings = readUserSettings(householdRow?.settings, currentUser?.id)
+  const syncedAppearance = settingObject(personalSettings.appearance)
   const notificationPreferences = notificationPreferencesFromSettings(personalSettings.notificationPreferences as Record<string, unknown> | null | undefined)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -340,6 +337,16 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => watchAutoTheme(() => setIsDark(actualThemeIsDark())), [])
+
+  useEffect(() => {
+    const syncedTheme = syncedAppearance.theme
+    const syncedAccent = normalizeHex(typeof syncedAppearance.accentHex === 'string' ? syncedAppearance.accentHex : null)
+    if (syncedTheme === 'light' || syncedTheme === 'auto' || syncedTheme === 'dark') {
+      setThemeMode(syncedTheme)
+    }
+    if (syncedAccent) setAccent(syncedAccent)
+    setIsDark(actualThemeIsDark())
+  }, [syncedAppearance.accentHex, syncedAppearance.theme])
 
   function close() {
     setOpen(false)
@@ -358,6 +365,16 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
     setThemeMode(mode)
     applyThemeMode(mode)
     setIsDark(actualThemeIsDark())
+    if (currentUser) {
+      void saveUserSettings(currentUser.id, current => ({
+        ...current,
+        appearance: {
+          ...settingObject(current.appearance),
+          theme: mode,
+          accentHex: accent,
+        },
+      }))
+    }
   }
 
   function pickAccent(hex: string) {
@@ -365,44 +382,21 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
     if (!normalized) return
     setAccent(normalized)
     applyAccent(normalized)
+    if (currentUser) {
+      void saveUserSettings(currentUser.id, current => ({
+        ...current,
+        appearance: {
+          ...settingObject(current.appearance),
+          theme: themeMode,
+          accentHex: normalized,
+        },
+      }))
+    }
   }
 
   async function saveNotificationPreferences(next: NotificationPreferences) {
     if (!currentUser) return
-    const householdId = householdRow?.id ?? 'default'
-    const now = new Date().toISOString()
-    const payload = {
-      id: householdId,
-      name: householdRow?.name ?? 'Home',
-      settings: {
-        ...(householdRow?.settings ?? {}),
-        userSettings: {
-          ...settingObject(householdRow?.settings?.userSettings),
-          [currentUser.id]: {
-            ...personalSettings,
-            notificationPreferences: next,
-          },
-        },
-      },
-      createdAt: householdRow?.createdAt ?? now,
-    }
-
-    await enqueueMutation({
-      id: makeId('mutation'),
-      name: 'household.upsert',
-      entityType: 'household',
-      entityId: householdId,
-      operation: 'upsert',
-      payload,
-    }, prev => ({
-      ...prev,
-      data: {
-        ...prev.data,
-        household: prev.data.household.some(row => row.id === householdId)
-          ? prev.data.household.map(row => row.id === householdId ? { ...row, ...payload } : row)
-          : [...prev.data.household, payload],
-      },
-    }))
+    await saveUserSettings(currentUser.id, current => ({ ...current, notificationPreferences: next }))
   }
 
   function updateNotificationPreferences(recipe: (current: NotificationPreferences) => NotificationPreferences) {
@@ -928,7 +922,10 @@ export function DashboardPage() {
     const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
     const lists = state.data.lists
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
-    const defaultCalendarColor = normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? window.localStorage.getItem('homeos:cal-color') : null) ?? '#007AFF'
+    const savedCalendarColor = settingObject(readUserSettings(state.data.household[0]?.settings ?? null, sessionUser?.id).calendar).color
+    const defaultCalendarColor = normalizeHex(typeof savedCalendarColor === 'string' ? savedCalendarColor : null)
+      ?? normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? window.localStorage.getItem('homeos:cal-color') : null)
+      ?? '#007AFF'
     const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
     const feedColorMap = new Map(userFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
     const shopMap = new Map(lists.filter(list => list.type === 'shopping' && !list.archived).map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))

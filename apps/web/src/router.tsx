@@ -2,8 +2,9 @@ import { createRootRoute, createRoute, createRouter, Outlet, useNavigate } from 
 import { useEffect, useState } from 'react'
 import { PushManager } from './components/push-manager'
 import { ensureBootstrap, setAppUserContext, useAppState } from './lib/app-store'
-import { setAppearanceUserContext } from './lib/appearance'
+import { applySyncedAppearance, currentAccent, currentThemeMode, setAppearanceUserContext } from './lib/appearance'
 import { ensureSession, useSessionState } from './lib/session-store'
+import { readUserSettings, saveUserSettings, settingObject } from './lib/user-preferences'
 import { DashboardPage } from './screens/dashboard'
 import { BottomNav } from './screens/bottom-nav'
 import { CalendarPage } from './screens/calendar'
@@ -19,6 +20,8 @@ import { WatchPage } from './screens/watch'
 
 function RootLayout() {
   const syncState = useAppState(state => state.error ? 'error' : state.syncing ? 'syncing' : 'idle')
+  const appReady = useAppState(state => state.ready)
+  const householdSettings = useAppState(state => state.data.household[0]?.settings ?? null)
   const sessionStatus = useSessionState(state => state.status)
   const sessionUserId = useSessionState(state => state.user?.id ?? null)
   const [syncCollapsed, setSyncCollapsed] = useState(false)
@@ -40,6 +43,41 @@ function RootLayout() {
     ensureBootstrap().catch(() => undefined)
     return undefined
   }, [sessionStatus, sessionUserId])
+
+  useEffect(() => {
+    if (!sessionUserId) return undefined
+    const prefs = readUserSettings(householdSettings, sessionUserId)
+    applySyncedAppearance(prefs.appearance)
+
+    const calendarColor = settingObject(prefs.calendar).color
+    if (typeof calendarColor === 'string') {
+      localStorage.setItem(`homeos:user:${sessionUserId}:cal-color`, calendarColor)
+    }
+    return undefined
+  }, [householdSettings, sessionUserId])
+
+  useEffect(() => {
+    if (!appReady || !sessionUserId) return undefined
+    const prefs = readUserSettings(householdSettings, sessionUserId)
+    const appearance = settingObject(prefs.appearance)
+    const calendar = settingObject(prefs.calendar)
+    const localCalendarColor = localStorage.getItem(`homeos:user:${sessionUserId}:cal-color`) ?? localStorage.getItem('homeos:cal-color')
+
+    if (!appearance.theme || !appearance.accentHex || (!calendar.color && localCalendarColor)) {
+      void saveUserSettings(sessionUserId, current => ({
+        ...current,
+        appearance: {
+          ...settingObject(current.appearance),
+          theme: typeof appearance.theme === 'string' ? appearance.theme : currentThemeMode(),
+          accentHex: typeof appearance.accentHex === 'string' ? appearance.accentHex : currentAccent(),
+        },
+        calendar: localCalendarColor && !calendar.color
+          ? { ...settingObject(current.calendar), color: localCalendarColor }
+          : current.calendar,
+      }))
+    }
+    return undefined
+  }, [appReady, householdSettings, sessionUserId])
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {

@@ -77,6 +77,17 @@ export function applyStoredAppearance() {
   applyAccent(currentAccent())
 }
 
+export function applySyncedAppearance(value: unknown) {
+  const source = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const theme = source.theme
+  const accentHex = normalizeHex(typeof source.accentHex === 'string' ? source.accentHex : null)
+
+  if (theme === 'light' || theme === 'auto' || theme === 'dark') {
+    applyThemeMode(theme)
+  }
+  if (accentHex) applyAccent(accentHex)
+}
+
 export function setAppearanceUserContext(userId: string | null) {
   activeUserId = userId
   applyStoredAppearance()
