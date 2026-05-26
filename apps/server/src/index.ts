@@ -2,9 +2,11 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import Fastify from 'fastify'
 import { fromNodeHeaders } from 'better-auth/node'
-import { sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import { auth } from '@homeos/auth'
 import { db } from '@homeos/db'
+import { calendarFeeds, items, tvChannels, tvProgrammes } from '@homeos/db/schema'
+import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
 import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, subscribe, type SyncMutation } from './sync'
 
 const app = Fastify({
@@ -124,6 +126,67 @@ app.get('/api/me', async (request, reply) => {
   return reply.send(session)
 })
 
+app.get('/api/watch/initial', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const now = new Date()
+  const followedShows = await db.query.items.findMany({
+    where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
+    columns: { id: true, title: true, metadata: true },
+  })
+  const feedIds = getMainChannelDefs().map(channel => channel.feedId)
+  const [channels, tonight, initialGrid] = await Promise.all([
+    getOnNow(now),
+    getTodayMatches(followedShows.map(show => ({
+      title: show.title,
+      channel: typeof show.metadata?.channel === 'string' ? show.metadata.channel : null,
+    })), now),
+    getDayGrid(feedIds, now),
+  ])
+
+  return reply.send({
+    channels,
+    followedShows,
+    tonight,
+    initialGrid,
+    today: ymd(now),
+  })
+})
+
+app.get('/api/watch/grid/:date', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const dateParam = (request.params as { date?: string }).date ?? ''
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateParam)
+  const target = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date()
+  const feedIds = getMainChannelDefs().map(channel => channel.feedId)
+  return reply.send(await getDayGrid(feedIds, target))
+})
+
+app.get('/api/watch/channel/:channelId', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const channelId = (request.params as { channelId?: string }).channelId ?? ''
+  const dateParam = (request.query as { date?: string }).date
+  const date = dateParam ? new Date(dateParam) : new Date()
+  return reply.send(await getChannelDay(channelId, date))
+})
+
+app.post('/api/calendar/feeds/:id/sync', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  const id = (request.params as { id?: string }).id ?? ''
+  const feed = await db.query.calendarFeeds.findFirst({ where: and(eq(calendarFeeds.id, id), eq(calendarFeeds.userId, session.user.id)) })
+  if (!feed) return reply.status(404).send({ error: 'Not found' })
+
+  const result = await syncIcsFeed(id)
+  return reply.status(result.error ? 500 : 200).send(result)
+})
+
 app.get('/*', async (request, reply) => {
   if (request.url.startsWith('/api/')) {
     return reply.status(404).send({ error: 'Not found' })
@@ -157,6 +220,14 @@ app.listen({ port, host: '0.0.0.0' }).catch(error => {
   process.exit(1)
 })
 
+setInterval(() => {
+  syncAllIcsFeeds().catch(error => app.log.error(error))
+}, 10 * 60 * 1000)
+
+setTimeout(() => {
+  syncAllIcsFeeds().catch(error => app.log.error(error))
+}, 15_000)
+
 function requestLog(error: unknown) {
   app.log.error(error)
 }
@@ -182,4 +253,223 @@ function cacheControl(filePath: string) {
   }
 
   return 'public, max-age=3600'
+}
+
+type Programme = typeof tvProgrammes.$inferSelect
+type GridChannel = {
+  feedId: string
+  name: string
+  logo: string | null
+  programmes: Programme[]
+}
+type ChannelNowNext = {
+  feedId: string
+  name: string
+  logo: string | null
+  now: Programme | null
+  next: Programme | null
+}
+type FollowMatch = { title: string; channel: string | null }
+type ChannelDef = { feedId: string; name: string }
+
+const REGION = process.env.TV_REGION ?? 'south_west'
+const BBC_ONE_BY_REGION: Record<string, string> = {
+  london: 'BBCOneLondonHD.uk',
+  south: 'BBCOneSouth.uk',
+  south_west: 'BBCOneSouthWest.uk',
+  north_west: 'BBCOneNorthWest.uk',
+  midlands: 'BBCOneWestMidlands.uk',
+  wales: 'BBCOneWalesHD.uk',
+  scotland: 'BBCOneScotHD.uk',
+}
+const ITV1_BY_REGION: Record<string, string> = {
+  london: 'ITV1London.uk',
+  south: 'ITV1MeridianS.uk',
+  south_west: 'ITV1WestCountry.uk',
+  north_west: 'ITV1Granada.uk',
+  midlands: 'ITV1CentralW.uk',
+  wales: 'ITV1Wales.uk',
+  scotland: 'STVCentral.uk',
+}
+const CHANNEL4_BY_REGION: Record<string, string> = {
+  london: 'Channel4London.uk',
+  south: 'Channel4South.uk',
+  south_west: 'Channel4South.uk',
+  north_west: 'Channel4North.uk',
+  midlands: 'Channel4Midlands.uk',
+  wales: 'Channel4London.uk',
+  scotland: 'Channel4Scotland.uk',
+}
+const channelDefs: ChannelDef[] = [
+  { feedId: regional(BBC_ONE_BY_REGION), name: 'BBC One' },
+  { feedId: 'BBCTwoHD.uk', name: 'BBC Two' },
+  { feedId: regional(ITV1_BY_REGION), name: 'ITV1' },
+  { feedId: regional(CHANNEL4_BY_REGION), name: 'Channel 4' },
+  { feedId: '5.uk', name: 'Channel 5' },
+  { feedId: 'ITV2.uk', name: 'ITV2' },
+  { feedId: 'BBCThreeHD.uk', name: 'BBC Three' },
+  { feedId: 'BBCFourHD.uk', name: 'BBC Four' },
+  { feedId: 'ITV3.uk', name: 'ITV3' },
+  { feedId: 'ITV4.uk', name: 'ITV4' },
+  { feedId: 'E4.uk', name: 'E4' },
+  { feedId: 'E4Extra.uk', name: 'E4 Extra' },
+  { feedId: 'More4.uk', name: 'More4' },
+  { feedId: '4seven.uk', name: '4seven' },
+  { feedId: 'Film4.uk', name: 'Film4' },
+  { feedId: 'SkyMix.uk', name: 'Sky Mix' },
+  { feedId: 'SkyArts.uk', name: 'Sky Arts' },
+  { feedId: 'UAndDave.uk', name: 'U&Dave' },
+  { feedId: 'UAndDrama.uk', name: 'U&Drama' },
+  { feedId: 'UAndYesterday.uk', name: 'U&Yesterday' },
+  { feedId: 'UAndW.uk', name: 'U&W' },
+  { feedId: 'UAndEden.uk', name: 'U&Eden' },
+  { feedId: '5USA.uk', name: '5USA' },
+  { feedId: '5Star.uk', name: '5Star' },
+  { feedId: '5Action.uk', name: '5Action' },
+  { feedId: '5Select.uk', name: '5Select' },
+  { feedId: 'Quest.uk', name: 'Quest' },
+  { feedId: 'QuestRed.uk', name: 'Quest Red' },
+  { feedId: 'DMAX.uk', name: 'DMAX' },
+  { feedId: 'TLC.uk', name: 'TLC' },
+  { feedId: 'FoodNetwork.uk', name: 'Food Network' },
+  { feedId: 'Blaze.uk', name: 'Blaze' },
+  { feedId: 'Legend.uk', name: 'Legend' },
+  { feedId: 'Really.uk', name: 'Really' },
+  { feedId: 'TrueCrime.uk', name: 'True Crime' },
+  { feedId: 'GreatTV.uk', name: 'GREAT! TV' },
+  { feedId: 'GreatMovies.uk', name: 'GREAT! Movies' },
+  { feedId: 'GreatAction.uk', name: 'GREAT! Action' },
+  { feedId: 'GreatMystery.uk', name: 'GREAT! Mystery' },
+  { feedId: 'Movies24.uk', name: 'Movies24' },
+  { feedId: 'TalkingPicturesTV.uk', name: 'Talking Pictures TV' },
+  { feedId: 'RewindTV.uk', name: 'Rewind TV' },
+  { feedId: 'ThatsTV.uk', name: "That's TV" },
+  { feedId: 'TogetherTV.uk', name: 'Together TV' },
+  { feedId: 'PBSAmerica.uk', name: 'PBS America' },
+  { feedId: 'CourtTV.uk', name: 'Court TV' },
+  { feedId: 'LondonLive.uk', name: 'London Live' },
+  { feedId: 'CBBC.uk', name: 'CBBC' },
+  { feedId: 'CBeebies.uk', name: 'CBeebies' },
+  { feedId: 'BBCNews.uk', name: 'BBC News' },
+  { feedId: 'SkyNews.uk', name: 'Sky News' },
+  { feedId: 'GBNews.uk', name: 'GB News' },
+  { feedId: 'CNNInternational.uk', name: 'CNN' },
+  { feedId: 'AlJazeeraEnglish.qa', name: 'Al Jazeera' },
+  { feedId: 'CNBCEurope.uk', name: 'CNBC' },
+  { feedId: 'BloombergTVEurope.uk', name: 'Bloomberg' },
+  { feedId: 'NewsmaxTV.uk', name: 'Newsmax' },
+  { feedId: 'LBCNews.uk', name: 'LBC News' },
+  { feedId: 'BBCParliament.uk', name: 'BBC Parliament' },
+  { feedId: 'BBCScotland.uk', name: 'BBC Scotland' },
+  { feedId: 'BBCAlba.uk', name: 'BBC Alba' },
+  { feedId: 'S4C.uk', name: 'S4C' },
+  { feedId: 'STVCentral.uk', name: 'STV' },
+  { feedId: 'UTV.uk', name: 'UTV' },
+  { feedId: 'QVCUK.uk', name: 'QVC' },
+  { feedId: 'QVCBeautyUK.uk', name: 'QVC Beauty' },
+  { feedId: 'QVCStyleUK.uk', name: 'QVC Style' },
+  { feedId: 'IdealWorld.uk', name: 'Ideal World' },
+  { feedId: 'GemsTV.uk', name: 'Gemporia' },
+  { feedId: 'HighStreetTV1.uk', name: 'High Street TV' },
+  { feedId: 'MustHaveIdeas.uk', name: 'Must Have Ideas' },
+  { feedId: 'TJC.uk', name: 'TJC' },
+]
+const MAIN_CHANNELS = new Set(['BBC One', 'BBC Two', 'ITV1', 'Channel 4', 'Channel 5', 'ITV2', 'BBC Three', 'BBC Four', 'ITV3', 'ITV4', 'E4', 'More4', 'Film4', 'Sky Mix', '5USA', 'U&Dave'])
+const channelById = new Map(channelDefs.map(channel => [channel.feedId, channel]))
+
+function regional(map: Record<string, string>) {
+  return map[REGION] ?? map.london
+}
+
+function getMainChannelDefs() {
+  return channelDefs.filter(channel => MAIN_CHANNELS.has(channel.name))
+}
+
+function channelName(feedId: string) {
+  return channelById.get(feedId)?.name ?? feedId
+}
+
+function ymd(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+async function channelLogoMap() {
+  const rows = await db.select({ id: tvChannels.id, logo: tvChannels.logo }).from(tvChannels)
+  return new Map(rows.map(row => [row.id, row.logo]))
+}
+
+async function getOnNow(at: Date): Promise<ChannelNowNext[]> {
+  const horizon = new Date(at.getTime() + 12 * 60 * 60 * 1000)
+  const rows = await db.select().from(tvProgrammes)
+    .where(and(gt(tvProgrammes.endsAt, at), lte(tvProgrammes.startsAt, horizon)))
+    .orderBy(asc(tvProgrammes.startsAt))
+  const byChannel = new Map<string, Programme[]>()
+  for (const row of rows) {
+    const list = byChannel.get(row.channelId) ?? []
+    list.push(row)
+    byChannel.set(row.channelId, list)
+  }
+  const logos = await channelLogoMap()
+  return channelDefs.map(channel => {
+    const list = byChannel.get(channel.feedId) ?? []
+    return {
+      feedId: channel.feedId,
+      name: channel.name,
+      logo: logos.get(channel.feedId) ?? null,
+      now: list.find(programme => programme.startsAt <= at && programme.endsAt > at) ?? null,
+      next: list.find(programme => programme.startsAt > at) ?? null,
+    }
+  })
+}
+
+async function getChannelDay(channelId: string, date: Date): Promise<Programme[]> {
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+  return db.select().from(tvProgrammes)
+    .where(and(eq(tvProgrammes.channelId, channelId), lt(tvProgrammes.startsAt, dayEnd), gte(tvProgrammes.endsAt, dayStart)))
+    .orderBy(asc(tvProgrammes.startsAt))
+}
+
+async function getDayGrid(feedIds: string[], date: Date): Promise<GridChannel[]> {
+  if (feedIds.length === 0) return []
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+  const rows = await db.select().from(tvProgrammes)
+    .where(and(inArray(tvProgrammes.channelId, feedIds), lt(tvProgrammes.startsAt, dayEnd), gte(tvProgrammes.endsAt, dayStart)))
+    .orderBy(asc(tvProgrammes.startsAt))
+  const byChannel = new Map<string, Programme[]>()
+  for (const row of rows) {
+    const list = byChannel.get(row.channelId) ?? []
+    list.push(row)
+    byChannel.set(row.channelId, list)
+  }
+  const logos = await channelLogoMap()
+  return feedIds.map(feedId => ({
+    feedId,
+    name: channelName(feedId),
+    logo: logos.get(feedId) ?? null,
+    programmes: byChannel.get(feedId) ?? [],
+  }))
+}
+
+async function getTodayMatches(follows: FollowMatch[], from: Date): Promise<Programme[]> {
+  if (follows.length === 0) return []
+  const dayEnd = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 23, 59, 59)
+  const rows = await db.select().from(tvProgrammes)
+    .where(and(gt(tvProgrammes.endsAt, from), lte(tvProgrammes.startsAt, dayEnd)))
+    .orderBy(asc(tvProgrammes.startsAt))
+  const wanted = new Map<string, { anyChannel: boolean; channels: Set<string> }>()
+  for (const follow of follows) {
+    const key = follow.title.toLowerCase()
+    const entry = wanted.get(key) ?? { anyChannel: false, channels: new Set<string>() }
+    if (follow.channel?.trim()) entry.channels.add(follow.channel.trim())
+    else entry.anyChannel = true
+    wanted.set(key, entry)
+  }
+  return rows.filter(row => {
+    const entry = wanted.get(row.title.toLowerCase())
+    if (!entry) return false
+    if (entry.anyChannel) return true
+    return entry.channels.has(channelName(row.channelId))
+  })
 }

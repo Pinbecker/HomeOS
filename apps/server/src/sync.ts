@@ -160,6 +160,10 @@ async function recordChange(mutation: RecordedChange) {
   return version
 }
 
+export async function recordExternalChange(mutation: RecordedChange) {
+  return recordChange(mutation)
+}
+
 async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChange> {
   if (mutation.operation === 'delete') {
     return {

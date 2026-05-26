@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
 import { ScreenShell } from './shell'
 
 type CalEvent = {
@@ -986,6 +986,8 @@ function CalendarPageInner() {
           onClose={() => setCalendarsOpen(false)}
         />
       ) : null}
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 bg-surface" style={{ height: 'calc(96px + env(safe-area-inset-bottom))', zIndex: 1 }} />
     </div>
   )
 }
@@ -1234,6 +1236,7 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
   const [addingName, setAddingName] = useState('')
   const [addingUrl, setAddingUrl] = useState('')
   const [addingColor, setAddingColor] = useState(CAL_COLORS[1])
+  const [syncingFeedId, setSyncingFeedId] = useState<string | null>(null)
 
   function togglePicker(id: string) {
     setPickerFor(prev => prev === id ? null : id)
@@ -1300,6 +1303,20 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
     }))
   }
 
+  async function syncFeed(feed: CalFeed) {
+    setSyncingFeedId(feed.id)
+    try {
+      const response = await fetch(`/api/calendar/feeds/${encodeURIComponent(feed.id)}/sync`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Sync failed with ${response.status}`)
+      await refreshAppState()
+    } finally {
+      setSyncingFeedId(null)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[70] flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={onClose}>
       <div className="mx-auto max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-[22px] bg-surface" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)' }} onClick={event => event.stopPropagation()}>
@@ -1339,7 +1356,7 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
                   </div>
                   {pickerFor === feed.id ? <ColorPicker current={feed.color} onPick={color => { patchFeed(feed, { color }); setPickerFor(null) }} /> : null}
                   <div className="flex items-center gap-4 px-4 pb-3">
-                    <button className="text-[12px] font-semibold text-accent active:opacity-60">Sync now</button>
+                    <button onClick={() => { void syncFeed(feed) }} disabled={syncingFeedId === feed.id} className="text-[12px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{syncingFeedId === feed.id ? 'Syncing...' : 'Sync now'}</button>
                     <button onClick={() => deleteFeed(feed)} className="text-[12px] font-semibold text-red active:opacity-60">Remove</button>
                   </div>
                 </div>

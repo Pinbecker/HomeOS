@@ -593,6 +593,10 @@ export async function enqueueMutation(mutation: SyncMutation, optimistic?: (prev
   }
 }
 
+export async function refreshAppState() {
+  return refreshFromServer({ silent: true })
+}
+
 export function makeId(prefix: string) {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return `${prefix}-${crypto.randomUUID()}`
