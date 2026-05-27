@@ -384,7 +384,7 @@ export function BottomNav() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: open ? 'none' : '0 6px 24px color-mix(in srgb, var(--accent) 55%, transparent)',
+                boxShadow: open ? 'none' : '0 3px 12px color-mix(in srgb, var(--accent) 18%, transparent)',
                 transition: 'background 0.22s ease, box-shadow 0.22s ease',
               }}
             >

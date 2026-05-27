@@ -53,7 +53,7 @@ export function WeatherHomeWidget() {
 
   if (!shared.home) {
     return (
-      <a href="/weather" className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-accent-bg px-2 text-[11px] font-bold text-accent active:opacity-70">
+      <a href="/weather" className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-accent/15 bg-accent-bg/45 px-2 text-[11px] font-semibold text-accent active:opacity-70">
         <WeatherGlyph icon="partly" className="h-4 w-4" />
         <span>Set</span>
       </a>
@@ -67,10 +67,10 @@ export function WeatherHomeWidget() {
   const icon = current ? weatherIcon(current.conditionCode, current.isDay) : 'partly'
 
   return (
-    <a href="/weather" className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-bold text-white shadow-sm active:opacity-75" style={tinyWeatherStyle(current?.conditionTone)}>
+    <a href="/weather" className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-semibold active:opacity-75" style={tinyWeatherStyle(current?.conditionTone)}>
       <WeatherGlyph icon={icon} className="h-4 w-4" />
       <span>{current ? temperature(current.temperature) : '--'}</span>
-      {rain != null ? <span className="font-semibold text-white/72">{rain}%</span> : today ? <span className="font-semibold text-white/72">{temperature(today.temperatureMax)}</span> : null}
+      {rain != null ? <span className="font-medium opacity-65">{rain}%</span> : today ? <span className="font-medium opacity-65">{temperature(today.temperatureMax)}</span> : null}
     </a>
   )
 }
@@ -567,7 +567,9 @@ function weatherIconAsset(icon: string) {
 function tinyWeatherStyle(tone?: string): CSSProperties {
   const base = toneColors(tone)
   return {
-    background: `linear-gradient(135deg, ${base[0]}, ${base[1]})`,
+    background: `color-mix(in srgb, ${base[0]} 12%, var(--surface))`,
+    borderColor: `color-mix(in srgb, ${base[1]} 18%, transparent)`,
+    color: base[1],
   }
 }
 

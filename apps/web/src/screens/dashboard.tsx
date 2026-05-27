@@ -13,11 +13,11 @@ import { WeatherHomeWidget } from './weather'
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
-type CalEvent = { id: string; title: string; startsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string }
+type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; timeLabel: string; sub: string | null; color: string }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 type DayGroup = { key: string; label: string; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
@@ -56,6 +56,11 @@ function allDayAsLocal(date: Date) {
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }
 
+function calendarDayKey(date: Date, allDay: boolean) {
+  if (allDay) return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
 function dayDiffFrom(targetMs: number, now: Date) {
   const today = startOfLocalDay(now).getTime()
   const target = startOfLocalDay(new Date(targetMs)).getTime()
@@ -69,6 +74,10 @@ function rangeCutoffMs(now: Date, rangeDays: number) {
 function eventTimeLabel(date: Date, allDay: boolean) {
   if (allDay) return 'All day'
   return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
+}
+
+function scheduleTimeLabel(date: Date) {
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/London' })
 }
 
 function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number) {
@@ -108,9 +117,14 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       eventId: event.id,
       title: event.title,
       sortMs: event.startsAt.getTime(),
+      endMs: event.endsAt.getTime(),
+      dayKey: calendarDayKey(event.startsAt, event.allDay),
+      allDay: event.allDay,
       timeLabel: event.timeLabel,
+      endTimeLabel: scheduleTimeLabel(event.endsAt.getTime() > event.startsAt.getTime() ? event.endsAt : event.startsAt),
       sub: event.location,
       color: event.color,
+      finishedToday: !event.allDay && event.endsAt.getTime() <= now.getTime() && startOfLocalDay(event.startsAt).getTime() === startOfLocalDay(now).getTime(),
     })
   }
 
@@ -691,18 +705,30 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   const border = hasBorder ? 'border-t border-border' : ''
 
   if (entry.kind === 'calendar') {
+    const rowHref = `/calendar?day=${encodeURIComponent(entry.dayKey)}&event=${encodeURIComponent(entry.eventId)}`
+    const textState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-1'
+    const subState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'
     return (
-      <a href={`/calendar?event=${entry.eventId}`} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: `color-mix(in srgb, ${entry.color} 15%, var(--surface))` }}>
+      <a href={rowHref} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`}>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: entry.finishedToday ? 'var(--surface-2)' : `color-mix(in srgb, ${entry.color} 15%, var(--surface))` }}>
           <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: entry.color }}>
             <rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 6.5h12" /><path d="M5 1v3M11 1v3" />
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] font-semibold text-text-1">{entry.title}</p>
-          {entry.sub ? <p className="mt-0.5 truncate text-[11.5px] text-text-2">{entry.sub}</p> : null}
+          <p className={`truncate text-[13.5px] font-semibold ${textState}`}>{entry.title}</p>
+          {entry.sub ? <p className={`mt-0.5 truncate text-[11.5px] ${subState}`}>{entry.sub}</p> : null}
         </div>
-        <span className="ml-2 shrink-0 text-[11.5px] text-text-2">{entry.timeLabel}</span>
+        <div className={`ml-2 flex min-w-[38px] shrink-0 flex-col items-end leading-tight ${entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'}`}>
+          {entry.allDay ? (
+            <span className="text-[11.5px]">{entry.timeLabel}</span>
+          ) : (
+            <>
+              <span className="text-[11.5px]">{scheduleTimeLabel(new Date(entry.sortMs))}</span>
+              <span className="mt-0.5 text-[11.5px]">{entry.endTimeLabel}</span>
+            </>
+          )}
+        </div>
       </a>
     )
   }
@@ -959,7 +985,7 @@ export function DashboardPage() {
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
     const inbox = state.data.items.filter(item => item.type === 'inbox' && item.status === 'active' && !item.deletedAt).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     const calendarEvents = state.data.calendarEvents
-      .map(event => ({ ...event, startsAtDate: toDate(event.startsAt)! }))
+      .map(event => ({ ...event, startsAtDate: toDate(event.startsAt)!, endsAtDate: toDate(event.endsAt) ?? toDate(event.startsAt)! }))
       .filter(event => event.startsAtDate >= startToday && event.startsAtDate <= scheduleWindow)
       .filter(event => !event.calendarId?.startsWith('ics:') || feedColorMap.has(event.calendarId.slice(4)))
       .sort((a, b) => a.startsAtDate.getTime() - b.startsAtDate.getTime())
@@ -968,6 +994,7 @@ export function DashboardPage() {
         id: event.id,
         title: event.title,
         startsAt: event.startsAtDate,
+        endsAt: event.endsAtDate,
         allDay: event.allDay ?? false,
         location: event.location ?? null,
         timeLabel: eventTimeLabel(event.startsAtDate, event.allDay ?? false),

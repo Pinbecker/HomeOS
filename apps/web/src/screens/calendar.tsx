@@ -57,6 +57,30 @@ function localDayKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
+function parseCalendarDayKey(value: string | null) {
+  if (!value) return null
+  const parts = value.split('-')
+  if (parts.length !== 3) return null
+  const [year, month, day] = parts.map(part => Number(part))
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null
+  if (month < 0 || month > 11 || day < 1 || day > 31) return null
+  const date = new Date(year, month, day)
+  if (localDayKey(date) !== value) return null
+  return { dayKey: value, monthKey: `${year}-${month}` }
+}
+
+function initialCalendarTarget(today: Date) {
+  const fallback = { dayKey: localDayKey(today), monthKey: `${today.getFullYear()}-${today.getMonth()}`, eventId: null as string | null }
+  if (typeof window === 'undefined') return fallback
+  const params = new URLSearchParams(window.location.search)
+  const parsedDay = parseCalendarDayKey(params.get('day'))
+  return {
+    dayKey: parsedDay?.dayKey ?? fallback.dayKey,
+    monthKey: parsedDay?.monthKey ?? fallback.monthKey,
+    eventId: params.get('event'),
+  }
+}
+
 function allDayAsLocal(date: Date) {
   return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }
@@ -354,6 +378,7 @@ function CalendarPageInner() {
   const sessionUser = useSessionState(state => state.user)
   const today = useMemo(() => new Date(), [])
   const todayKey = localDayKey(today)
+  const initialTarget = useMemo(() => initialCalendarTarget(today), [today])
   const snapshot = useAppState(state => {
     const listColors = new Map(state.data.lists.map(list => [list.id, list.color ?? '#FF9500']))
     const personalSettings = readUserSettings(state.data.household[0]?.settings ?? null, sessionUser?.id)
@@ -394,8 +419,8 @@ function CalendarPageInner() {
   })
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_H)
   const rowHeightRef = useRef(DEFAULT_ROW_H)
-  const [selectedKey, setSelectedKey] = useState(todayKey)
-  const [visibleMonthKey, setVisibleMonthKey] = useState(`${today.getFullYear()}-${today.getMonth()}`)
+  const [selectedKey, setSelectedKey] = useState(initialTarget.dayKey)
+  const [visibleMonthKey, setVisibleMonthKey] = useState(initialTarget.monthKey)
   const [detail, setDetail] = useState<CalEvent | null>(null)
   const [sheetTask, setSheetTask] = useState<CalTask | null>(null)
   const [sheetPane, setSheetPane] = useState<'detail' | 'edit' | 'create' | 'task'>('detail')
@@ -522,9 +547,18 @@ function CalendarPageInner() {
   useEffect(() => {
     const container = scrollRef.current
     if (!container) return
-    const target = document.getElementById('cal-today') ?? document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const target = container.querySelector<HTMLElement>(`[data-daykey="${initialTarget.dayKey}"]`)
+      ?? document.getElementById('cal-today')
+      ?? document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
     if (target) container.scrollTop = Math.max(0, scrollOffsetWithin(container, target) - rowHeightRef.current)
-  }, [today])
+  }, [today, initialTarget.dayKey])
+
+  useEffect(() => {
+    if (!initialTarget.eventId) return
+    setFlashEventId(initialTarget.eventId)
+    const timeout = window.setTimeout(() => setFlashEventId(null), 2200)
+    return () => window.clearTimeout(timeout)
+  }, [initialTarget.eventId])
 
   useEffect(() => {
     const container = scrollRef.current
