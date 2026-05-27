@@ -2,12 +2,9 @@ FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-ENV NEXT_TELEMETRY_DISABLED=1
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json postcss.config.mjs ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
-COPY apps/worker/package.json apps/worker/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/db/package.json packages/db/package.json
 

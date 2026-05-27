@@ -4,7 +4,20 @@ This file is for AI coding agents (Codex, Claude, etc.) assisting with this proj
 
 ## What this project is
 
-HomeApp ("HomeOS") is a private, self-hosted family life hub. Two users: Dan and Imogen. It is a Next.js app backed by SQLite, deployed via Docker Compose on a personal VM, served via Caddy reverse proxy.
+HomeApp ("HomeOS") is a private, self-hosted family life hub. Two users: Dan and Imogen. It is a Vite React PWA in `apps/web` served by a Fastify API in `apps/server`, backed by SQLite, deployed via Docker Compose on a personal VM, and served via Caddy reverse proxy.
+
+## Current repository shape
+
+This repository used to contain a root Next.js app. That app has been removed. Do not recreate or edit root `app/`, root `components/`, `next.config.ts`, or `next-env.d.ts`.
+
+The live application is:
+- `apps/web` — Vite React PWA and client-side routes
+- `apps/server` — Fastify API, auth adapter, sync endpoints, weather, jobs
+- `packages/auth` — shared better-auth setup
+- `packages/db` — Drizzle schema and DB client
+- `lib/db/migrations` — SQL migrations applied by `scripts/migrate.cjs`
+
+Static PWA assets live in `apps/web/public`, not root `public`.
 
 ---
 
@@ -43,8 +56,9 @@ nano .env  # or vim .env
 ```
 
 Required fields before first launch:
-- `NEXT_PUBLIC_APP_URL` — your domain (e.g., `https://home.yourdomain.com`)
+- `NEXT_PUBLIC_APP_URL` or `VITE_APP_URL` — your domain (e.g., `https://home.yourdomain.com`)
 - `SESSION_SECRET` — generate with: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+- `BETTER_AUTH_SECRET` — generate another unique value with the same command
 - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` — for magic link emails
 - Update `Caddyfile`: replace `your-domain.com` with your actual domain
 
@@ -119,7 +133,7 @@ docker compose logs -f backup     # Backup logs
 ### Run DB migrations manually
 
 ```bash
-docker compose exec app node -e "require('./lib/db/migrate').runMigrations()"
+docker compose exec app node scripts/migrate.cjs
 ```
 
 ### Manual backup
@@ -162,6 +176,7 @@ docker run --rm \
 - **No cluster.** This runs as a single Docker Compose stack on one VM. No Kubernetes, no swarm.
 - **pnpm only.** Do not use npm or yarn.
 - **Drizzle migrations only.** Never hand-edit the SQLite database schema.
+- **Live app only.** Make UI changes in `apps/web` and API/data changes in `apps/server` or `packages/*`.
 - **Caddy handles HTTPS.** Do not configure SSL/TLS in the app itself.
 - **Files on disk.** Uploaded files go to the `file_data` Docker volume. Do not store binaries in SQLite.
 - **Two users.** Do not add user registration, public signup, or multi-household features.

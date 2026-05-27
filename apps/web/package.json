@@ -12,6 +12,7 @@
     "@homeos/auth": "workspace:*",
     "@tanstack/react-router": "^1.121.21",
     "better-auth": "1.2.8",
+    "lucide-react": "^0.544.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

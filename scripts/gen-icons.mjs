@@ -114,12 +114,12 @@ function render(size) {
   return encodePNG(size, size, out)
 }
 
-mkdirSync('public/icons', { recursive: true })
+mkdirSync('apps/web/public/icons', { recursive: true })
 const targets = [
-  ['public/icons/icon-192.png', 192],
-  ['public/icons/icon-512.png', 512],
-  ['public/apple-touch-icon.png', 180],
-  ['public/icons/icon-180.png', 180],
+  ['apps/web/public/icons/icon-192.png', 192],
+  ['apps/web/public/icons/icon-512.png', 512],
+  ['apps/web/public/apple-touch-icon.png', 180],
+  ['apps/web/public/icons/icon-180.png', 180],
 ]
 for (const [path, size] of targets) {
   writeFileSync(path, render(size))

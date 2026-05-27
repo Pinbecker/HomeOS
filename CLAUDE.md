@@ -11,47 +11,36 @@ It is NOT a generic productivity app. It should feel warm and personal, like a s
 
 ## Tech stack
 
-- **Framework:** Next.js 14+ App Router, TypeScript
+- **Frontend:** Vite React PWA, TypeScript
+- **Backend:** Fastify API in `apps/server`
 - **Database:** SQLite via Drizzle ORM (WAL mode, file at `/data/db/homeapp.db`)
-- **Styling:** Tailwind CSS + shadcn/ui components
+- **Styling:** Tailwind CSS
 - **Auth:** better-auth (email/password for Dan, magic link for Imogen)
 - **Migrations:** drizzle-kit (run automatically at container start)
-- **Background jobs:** node-cron (within the app process)
+- **Background jobs:** timers within the API process
 - **File storage:** Local disk at `/data/files/` (Docker volume)
 - **Reverse proxy:** Caddy (production)
 - **Package manager:** pnpm
 
-## Project structure (once bootstrapped)
+## Current repo rule
+
+This repo no longer contains the old root Next.js application. The live app is only the Vite/Fastify workspace under `apps/`.
+
+Do not recreate or edit root `app/`, root `components/`, `next.config.ts`, `next-env.d.ts`, or root `public/`. UI work belongs in `apps/web`. API, sync, auth routing, weather, and background jobs belong in `apps/server` or shared packages.
+
+## Project structure
 
 ```
 /
-├── app/                    # Next.js App Router pages and layouts
-│   ├── (auth)/             # Login, magic link pages
-│   ├── (app)/              # Protected app routes
-│   │   ├── page.tsx        # Dashboard/home
-│   │   ├── household/      # Tasks, shopping, bins, meals
-│   │   ├── watch/          # Films, TV, going out
-│   │   ├── life/           # Insurance, admin, documents, plans
-│   │   └── inbox/          # Capture inbox
-│   └── api/                # API routes
-│       ├── health/         # Health check
-│       ├── auth/           # Auth endpoints
-│       ├── items/          # CRUD for items
-│       └── ...
-├── components/             # Shared UI components
-│   ├── ui/                 # shadcn/ui primitives
-│   ├── layout/             # Shell, bottom nav, header
-│   └── features/           # Feature-specific components
-├── lib/                    # Shared utilities
-│   ├── db/                 # Drizzle client and schema
-│   │   ├── schema.ts       # Full DB schema
-│   │   └── migrations/     # SQL migration files
-│   ├── auth/               # Auth configuration
-│   ├── jobs/               # Background job definitions
-│   └── services/           # Business logic (not in API routes)
+├── apps/
+│   ├── web/                # Vite React PWA and client-side routes
+│   └── server/             # Fastify API, sync, weather, jobs
+├── packages/
+│   ├── auth/               # Shared better-auth setup
+│   └── db/                 # Drizzle schema and database client
+├── lib/db/migrations/      # SQL migrations applied by scripts/migrate.cjs
 ├── design/                 # HTML design mockups (not part of the app)
-├── scripts/                # Operational scripts (backup, etc.)
-├── public/                 # Static assets
+├── scripts/                # Operational scripts, including migrations and backups
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
@@ -60,7 +49,7 @@ It is NOT a generic productivity app. It should feel warm and personal, like a s
 └── drizzle.config.ts
 ```
 
-## Key commands (once app is bootstrapped)
+## Key commands
 
 ```bash
 pnpm dev                    # Start dev server
@@ -80,7 +69,7 @@ pnpm db:studio              # Open Drizzle Studio (DB GUI)
 - Use ULIDs for all primary keys (sortable, client-generatable, avoids sequential enumeration).
 
 ### Items model
-Everything is an `item` with a `type` discriminator. This is intentional — it allows cross-entity links, unified search, and tagging without schema changes per feature. See `lib/db/schema.ts` for the full model. The key types are:
+Everything is an `item` with a `type` discriminator. This is intentional — it allows cross-entity links, unified search, and tagging without schema changes per feature. See `packages/db/src/schema.ts` for the full model. The key types are:
 `task | note | inbox | shopping_item | watchlist_film | watchlist_tv | place | gift_idea | meal_idea | memory | document | idea`
 
 ### Entity linking
@@ -89,11 +78,16 @@ The `entity_links` table links any two items. Always use this for relationships 
 ### Auth
 Two users only. Dan uses email/password. Imogen uses magic links (email → tap → logged in). Sessions via HTTP-only secure cookies. Never store session data in localStorage. Use better-auth's built-in session management.
 
+### Frontend
+The PWA routes and screens live in `apps/web/src`. The bottom navigation and More menu are in `apps/web/src/screens/bottom-nav.tsx`. Static assets, manifest, service worker, app icons, and weather icons live under `apps/web/public`.
+
+The production Docker image builds the Vite app and serves the built assets from the Fastify server. There is no Next.js runtime in production.
+
 ### Files
 File uploads are stored at `/data/files/{year}/{month}/{ulid}.{ext}`. File metadata (path, MIME type, size, linked entity) is stored in the `files` table. Never store binary data in SQLite.
 
 ### Background jobs
-All cron jobs live in `lib/jobs/`. They are registered at app startup in `app/api/startup/route.ts`. Keep jobs idempotent — they must be safe to run multiple times.
+Scheduled jobs live in `apps/server/src/notification-jobs.ts` and are registered from the Fastify server startup path in `apps/server/src/index.ts`. Keep jobs idempotent — they must be safe to run multiple times.
 
 ### Real-time sync
 Two users, same household. Use Server-Sent Events (SSE) or 30-second polling. No WebSockets. No Redis. No external pub/sub.

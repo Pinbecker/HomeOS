@@ -3,7 +3,7 @@
 A private, self-hosted shared brain for two people. Household admin, planning, entertainment, and memories — all in one place.
 
 **Status:** Phase 0 (infrastructure setup)  
-**Stack:** Next.js · TypeScript · SQLite · Drizzle ORM · Tailwind · Docker · Caddy
+**Stack:** Vite React PWA · Fastify API · TypeScript · SQLite · Drizzle ORM · Tailwind · Docker · Caddy
 
 ---
 
@@ -40,11 +40,12 @@ Open these in a browser to review before committing to a direction.
 
 | Layer | Choice | Reason |
 |-------|--------|--------|
-| Framework | Next.js 14+ (App Router) | Full-stack, excellent PWA support, strong ecosystem |
+| Frontend | Vite React PWA | Fast client build, straightforward PWA deployment |
+| Backend | Fastify API | Small server surface for auth, sync, jobs, and API routes |
 | Language | TypeScript | Maintainability over years |
 | Database | SQLite (WAL mode) | Perfect for 2 users, trivial backup, no server |
 | ORM | Drizzle ORM | Lightweight, TypeScript-first, excellent SQLite support |
-| Styling | Tailwind CSS + shadcn/ui | Mobile-first, accessible, composable |
+| Styling | Tailwind CSS | Mobile-first, composable |
 | Auth | better-auth | Sessions, magic links, secure cookies out of the box |
 | Reverse proxy | Caddy | Auto-HTTPS, zero SSL config |
 | Containers | Docker + Docker Compose | Consistent deployment on personal VM |
@@ -60,26 +61,10 @@ Open these in a browser to review before committing to a direction.
 - pnpm (`npm install -g pnpm`)
 - Docker (optional, for testing production setup)
 
-### Bootstrap the Next.js app
-
-The Next.js app hasn't been scaffolded yet. Run this once:
+### Install dependencies
 
 ```bash
-pnpm create next-app@latest . \
-  --typescript \
-  --tailwind \
-  --eslint \
-  --app \
-  --src-dir=false \
-  --import-alias="@/*"
-```
-
-Then install additional dependencies:
-
-```bash
-pnpm add drizzle-orm better-sqlite3 better-auth @auth/core
-pnpm add node-cron ulid
-pnpm add -D drizzle-kit @types/better-sqlite3 @types/node-cron
+pnpm install
 ```
 
 ### Set up environment
@@ -94,6 +79,8 @@ cp .env.example .env
 ```bash
 pnpm dev
 ```
+
+This starts the Fastify API and the Vite web app.
 
 ### Run migrations
 
@@ -154,7 +141,7 @@ Core item types: `task · note · inbox · shopping_item · watchlist_film · wa
 
 Supporting tables: `lists · list_items · calendar_events · reminders · entity_links · files · tags · item_tags · notifications · ai_jobs · activity_log`
 
-See `lib/db/schema.ts` for the full schema.
+See `packages/db/src/schema.ts` for the full schema.
 
 ---
 
@@ -192,7 +179,7 @@ This app is used daily and we may become dependent on it. These are non-negotiab
 ├── CLAUDE.md           # Instructions for Claude Code
 ├── AGENTS.md           # Instructions for Codex/other AI agents (VM deployment)
 ├── README.md           # This file
-├── Dockerfile          # Multi-stage Next.js build
+├── Dockerfile          # Vite/Fastify production image
 ├── docker-compose.yml  # Production stack
 ├── docker-compose.dev.yml  # Development override
 ├── Caddyfile           # Reverse proxy config
@@ -204,8 +191,11 @@ This app is used daily and we may become dependent on it. These are non-negotiab
 │   ├── concept-1-clean.html
 │   ├── concept-2-warm.html
 │   └── concept-3-dark.html
-├── app/                # Next.js app (created after bootstrapping)
-├── components/         # Shared UI components
-├── lib/                # DB schema, auth, services, jobs
-└── public/             # Static assets
+├── apps/
+│   ├── web/            # Vite React PWA
+│   └── server/         # Fastify API and background jobs
+├── packages/
+│   ├── auth/           # Shared better-auth setup
+│   └── db/             # Drizzle schema and database client
+└── lib/db/migrations/  # SQL migrations applied at container start
 ```
