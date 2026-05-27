@@ -14,6 +14,7 @@ import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges,
 import { transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
 import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
+import { registerWeatherRoutes } from './weather'
 
 const app = Fastify({
   logger: true,
@@ -430,6 +431,8 @@ app.get('/api/ai/jobs', async (request, reply) => {
   if (!session) return reply.status(401).send({ error: 'Unauthorized' })
   return reply.send({ jobs: await recentAiJobs() })
 })
+
+registerWeatherRoutes(app)
 
 app.get('/*', async (request, reply) => {
   if (request.url.startsWith('/api/')) {

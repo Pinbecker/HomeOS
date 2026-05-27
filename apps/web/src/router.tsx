@@ -17,6 +17,7 @@ import { ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
 import { LoginPage } from './screens/shared'
 import { TaskDetailPage, TasksOverviewPage } from './screens/tasks'
 import { WatchPage } from './screens/watch'
+import { WeatherPage } from './screens/weather'
 
 function RootLayout() {
   const syncState = useAppState(state => state.error ? 'error' : state.syncing ? 'syncing' : 'idle')
@@ -201,6 +202,11 @@ const calendarRoute = createRoute({
   path: '/calendar',
   component: CalendarPage,
 })
+const weatherRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/weather',
+  component: WeatherPage,
+})
 const householdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/household',
@@ -298,6 +304,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   homeRoute,
   calendarRoute,
+  weatherRoute,
   householdRoute,
   householdBinsRoute,
   householdPlansRoute,

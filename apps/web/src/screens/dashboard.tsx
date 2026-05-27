@@ -8,6 +8,7 @@ import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
 import { ScreenShell } from './shell'
+import { WeatherHomeWidget } from './weather'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
@@ -1065,6 +1066,7 @@ export function DashboardPage() {
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
       </header>
 
+      <WeatherHomeWidget />
       <AiCapture surface="home" placeholder="Speak or type anything for the house brain" />
       <PinnedBoardLite pins={snapshot.pins} />
 
