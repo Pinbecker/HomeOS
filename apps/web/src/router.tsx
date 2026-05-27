@@ -111,25 +111,25 @@ function RootLayout() {
 
   return (
     <div className="min-h-dvh bg-bg text-text-1">
-      <div className="safe-top fixed inset-x-0 top-0 z-50 pointer-events-none">
-        <div className="mx-auto max-w-lg px-4 pt-2">
-          {syncState !== 'idle' && !syncCollapsed && (
+      {syncState !== 'idle' && !syncCollapsed ? (
+        <div className="fixed inset-x-0 top-0 z-50 pointer-events-none pt-[calc(env(safe-area-inset-top)+8px)]">
+          <div className="mx-auto max-w-lg px-4">
             <div className={`rounded-full border px-3 py-2 text-[12px] font-medium backdrop-blur ${
               syncState === 'error'
                 ? 'border-amber-border bg-amber-bg text-amber'
                 : 'border-accent-border bg-accent-bg text-accent'
             }`}>
-              {syncState === 'error' ? 'Offline: Sync Paused' : 'Syncing changes…'}
+              {syncState === 'error' ? 'Offline: Sync Paused' : 'Syncing changes...'}
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      ) : null}
       {syncState === 'error' && syncCollapsed ? (
         <button
           type="button"
           onClick={() => setSyncCollapsed(false)}
           aria-label="Offline: Sync Paused"
-          className="safe-top fixed right-4 top-0 z-50 mt-2 flex h-9 w-9 items-center justify-center rounded-full border border-amber-border bg-amber-bg text-amber shadow-sm"
+          className="fixed right-4 top-[calc(env(safe-area-inset-top)+8px)] z-50 flex h-9 w-9 items-center justify-center rounded-full border border-amber-border bg-amber-bg text-amber shadow-sm"
         >
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
             <rect x="4" y="3" width="2.5" height="10" rx="0.8" />

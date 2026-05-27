@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import {
@@ -91,6 +91,7 @@ export function WeatherPage() {
     error: null,
   }))
   const [settingsOpen, setSettingsOpen] = useState(!shared.home)
+  const [locationsOpen, setLocationsOpen] = useState(false)
 
   useEffect(() => {
     const fallback = defaultWeatherLocationRef(shared, personal)
@@ -124,6 +125,26 @@ export function WeatherPage() {
     return undefined
   }, [personal.lastViewedLocationId, selectedRef, user])
 
+  useEffect(() => {
+    if (!settingsOpen) return undefined
+    const scrollY = window.scrollY
+    const previousOverflow = document.body.style.overflow
+    const previousPosition = document.body.style.position
+    const previousTop = document.body.style.top
+    const previousWidth = document.body.style.width
+    document.body.style.overflow = 'hidden'
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollY}px`
+    document.body.style.width = '100%'
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.style.position = previousPosition
+      document.body.style.top = previousTop
+      document.body.style.width = previousWidth
+      window.scrollTo(0, scrollY)
+    }
+  }, [settingsOpen])
+
   function refresh() {
     if (!selectedRef) return
     setLoad(prev => ({ ...prev, loading: true, error: null }))
@@ -133,32 +154,45 @@ export function WeatherPage() {
   }
 
   const snapshot = load.snapshot
-  const current = snapshot?.current
-  const tone = current?.conditionTone
 
   return (
     <ScreenShell title="Weather" showHeader={false}>
-      <div className="min-h-dvh pb-6" style={pageStyle(tone)}>
-        <div className="safe-top px-4 pt-3">
-          <div className="mb-3 flex items-center justify-between">
-            <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur active:opacity-70" aria-label="Back">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
-            </a>
-            <div className="flex items-center gap-2">
-              <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur active:opacity-70" aria-label="Refresh">
-                <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 ${load.loading ? 'animate-spin' : ''}`}><path d="M15 6a6 6 0 1 0 1 4" /><path d="M15 2v4h-4" /></svg>
-              </button>
-              <button onClick={() => setSettingsOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/14 text-white backdrop-blur active:opacity-70" aria-label="Settings">
-                <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M9 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M14.7 10.5a1 1 0 0 0 .2 1.1l.1.1-1.7 2.9-.2-.1a1 1 0 0 0-1.1.1l-.8.5a1 1 0 0 0-.5.9v.2H7.3V16a1 1 0 0 0-.5-.9l-.8-.5a1 1 0 0 0-1.1-.1l-.2.1L3 11.7l.1-.1a1 1 0 0 0 .2-1.1 6 6 0 0 1 0-1 1 1 0 0 0-.2-1.1L3 8.3l1.7-2.9.2.1A1 1 0 0 0 6 5.4l.8-.5a1 1 0 0 0 .5-.9v-.2h3.4V4a1 1 0 0 0 .5.9l.8.5a1 1 0 0 0 1.1.1l.2-.1L15 8.3l-.1.1a1 1 0 0 0-.2 1.1 6 6 0 0 1 0 1Z" /></svg>
-              </button>
-            </div>
+      <div className="min-h-dvh bg-[#eef1f4] pb-8 text-[#111111]">
+        <div className="sticky top-0 z-30 border-b border-[#d7dce2] bg-[#f7f8fa]/92 px-4 shadow-[0_1px_0_rgba(17,17,17,0.03)] backdrop-blur">
+          <div className="flex items-center justify-between pb-2 pt-[calc(env(safe-area-inset-top)+8px)]">
+              <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Back">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
+              </a>
+              <div className="min-w-0 px-3 text-center">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#111111]">Weather</p>
+                <p className="mt-0.5 truncate text-[12px] font-semibold text-[#5a6673]">{snapshot?.location.name ?? 'Forecast'}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Refresh">
+                  <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 ${load.loading ? 'animate-spin' : ''}`}><path d="M15 6a6 6 0 1 0 1 4" /><path d="M15 2v4h-4" /></svg>
+                </button>
+                <button onClick={() => setLocationsOpen(open => !open)} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Locations" aria-expanded={locationsOpen}>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 18s6-5.2 6-10A6 6 0 1 0 4 8c0 4.8 6 10 6 10Z" /><circle cx="10" cy="8" r="2" /></svg>
+                </button>
+                <button onClick={() => setSettingsOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Settings">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 0 1-2.83 2.83l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.05a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 0 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 0 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 0 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.05A1.7 1.7 0 0 0 19.4 15Z" /></svg>
+                </button>
+              </div>
           </div>
 
-          {locations.length > 0 ? (
-            <div className="no-scrollbar -mx-1 mb-4 flex gap-2 overflow-x-auto px-1">
-              {locations.map(row => (
-                <button key={row.ref} onClick={() => setSelectedRef(row.ref)} className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold backdrop-blur ${selectedRef === row.ref ? 'bg-white text-black' : 'bg-white/14 text-white'}`}>
-                  {row.ref === 'home' ? 'Home' : row.label}
+          {locationsOpen && locations.length > 0 ? (
+            <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+52px)] z-40 w-[220px] overflow-hidden rounded-[8px] border border-[#cbd3dc] bg-white shadow-[0_14px_36px_rgba(0,0,0,0.18)]">
+              {locations.map((row, index) => (
+                <button
+                  key={row.ref}
+                  onClick={() => {
+                    setSelectedRef(row.ref)
+                    setLocationsOpen(false)
+                  }}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left active:bg-[#eef6fc] ${index > 0 ? 'border-t border-[#e2e7ec]' : ''}`}
+                >
+                  <span className="min-w-0 truncate text-[14px] font-bold text-[#111111]">{row.ref === 'home' ? 'Home' : row.label}</span>
+                  {selectedRef === row.ref ? <span className="text-[13px] font-black text-[#006def]">Selected</span> : null}
                 </button>
               ))}
             </div>
@@ -170,10 +204,10 @@ export function WeatherPage() {
         ) : snapshot ? (
           <WeatherForecastView snapshot={snapshot} loading={load.loading} error={load.error} />
         ) : (
-          <div className="px-5 pt-20 text-center text-white">
+          <div className="px-5 pt-20 text-center text-[#111111]">
             <WeatherGlyph icon="partly" className="mx-auto h-16 w-16 opacity-80" />
             <p className="mt-5 text-[18px] font-bold">Weather unavailable</p>
-            <p className="mt-2 text-[13px] text-white/70">{load.error ?? 'Open settings to check the home location.'}</p>
+            <p className="mt-2 text-[13px] text-[#5b6670]">{load.error ?? 'Open settings to check the home location.'}</p>
           </div>
         )}
 
@@ -196,85 +230,208 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
   const today = snapshot.daily10[0]
   const icon = weatherIcon(current.conditionCode, current.isDay)
   const [selectedDay, setSelectedDay] = useState(0)
+  const [selectedHour, setSelectedHour] = useState<number | null>(null)
+  const hourlyScrollRef = useRef<HTMLDivElement>(null)
   const pickedDay = snapshot.daily10[selectedDay] ?? today
-  const selectedHours = pickedDay ? (snapshot.hourlyByDay?.[pickedDay.date] ?? (selectedDay === 0 ? snapshot.hourly24 : [])) : snapshot.hourly24
+  const selectedHours = useMemo(() => pickedDay ? weatherDayHours(snapshot, selectedDay, pickedDay.date) : snapshot.hourly24, [pickedDay, selectedDay, snapshot])
   const nextRain = selectedHours.find(hour => (hour.rainChance ?? 0) >= 35)
+  const bestUv = snapshot.airQuality.uvIndex ?? pickedDay?.uvIndex ?? today?.uvIndex ?? null
+  const primaryRain = pickedDay?.rainChance ?? selectedHours[0]?.rainChance ?? null
+  const rainSummary = nextRain ? `Rain from ${timeLabel24(nextRain.time)}` : primaryRain != null ? `Rain risk ${formatPercent(primaryRain)}` : 'No notable rain'
+
+  useEffect(() => {
+    setSelectedHour(null)
+    const scroller = hourlyScrollRef.current
+    if (!scroller) return
+
+    window.requestAnimationFrame(() => {
+      scroller.scrollTo({ left: 0, behavior: 'smooth' })
+    })
+  }, [selectedDay, selectedHours])
 
   return (
     <>
-      <section className="px-5 pb-5 text-white">
-        <div className="pt-1">
-          <p className="truncate text-[20px] font-bold tracking-normal">{snapshot.location.name}</p>
-          <p className="mt-1 text-[12px] font-semibold text-white/62">{loading ? 'Updating...' : error ? 'Using saved weather' : `Updated ${relativeTime(snapshot.updatedAt)}`}</p>
+      <section className="bg-[#0b4f8f] px-5 pb-4 pt-4 text-white">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-[24px] font-black leading-tight tracking-normal">{snapshot.location.name}</h1>
+            <p className="mt-1 text-[13px] font-semibold text-white/75">{loading ? 'Updating forecast...' : error || snapshot.stale ? 'Using saved forecast' : `Updated ${relativeTime(snapshot.updatedAt)}`}</p>
+          </div>
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[72px] font-bold leading-none tracking-normal">{temperature(current.temperature)}</p>
-            <p className="mt-1 text-[18px] font-bold tracking-normal">{current.condition}</p>
-            {today ? <p className="mt-1 text-[14px] font-semibold text-white/72">Feels like {temperature(current.apparentTemperature)} · H {temperature(today.temperatureMax)} L {temperature(today.temperatureMin)}</p> : null}
+        <div className="mt-3 grid grid-cols-[1fr_86px] items-center gap-3">
+          <div className="min-w-0">
+            <div className="flex items-end gap-3">
+              <p className="text-[64px] font-black leading-[0.86] tracking-normal">{temperature(current.temperature)}</p>
+              {today ? <p className="pb-1.5 text-[13px] font-black text-white/82">H {temperature(today.temperatureMax)} L {temperature(today.temperatureMin)}</p> : null}
+            </div>
+            <p className="mt-2 text-[17px] font-black leading-tight tracking-normal">{current.condition}</p>
+            {today ? (
+              <p className="mt-1 text-[13px] font-semibold leading-5 text-white/82">
+                Feels like {temperature(current.apparentTemperature)}. {rainSummary}. Wind {current.windMph ?? '--'} mph.
+              </p>
+            ) : null}
           </div>
-          <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-[24px] bg-white/10 text-white">
-            <WeatherGlyph icon={icon} className="h-24 w-24" />
+          <div className="flex h-[86px] w-[86px] items-center justify-center">
+            <WeatherGlyph icon={icon} className="h-[82px] w-[82px]" />
           </div>
         </div>
       </section>
 
-      <main className="px-4 pt-1 text-text-1">
-        <section className="mb-4 overflow-hidden rounded-[18px] bg-surface shadow-sm">
-          <div className="border-b border-border px-4 py-3">
-            <p className="text-[13px] font-bold text-[#113b5f]">Daily forecast</p>
+      <main className="px-0 pb-5 text-[#111111]">
+        <section className="border-b border-[#c9d1da] bg-white">
+          <div className="px-5 pb-2 pt-4">
+            <h2 className="text-[19px] font-black tracking-normal">10 day forecast</h2>
           </div>
-          <div className="no-scrollbar flex overflow-x-auto">
+          <div className="no-scrollbar flex overflow-x-auto px-4">
             {snapshot.daily10.map((day, index) => (
               <button
                 key={day.date}
                 type="button"
-                onClick={() => setSelectedDay(index)}
-                className={`flex w-[84px] shrink-0 flex-col items-center border-r border-border px-2 py-3 active:bg-surface-2 ${selectedDay === index ? 'bg-[#e7f1f8] shadow-[inset_0_-3px_0_#113b5f]' : ''}`}
+                onClick={() => {
+                  setSelectedDay(index)
+                }}
+                className={`relative flex min-h-[116px] w-[78px] shrink-0 flex-col items-center justify-start border-b-4 px-2 pb-2.5 pt-2 active:bg-[#eef6fc] ${selectedDay === index ? 'border-[#006def] bg-[#eef6fc]' : 'border-transparent'}`}
               >
-                <span className="text-[12px] font-bold text-text-1">{index === 0 ? 'Today' : weekday(day.date)}</span>
-                <WeatherGlyph icon={weatherIcon(day.conditionCode, true)} className="mt-2 h-8 w-8 text-[#113b5f]" />
-                <span className="mt-2 text-[13px] font-bold text-text-1">{temperature(day.temperatureMax)}</span>
-                <span className="text-[12px] font-semibold text-text-2">{temperature(day.temperatureMin)}</span>
-                <span className="mt-1 text-[10px] font-bold text-[#0072ce]">{day.rainChance ?? 0}%</span>
+                <span className="text-[13px] font-black text-[#111111]">{index === 0 ? 'Today' : weekday(day.date)}</span>
+                <span className="mt-0.5 text-[11px] font-semibold text-[#5b6670]">{shortDate(day.date)}</span>
+                <WeatherGlyph icon={dayIcon(snapshot, day, index)} className="mt-1.5 h-8 w-8" />
+                <span className="mt-1.5 text-[14px] font-black text-[#111111]">{temperature(day.temperatureMax)}</span>
+                <span className="text-[12px] font-bold text-[#64707c]">{temperature(day.temperatureMin)}</span>
+                <span className="mt-0.5 text-[11px] font-black text-[#006def]">{formatPercent(day.rainChance)}</span>
               </button>
             ))}
           </div>
-        </section>
 
-        {pickedDay ? <DayDetailPanel day={pickedDay} selectedDay={selectedDay} /> : null}
-
-        <section className="mb-4 overflow-hidden rounded-[18px] bg-surface shadow-sm">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <p className="text-[13px] font-bold text-[#113b5f]">Hourly forecast</p>
-            <p className="text-[12px] font-semibold text-text-2">{nextRain ? `Rain possible ${timeLabel(nextRain.time)}` : 'No notable rain'}</p>
-          </div>
-          {selectedHours.length > 0 ? selectedHours.map((hour, index) => (
-            <div key={`${hour.time}-${index}`} className={`grid grid-cols-[52px_32px_1fr_48px] items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-              <span className="text-[13px] font-bold text-text-1">{index === 0 && selectedDay === 0 ? 'Now' : timeLabel(hour.time)}</span>
-              <WeatherGlyph icon={weatherIcon(hour.conditionCode, selectedDay === 0 ? current.isDay : true)} className="h-7 w-7 text-[#113b5f]" />
-              <div className="min-w-0">
-                <p className="truncate text-[14px] font-bold text-text-1">{temperature(hour.temperature)} · {hour.condition}</p>
-                <p className="mt-0.5 truncate text-[12px] text-text-2">Feels {temperature(hour.apparentTemperature)} · Wind {hour.windMph ?? '--'} mph · Humidity {hour.humidity ?? '--'}%</p>
+          {selectedHours.length > 0 ? (
+            <div className="border-t border-[#006def]/35 bg-[#eef6fc]">
+              <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3">
+                <p className="text-[12px] font-black uppercase tracking-[0.08em] text-[#4d6175]">Hourly</p>
               </div>
-              <span className="text-right text-[12px] font-bold text-[#0072ce]">{hour.rainChance ?? 0}%</span>
+              <div ref={hourlyScrollRef} className="no-scrollbar overflow-x-auto px-4 pb-4">
+                <div className="flex min-w-max overflow-hidden rounded-[8px] border border-[#c5d1dc] bg-white">
+                  {selectedHours.map((hour, index) => {
+                    const showDayBreak = pickedDay ? dateKey(hour.time) !== pickedDay.date && (index === 0 || dateKey(selectedHours[index - 1]?.time) === pickedDay.date) : false
+                    return (
+                      <Fragment key={`${hour.time}-${index}`}>
+                        {showDayBreak ? <DayBreakMarker label={weekday(dateKey(hour.time))} /> : null}
+                        <HourlyColumn
+                          hour={hour}
+                          label={index === 0 && selectedDay === 0 ? 'Now' : timeLabel24(hour.time)}
+                          isDay={selectedDay === 0 ? current.isDay : true}
+                          isFirst={index === 0 && !showDayBreak}
+                          selected={selectedHour === index}
+                          onSelect={element => {
+                            setSelectedHour(current => current === index ? null : index)
+                            window.requestAnimationFrame(() => {
+                              const left = element.offsetLeft
+                              const width = element.offsetWidth + 242
+                              const visibleLeft = hourlyScrollRef.current?.scrollLeft ?? 0
+                              const visibleRight = visibleLeft + (hourlyScrollRef.current?.clientWidth ?? 0)
+                              if (left < visibleLeft || left + width > visibleRight) {
+                                hourlyScrollRef.current?.scrollTo({ left: Math.max(0, left - 12), behavior: 'smooth' })
+                              }
+                            })
+                          }}
+                        />
+                      </Fragment>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
-          )) : (
-            <div className="px-4 py-8 text-center text-[13px] text-text-2">No hourly forecast available for this day.</div>
+          ) : (
+            <div className="px-5 pb-8 pt-3 text-center text-[13px] font-semibold text-[#5b6670]">No hourly forecast available for this day.</div>
           )}
         </section>
 
-        <section className="grid grid-cols-2 gap-3 pb-4">
-          <Metric title="Wind" value={`${current.windMph ?? '--'} mph`} detail={windLabel(current.windDirection)} />
-          <Metric title="Humidity" value={`${current.humidity ?? '--'}%`} detail="Relative humidity" />
-          <Metric title="Pressure" value={`${current.pressureHpa ?? '--'} hPa`} detail="Surface pressure" />
-          <Metric title="UV Index" value={String(snapshot.airQuality.uvIndex ?? today?.uvIndex ?? '--')} detail={uvLabel(snapshot.airQuality.uvIndex ?? today?.uvIndex)} />
-          <Metric title="Air Quality" value={aqiLabel(snapshot.airQuality.europeanAqi)} detail={snapshot.airQuality.pm25 == null ? 'PM2.5 unavailable' : `PM2.5 ${snapshot.airQuality.pm25}`} />
-          <Metric title="Sun" value={today?.sunrise ? timeLabel(today.sunrise) : '--'} detail={today?.sunset ? `Sunset ${timeLabel(today.sunset)}` : 'Sunrise / sunset'} />
+        <section className="bg-white">
+          <div className="px-5 pb-2 pt-4">
+            <h2 className="text-[19px] font-black tracking-normal">Details</h2>
+          </div>
+          <div className="divide-y divide-[#d7dce2] border-y border-[#d7dce2]">
+            <BBCDetailRow title="Chance of rain" value={formatPercent(primaryRain)} detail={pickedDay ? `${formatMm(pickedDay.precipitationMm)} expected` : 'Forecast precipitation'} />
+            <BBCDetailRow title="Wind" value={`${current.windMph ?? pickedDay?.windMph ?? '--'} mph`} detail={windLabel(current.windDirection)} />
+            <BBCDetailRow title="UV" value={bestUv == null ? '--' : String(bestUv)} detail={uvLabel(bestUv)} />
+            <BBCDetailRow title="Air quality" value={aqiLabel(snapshot.airQuality.europeanAqi)} detail={snapshot.airQuality.pm25 == null ? 'PM2.5 unavailable' : `PM2.5 ${snapshot.airQuality.pm25}`} />
+            <BBCDetailRow title="Pressure" value={`${current.pressureHpa ?? '--'} hPa`} detail="Surface pressure" />
+            <BBCDetailRow title="Sunrise and sunset" value={today?.sunrise ? timeLabel(today.sunrise) : '--'} detail={today?.sunset ? `Sunset ${timeLabel(today.sunset)}` : 'Times unavailable'} />
+          </div>
         </section>
       </main>
     </>
+  )
+}
+
+function HourlyColumn({ hour, label, isDay, isFirst, selected, onSelect }: { hour: WeatherSnapshot['hourly24'][number]; label: string; isDay: boolean; isFirst: boolean; selected: boolean; onSelect: (element: HTMLButtonElement) => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={event => onSelect(event.currentTarget)}
+        className={`flex w-[74px] shrink-0 flex-col items-center px-2 py-3 text-center ${isFirst ? '' : 'border-l border-[#d7dce2]'} ${selected ? 'bg-[#e6f2ff]' : 'bg-white active:bg-[#f2f7fb]'}`}
+        aria-pressed={selected}
+      >
+        <span className="h-5 text-[12px] font-black text-[#111111]">{label}</span>
+        <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="mt-2 h-9 w-9" />
+        <span className="mt-2 text-[18px] font-black leading-none tracking-normal text-[#111111]">{temperature(hour.temperature)}</span>
+        <span className="mt-2 text-[11px] font-black text-[#006def]">{formatPercent(hour.rainChance)}</span>
+        <span className="mt-2 text-[11px] font-bold leading-tight text-[#5b6670]">{hour.windMph ?? '--'} mph</span>
+        <span className="mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#eef1f4] text-[#4a5663]" aria-hidden="true">
+          <svg viewBox="0 0 12 12" fill="currentColor" className="h-3 w-3">
+            <path d="M6 1.5l3.2 8.2L6 8.2 2.8 9.7 6 1.5Z" />
+          </svg>
+        </span>
+      </button>
+      {selected ? <HourlyDetail hour={hour} /> : null}
+    </>
+  )
+}
+
+function DayBreakMarker({ label }: { label: string }) {
+  return (
+    <div className="flex w-[46px] shrink-0 items-center justify-center border-l border-r border-[#b8c7d5] bg-[#dcecf8] px-1 text-center">
+      <span className="text-[10px] font-black uppercase leading-3 tracking-[0.06em] text-[#486175]">{label}</span>
+    </div>
+  )
+}
+
+function HourlyDetail({ hour }: { hour: WeatherSnapshot['hourly24'][number] }) {
+  const isDay = Number(hour.time.slice(11, 13)) >= 7 && Number(hour.time.slice(11, 13)) <= 20
+  return (
+    <div className="weather-hour-detail w-[242px] shrink-0 border-l border-[#88b3d8] bg-gradient-to-br from-[#0b4f8f] to-[#073866] px-3 py-3 text-white shadow-[inset_4px_0_0_rgba(255,255,255,0.18)]">
+      <div className="flex items-start gap-2">
+        <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="h-9 w-9 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-[12px] font-black">{timeLabel24(hour.time)}</p>
+          <p className="mt-0.5 truncate text-[14px] font-black">{hour.condition}</p>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-[7px] bg-white/10 px-2 py-2 text-[11px] font-bold text-white/78">
+        <span>Feels</span>
+        <span className="text-right text-white">{temperature(hour.apparentTemperature)}</span>
+        <span>Rain</span>
+        <span className="text-right text-white">{formatPercent(hour.rainChance)}</span>
+        <span>Wind</span>
+        <span className="text-right text-white">{hour.windMph ?? '--'} mph</span>
+        <span>Humidity</span>
+        <span className="text-right text-white">{hour.humidity ?? '--'}%</span>
+        <span>UV</span>
+        <span className="text-right text-white">{hour.uvIndex ?? '--'}</span>
+      </div>
+    </div>
+  )
+}
+
+function BBCDetailRow({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] gap-4 bg-white px-5 py-4">
+      <div className="min-w-0">
+        <p className="text-[15px] font-black tracking-normal text-[#111111]">{title}</p>
+        <p className="mt-0.5 text-[13px] font-semibold text-[#5b6670]">{detail}</p>
+      </div>
+      <p className="self-center text-right text-[17px] font-black tracking-normal text-[#111111]">{value}</p>
+    </div>
   )
 }
 
@@ -398,107 +555,44 @@ function LocationSearch({ placeholder, onPick }: { placeholder: string; onPick: 
 
 function EmptyWeatherSetup({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
-    <div className="px-5 pt-20 text-center text-white">
+    <div className="px-5 pt-20 text-center text-[#111111]">
       <WeatherGlyph icon="partly" className="mx-auto h-20 w-20 opacity-90" />
       <h1 className="mt-6 text-[34px] font-bold leading-tight tracking-normal">Set your home weather</h1>
-      <p className="mx-auto mt-3 max-w-[280px] text-[14px] leading-6 text-white/72">Choose the family home location once, then add your own saved places from settings.</p>
-      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-white px-5 py-3 text-[15px] font-bold text-black active:opacity-80">Open settings</button>
-    </div>
-  )
-}
-
-function Metric({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return (
-    <div className="min-h-[104px] rounded-[22px] bg-surface p-4 shadow-sm">
-      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-text-3">{title}</p>
-      <p className="mt-3 text-[23px] font-bold text-text-1 tracking-normal">{value}</p>
-      <p className="mt-1 text-[12px] text-text-2">{detail}</p>
-    </div>
-  )
-}
-
-function DayDetailPanel({ day, selectedDay }: { day: WeatherSnapshot['daily10'][number]; selectedDay: number }) {
-  return (
-    <section className="mb-4 overflow-hidden rounded-[26px] border border-accent-border bg-surface shadow-[0_12px_34px_rgba(0,0,0,0.08)]">
-      <div className="relative overflow-hidden p-4">
-        <div className="absolute right-[-22px] top-[-28px] h-28 w-28 rounded-full bg-accent-bg" />
-        <div className="relative flex items-start gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] bg-accent-bg text-accent">
-            <WeatherGlyph icon={weatherIcon(day.conditionCode, true)} className="h-11 w-11" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-text-3">{selectedDay === 0 ? 'Today' : fullDay(day.date)}</p>
-            <p className="mt-1 text-[24px] font-bold tracking-normal text-text-1">{day.condition}</p>
-            <p className="mt-1 text-[13px] leading-5 text-text-2">
-              {temperature(day.temperatureMin)} to {temperature(day.temperatureMax)}
-              {day.apparentMin != null || day.apparentMax != null ? ` · feels ${temperature(day.apparentMin)} to ${temperature(day.apparentMax)}` : ''}
-            </p>
-          </div>
-        </div>
-
-        <div className="relative mt-4 grid grid-cols-4 gap-2">
-          <DayChip label="Rain" value={`${day.rainChance ?? 0}%`} />
-          <DayChip label="Total" value={`${day.precipitationMm ?? 0}mm`} />
-          <DayChip label="Wind" value={`${day.windMph ?? '--'}mph`} />
-          <DayChip label="UV" value={String(day.uvIndex ?? '--')} />
-        </div>
-
-        <div className="relative mt-4 grid grid-cols-2 gap-2 border-t border-border pt-4">
-          <SunLine label="Sunrise" value={day.sunrise ? timeLabel(day.sunrise) : '--'} />
-          <SunLine label="Sunset" value={day.sunset ? timeLabel(day.sunset) : '--'} />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function DayChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[16px] bg-bg px-2 py-2.5 text-center">
-      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-text-3">{label}</p>
-      <p className="mt-1 text-[13px] font-bold tracking-normal text-text-1">{value}</p>
-    </div>
-  )
-}
-
-function SunLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[16px] bg-bg px-3 py-2.5">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-text-3">{label}</p>
-      <p className="mt-1 text-[14px] font-bold tracking-normal text-text-1">{value}</p>
+      <p className="mx-auto mt-3 max-w-[280px] text-[14px] leading-6 text-[#5b6670]">Choose the family home location once, then add your own saved places from settings.</p>
+      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-[#111111] px-5 py-3 text-[15px] font-bold text-white active:opacity-80">Open settings</button>
     </div>
   )
 }
 
 function WeatherGlyph({ icon, className = 'h-6 w-6' }: { icon: string; className?: string }) {
-  if (icon === 'moon' || icon === 'partly-night') {
-    return <svg viewBox="0 0 64 64" fill="none" className={className}><path d="M46 47.5A24 24 0 0 1 18.5 15 22 22 0 1 0 46 47.5Z" fill="currentColor" opacity=".96" />{icon === 'partly-night' ? <path d="M17 45h27a9 9 0 0 0-1.5-17.9A14 14 0 0 0 16.2 33 6.2 6.2 0 0 0 17 45Z" fill="currentColor" opacity=".45" /> : null}</svg>
-  }
-  if (icon === 'sun' || icon === 'partly') {
-    return <svg viewBox="0 0 64 64" fill="none" className={className}><circle cx="30" cy="27" r="13" fill="currentColor" /><path d="M30 5v7M30 42v7M8 27h7M45 27h7M14.5 11.5l5 5M40.5 37.5l5 5M45.5 11.5l-5 5M19.5 37.5l-5 5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" opacity=".82" />{icon === 'partly' ? <path d="M22 50h27a9 9 0 0 0-1.5-17.9A14 14 0 0 0 21.2 38 6.2 6.2 0 0 0 22 50Z" fill="currentColor" opacity=".72" /> : null}</svg>
-  }
-  if (icon === 'rain' || icon === 'storm') {
-    return <svg viewBox="0 0 64 64" fill="none" className={className}><path d="M17 38h30a11 11 0 0 0-2-21.8A16 16 0 0 0 15.1 24 7.2 7.2 0 0 0 17 38Z" fill="currentColor" opacity=".9" />{icon === 'storm' ? <path d="M32 39l-7 12h7l-3 8 10-14h-7l5-6h-5Z" fill="currentColor" /> : <path d="M20 46l-3 7M32 46l-3 7M44 46l-3 7" stroke="currentColor" strokeWidth="4" strokeLinecap="round" opacity=".85" />}</svg>
-  }
-  if (icon === 'snow') {
-    return <svg viewBox="0 0 64 64" fill="none" className={className}><path d="M17 36h30a11 11 0 0 0-2-21.8A16 16 0 0 0 15.1 22 7.2 7.2 0 0 0 17 36Z" fill="currentColor" opacity=".78" /><path d="M22 47h.1M32 51h.1M43 47h.1" stroke="currentColor" strokeWidth="7" strokeLinecap="round" /></svg>
-  }
-  if (icon === 'fog') {
-    return <svg viewBox="0 0 64 64" fill="none" className={className}><path d="M17 33h30a11 11 0 0 0-2-21.8A16 16 0 0 0 15.1 19 7.2 7.2 0 0 0 17 33Z" fill="currentColor" opacity=".7" /><path d="M12 43h40M18 52h30" stroke="currentColor" strokeWidth="5" strokeLinecap="round" opacity=".9" /></svg>
-  }
-  return <svg viewBox="0 0 64 64" fill="none" className={className}><path d="M17 42h30a11 11 0 0 0-2-21.8A16 16 0 0 0 15.1 28 7.2 7.2 0 0 0 17 42Z" fill="currentColor" /></svg>
+  return <img src={weatherIconAsset(icon)} alt="" className={`${className} object-contain`} loading="lazy" draggable={false} />
 }
 
-function tinyWeatherStyle(tone?: string): React.CSSProperties {
+function weatherIconAsset(icon: string) {
+  const name = icon === 'sun'
+    ? 'clear-day'
+    : icon === 'moon'
+      ? 'clear-night'
+      : icon === 'partly'
+        ? 'partly-cloudy-day'
+        : icon === 'partly-night'
+          ? 'partly-cloudy-night'
+          : icon === 'rain'
+            ? 'rain'
+            : icon === 'storm'
+              ? 'thunderstorms-rain'
+              : icon === 'snow'
+                ? 'snow'
+                : icon === 'fog'
+                  ? 'fog'
+                  : 'overcast'
+  return `/weather-icons/${name}.svg`
+}
+
+function tinyWeatherStyle(tone?: string): CSSProperties {
   const base = toneColors(tone)
   return {
     background: `linear-gradient(135deg, ${base[0]}, ${base[1]})`,
-  }
-}
-
-function pageStyle(_tone?: string): React.CSSProperties {
-  return {
-    background: 'linear-gradient(180deg, #113b5f 0, #113b5f 318px, #eef3f7 318px, #eef3f7 100%)',
   }
 }
 
@@ -523,12 +617,104 @@ function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
 }
 
+function timeLabel24(value: string) {
+  return new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function dayIcon(snapshot: WeatherSnapshot, day: WeatherSnapshot['daily10'][number], index: number) {
+  const hours = weatherDayHours(snapshot, index, day.date)
+  const daylight = hours.filter(hour => {
+    const hourOfDay = Number(hour.time.slice(11, 13))
+    return hourOfDay >= 7 && hourOfDay <= 20
+  })
+  const sample = daylight.length > 0 ? daylight : hours
+  const weighted = sample.map(hour => ({ icon: weatherIcon(hour.conditionCode, true), rainChance: hour.rainChance ?? 0 }))
+  const rainHours = weighted.filter(row => row.icon === 'rain' || row.icon === 'storm')
+  const strongRainHours = rainHours.filter(row => row.rainChance >= 45)
+
+  if (strongRainHours.length >= 3 || rainHours.length >= Math.ceil(sample.length * 0.35)) {
+    return strongRainHours.some(row => row.icon === 'storm') ? 'storm' : 'rain'
+  }
+
+  const counts = new Map<string, number>()
+  for (const row of weighted.filter(row => row.icon !== 'rain' && row.icon !== 'storm')) {
+    counts.set(row.icon, (counts.get(row.icon) ?? 0) + 1)
+  }
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  return best ?? weatherIcon(day.conditionCode, true)
+}
+
+function weatherDayHours(snapshot: WeatherSnapshot, selectedDay: number, date: string) {
+  if (selectedDay === 0) {
+    const nextDate = addDays(date, 1)
+    const end = hourBoundary(nextDate, 5)
+    return uniqueHours(snapshot.hourly24).filter(hour => {
+      const time = Date.parse(hour.time)
+      return time <= end
+    })
+  }
+
+  const currentDay = snapshot.hourlyByDay?.[date] ?? []
+  const nextDate = addDays(date, 1)
+  const nextDay = snapshot.hourlyByDay?.[nextDate] ?? []
+  const combined = uniqueHours([...currentDay, ...nextDay])
+  const start = hourBoundary(date, 6)
+  const end = hourBoundary(nextDate, 5)
+  return combined.filter(hour => {
+    const time = Date.parse(hour.time)
+    return time >= start && time <= end
+  })
+}
+
+function uniqueHours(hours: WeatherSnapshot['hourly24']) {
+  const seen = new Set<string>()
+  return hours.filter(hour => {
+    if (seen.has(hour.time)) return false
+    seen.add(hour.time)
+    return true
+  })
+}
+
+function hourBoundary(date: string, hour: number) {
+  return new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`).getTime()
+}
+
+function addDays(date: string, days: number) {
+  const next = new Date(`${date}T12:00:00`)
+  next.setDate(next.getDate() + days)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
+}
+
+function dateKey(value: string | undefined) {
+  if (!value) return ''
+  return value.slice(0, 10)
+}
+
 function weekday(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short' })
 }
 
+function shortDate(value: string) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
 function fullDay(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+function selectedDayLabel(index: number, date?: string) {
+  if (!date) return 'Selected day'
+  if (index === 0) return 'Today'
+  return fullDay(date)
+}
+
+function formatPercent(value: number | null | undefined) {
+  return value == null ? '--' : `${value}%`
+}
+
+function formatMm(value: number | null | undefined) {
+  if (value == null) return '-- mm'
+  return `${Number.isInteger(value) ? value : value.toFixed(1)} mm`
 }
 
 function windLabel(degrees: number | null) {

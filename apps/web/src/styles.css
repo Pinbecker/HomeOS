@@ -210,14 +210,21 @@ select {
   100% { transform: translateX(6%); }
 }
 
+@keyframes weather-hour-detail {
+  0% { opacity: 0; transform: translateX(-10px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
 .weather-float { animation: weather-float 5.5s ease-in-out infinite; }
 .weather-drift { animation: weather-drift 18s ease-in-out infinite alternate; }
 .weather-drift-slow { animation: weather-drift 28s ease-in-out infinite alternate-reverse; }
+.weather-hour-detail { animation: weather-hour-detail 180ms ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
   .weather-float,
   .weather-drift,
-  .weather-drift-slow {
+  .weather-drift-slow,
+  .weather-hour-detail {
     animation: none;
   }
 }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'homeos-web-shell-v4'
+const CACHE_NAME = 'homeos-web-shell-v8'
 const APP_SHELL = [
   '/',
   '/login',
@@ -6,6 +6,15 @@ const APP_SHELL = [
   '/apple-touch-icon.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/weather-icons/clear-day.svg',
+  '/weather-icons/clear-night.svg',
+  '/weather-icons/partly-cloudy-day.svg',
+  '/weather-icons/partly-cloudy-night.svg',
+  '/weather-icons/overcast.svg',
+  '/weather-icons/fog.svg',
+  '/weather-icons/rain.svg',
+  '/weather-icons/thunderstorms-rain.svg',
+  '/weather-icons/snow.svg',
 ]
 
 self.addEventListener('install', event => {

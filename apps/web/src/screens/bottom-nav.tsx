@@ -271,76 +271,82 @@ export function BottomNav() {
   }
 
   const menuLinks = useMemo(() => menuItems, [])
+  const renderMenu = open || dragging || dragY > 0
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-40"
-        style={{
-          background: 'rgba(0,0,0,0.45)',
-          backdropFilter: 'blur(6px)',
-          WebkitBackdropFilter: 'blur(6px)',
-          opacity: open ? Math.max(0, 1 - dragY / 320) : 0,
-          pointerEvents: open ? 'auto' : 'none',
-          transition: dragging ? 'none' : 'opacity 0.4s ease',
-        }}
-        onClick={close}
-      />
+      {renderMenu ? (
+        <>
+          <div
+            className="fixed inset-x-0 bottom-0 z-40"
+            style={{
+              top: 'env(safe-area-inset-top)',
+              background: 'rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              opacity: Math.max(0, 1 - dragY / 320),
+              pointerEvents: open ? 'auto' : 'none',
+              transition: dragging ? 'none' : 'opacity 0.4s ease',
+            }}
+            onClick={close}
+          />
 
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Quick menu"
-        className="fixed inset-x-0 bottom-0 z-[60]"
-        style={{
-          transform: open ? `translateY(${dragY}px)` : 'translateY(110%)',
-          transition: dragging ? 'none' : `transform 0.46s ${SHEET_EASE}`,
-          pointerEvents: open ? 'auto' : 'none',
-          willChange: 'transform',
-        }}
-      >
-        <div
-          className="mx-auto max-w-md bg-surface border-t border-border"
-          style={{
-            borderTopLeftRadius: 26,
-            borderTopRightRadius: 26,
-            boxShadow: '0 -10px 40px rgba(0,0,0,0.18)',
-            paddingBottom: 'calc(env(safe-area-inset-bottom) + 22px)',
-          }}
-        >
-          <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}>
-            <div style={{ width: 38, height: 5, borderRadius: 3, background: 'var(--text-3)', opacity: 0.4, margin: '0 auto' }} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quick menu"
+            className="fixed inset-x-0 bottom-0 z-[60]"
+            style={{
+              transform: open ? `translateY(${dragY}px)` : 'translateY(110%)',
+              transition: dragging ? 'none' : `transform 0.46s ${SHEET_EASE}`,
+              pointerEvents: open ? 'auto' : 'none',
+              willChange: 'transform',
+            }}
+          >
+            <div
+              className="mx-auto max-w-md bg-surface border-t border-border"
+              style={{
+                borderTopLeftRadius: 26,
+                borderTopRightRadius: 26,
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.18)',
+                paddingBottom: 'calc(env(safe-area-inset-bottom) + 22px)',
+              }}
+            >
+              <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}>
+                <div style={{ width: 38, height: 5, borderRadius: 3, background: 'var(--text-3)', opacity: 0.4, margin: '0 auto' }} />
+              </div>
+              <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}>Jump to</p>
+              <div className="grid grid-cols-3 gap-y-5 px-5" style={{ justifyItems: 'center' }}>
+                {menuLinks.map((item, idx) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    onClick={close}
+                    aria-label={item.label}
+                    className="flex flex-col items-center gap-2 active:scale-90 transition-transform"
+                    style={{
+                      width: 84,
+                      opacity: open ? 1 : 0,
+                      transform: open ? 'translateY(0)' : 'translateY(14px)',
+                      transition: `transform 0.5s ${SHEET_EASE} ${idx * 35 + 60}ms, opacity 0.4s ease ${idx * 35 + 60}ms`,
+                    }}
+                  >
+                    <div style={{
+                      width: 64, height: 64, borderRadius: 19,
+                      background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: item.color,
+                    }}>
+                      {item.icon}
+                    </div>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', letterSpacing: '0.01em' }}>{item.label}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
           </div>
-          <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}>Jump to</p>
-          <div className="grid grid-cols-3 gap-y-5 px-5" style={{ justifyItems: 'center' }}>
-            {menuLinks.map((item, idx) => (
-              <a
-                key={item.href}
-                href={item.href}
-                onClick={close}
-                aria-label={item.label}
-                className="flex flex-col items-center gap-2 active:scale-90 transition-transform"
-                style={{
-                  width: 84,
-                  opacity: open ? 1 : 0,
-                  transform: open ? 'translateY(0)' : 'translateY(14px)',
-                  transition: `transform 0.5s ${SHEET_EASE} ${idx * 35 + 60}ms, opacity 0.4s ease ${idx * 35 + 60}ms`,
-                }}
-              >
-                <div style={{
-                  width: 64, height: 64, borderRadius: 19,
-                  background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: item.color,
-                }}>
-                  {item.icon}
-                </div>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', letterSpacing: '0.01em' }}>{item.label}</span>
-              </a>
-            ))}
-          </div>
-        </div>
-      </div>
+        </>
+      ) : null}
 
       <div
         className="fixed bottom-0 inset-x-0 z-50"
