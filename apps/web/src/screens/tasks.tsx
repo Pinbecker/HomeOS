@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { ScreenShell } from './shell'
 import { ColorField } from '../components/color-control'
+import { SwipeRow } from '../components/swipe-row'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 
@@ -468,88 +469,92 @@ export function TaskDetailPage() {
     const isRenaming = renamingId === task.id
     const dueDate = toDate(task.dueDate)
     const due = dueDate ? formatDue(dueDate) : null
+    const borderClass = index > 0 ? 'border-t border-border' : ''
+    const content = (
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        {editing ? (
+          <button onClick={() => deleteTask(task)} className="shrink-0 active:opacity-60" aria-label="Delete">
+            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-red">
+              <span className="block h-[2.5px] w-[11px] rounded-full bg-white" />
+            </span>
+          </button>
+        ) : section === 'active' ? (
+          <button
+            onClick={() => setStatus(task, 'completed')}
+            className="h-[22px] w-[22px] shrink-0 rounded-full border-2 border-border transition-transform active:scale-90"
+            aria-label="Complete"
+          />
+        ) : (
+          <button
+            onClick={() => setStatus(task, 'active')}
+            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+            style={{ background: color }}
+            aria-label="Mark incomplete"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+              <path d="M4 10.5l4 4 8-9" />
+            </svg>
+          </button>
+        )}
 
-    return (
-      <div className={index > 0 ? 'border-t border-border' : ''}>
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          {editing ? (
-            <button onClick={() => deleteTask(task)} className="shrink-0 active:opacity-60" aria-label="Delete">
-              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-red">
-                <span className="block h-[2.5px] w-[11px] rounded-full bg-white" />
-              </span>
-            </button>
-          ) : section === 'active' ? (
-            <button
-              onClick={() => setStatus(task, 'completed')}
-              className="h-[22px] w-[22px] shrink-0 rounded-full border-2 border-border transition-transform active:scale-90"
-              aria-label="Complete"
+        <div className="min-w-0 flex-1">
+          {isRenaming ? (
+            <input
+              ref={renameRef}
+              value={renameValue}
+              onChange={event => setRenameValue(event.target.value)}
+              onBlur={() => { commitRename(task).catch(() => undefined) }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  commitRename(task).catch(() => undefined)
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setRenamingId(null)
+                }
+              }}
+              className="w-full bg-transparent py-0.5 text-[16px] text-text-1 outline-none"
             />
           ) : (
             <button
-              onClick={() => setStatus(task, 'active')}
-              className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
-              style={{ background: color }}
-              aria-label="Mark incomplete"
+              onClick={() => { if (!editing && section === 'active') startRename(task) }}
+              className="w-full min-w-0 text-left"
             >
-              <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                <path d="M4 10.5l4 4 8-9" />
-              </svg>
+              <p className={`truncate text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
+              {due ? (
+                <p className={`mt-0.5 text-[12.5px] ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
+              ) : null}
             </button>
           )}
-
-          <div className="min-w-0 flex-1">
-            {isRenaming ? (
-              <input
-                ref={renameRef}
-                value={renameValue}
-                onChange={event => setRenameValue(event.target.value)}
-                onBlur={() => { commitRename(task).catch(() => undefined) }}
-                onKeyDown={event => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    commitRename(task).catch(() => undefined)
-                  }
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    setRenamingId(null)
-                  }
-                }}
-                className="w-full bg-transparent py-0.5 text-[16px] text-text-1 outline-none"
-              />
-            ) : (
-              <button
-                onClick={() => { if (!editing && section === 'active') startRename(task) }}
-                className="w-full min-w-0 text-left"
-              >
-                <p className={`truncate text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
-                {due ? (
-                  <p className={`mt-0.5 text-[12.5px] ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
-                ) : null}
-              </button>
-            )}
-          </div>
-
-          {task.assigneeId ? (
-            <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-              style={{ background: userColor(task.assigneeId) }}
-            >
-              {userInitial(task.assigneeId)}
-            </span>
-          ) : null}
-
-          {section === 'active' && !editing && !isRenaming ? (
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : task.id)}
-              className="-mr-1 shrink-0 p-1 text-text-3 active:opacity-60"
-              aria-label="Show details"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                <path d="M6 4l4 4-4 4" />
-              </svg>
-            </button>
-          ) : null}
         </div>
+
+        {task.assigneeId ? (
+          <span
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+            style={{ background: userColor(task.assigneeId) }}
+          >
+            {userInitial(task.assigneeId)}
+          </span>
+        ) : null}
+
+        {section === 'active' && !editing && !isRenaming ? (
+          <button
+            onClick={() => setExpandedId(isExpanded ? null : task.id)}
+            className="-mr-1 shrink-0 p-1 text-text-3 active:opacity-60"
+            aria-label="Show details"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+              <path d="M6 4l4 4-4 4" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+    )
+
+    return (
+      <div className={editing ? borderClass : ''}>
+        {editing ? content : <SwipeRow onDelete={() => deleteTask(task)} className={borderClass}>{content}</SwipeRow>}
 
         {isExpanded && !editing ? (
           <div className="px-3 pb-3">
