@@ -169,10 +169,7 @@ export function locationRefForSaved(id: string) {
   return `saved:${id}`
 }
 
-export function defaultWeatherLocationRef(shared: WeatherSharedSettings, personal: WeatherUserSettings) {
-  if (personal.lastViewedLocationId && personal.savedLocations.some(location => location.id === personal.lastViewedLocationId)) {
-    return locationRefForSaved(personal.lastViewedLocationId)
-  }
+export function defaultWeatherLocationRef(shared: WeatherSharedSettings, _personal: WeatherUserSettings) {
   return shared.home ? 'home' : null
 }
 

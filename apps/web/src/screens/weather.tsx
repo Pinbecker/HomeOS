@@ -158,7 +158,7 @@ export function WeatherPage() {
   return (
     <ScreenShell title="Weather" showHeader={false}>
       <div className="min-h-dvh bg-[#eef1f4] pb-8 text-[#111111]">
-        <div className="sticky top-0 z-30 border-b border-[#d7dce2] bg-[#f7f8fa]/92 px-4 shadow-[0_1px_0_rgba(17,17,17,0.03)] backdrop-blur">
+        <div className="sticky top-0 z-30 border-b border-[#d7dce2] bg-[#f7f8fa] px-4 shadow-[0_1px_0_rgba(17,17,17,0.03)]">
           <div className="flex items-center justify-between pb-2 pt-[calc(env(safe-area-inset-top)+8px)]">
               <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Back">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
@@ -235,7 +235,6 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
   const pickedDay = snapshot.daily10[selectedDay] ?? today
   const selectedHours = useMemo(() => pickedDay ? weatherDayHours(snapshot, selectedDay, pickedDay.date) : snapshot.hourly24, [pickedDay, selectedDay, snapshot])
   const nextRain = selectedHours.find(hour => (hour.rainChance ?? 0) >= 35)
-  const bestUv = snapshot.airQuality.uvIndex ?? pickedDay?.uvIndex ?? today?.uvIndex ?? null
   const primaryRain = pickedDay?.rainChance ?? selectedHours[0]?.rainChance ?? null
   const rainSummary = nextRain ? `Rain from ${timeLabel24(nextRain.time)}` : primaryRain != null ? `Rain risk ${formatPercent(primaryRain)}` : 'No notable rain'
 
@@ -251,7 +250,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
 
   return (
     <>
-      <section className="bg-[#0b4f8f] px-5 pb-4 pt-4 text-white">
+      <section className="relative h-[196px] overflow-hidden bg-[#0b4f8f] px-5 pt-4 text-white">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-[24px] font-black leading-tight tracking-normal">{snapshot.location.name}</h1>
@@ -259,21 +258,22 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-[1fr_86px] items-center gap-3">
+        <div className="absolute right-5 top-11 flex h-[78px] w-[78px] items-center justify-center">
+          <WeatherGlyph icon={icon} className="h-[76px] w-[76px]" eager />
+        </div>
+
+        <div className="mt-3">
           <div className="min-w-0">
-            <div className="flex items-end gap-3">
+            <div className="flex items-end gap-3 pr-[96px]">
               <p className="text-[64px] font-black leading-[0.86] tracking-normal">{temperature(current.temperature)}</p>
               {today ? <p className="pb-1.5 text-[13px] font-black text-white/82">H {temperature(today.temperatureMax)} L {temperature(today.temperatureMin)}</p> : null}
             </div>
             <p className="mt-2 text-[17px] font-black leading-tight tracking-normal">{current.condition}</p>
             {today ? (
-              <p className="mt-1 text-[13px] font-semibold leading-5 text-white/82">
+              <p className="mt-1 h-5 truncate text-[13px] font-semibold leading-5 text-white/82">
                 Feels like {temperature(current.apparentTemperature)}. {rainSummary}. Wind {current.windMph ?? '--'} mph.
               </p>
             ) : null}
-          </div>
-          <div className="flex h-[86px] w-[86px] items-center justify-center">
-            <WeatherGlyph icon={icon} className="h-[82px] w-[82px]" />
           </div>
         </div>
       </section>
@@ -325,7 +325,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
                             setSelectedHour(current => current === index ? null : index)
                             window.requestAnimationFrame(() => {
                               const left = element.offsetLeft
-                              const width = element.offsetWidth + 242
+                              const width = element.offsetWidth + 142
                               const visibleLeft = hourlyScrollRef.current?.scrollLeft ?? 0
                               const visibleRight = visibleLeft + (hourlyScrollRef.current?.clientWidth ?? 0)
                               if (left < visibleLeft || left + width > visibleRight) {
@@ -345,19 +345,6 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           )}
         </section>
 
-        <section className="bg-white">
-          <div className="px-5 pb-2 pt-4">
-            <h2 className="text-[19px] font-black tracking-normal">Details</h2>
-          </div>
-          <div className="divide-y divide-[#d7dce2] border-y border-[#d7dce2]">
-            <BBCDetailRow title="Chance of rain" value={formatPercent(primaryRain)} detail={pickedDay ? `${formatMm(pickedDay.precipitationMm)} expected` : 'Forecast precipitation'} />
-            <BBCDetailRow title="Wind" value={`${current.windMph ?? pickedDay?.windMph ?? '--'} mph`} detail={windLabel(current.windDirection)} />
-            <BBCDetailRow title="UV" value={bestUv == null ? '--' : String(bestUv)} detail={uvLabel(bestUv)} />
-            <BBCDetailRow title="Air quality" value={aqiLabel(snapshot.airQuality.europeanAqi)} detail={snapshot.airQuality.pm25 == null ? 'PM2.5 unavailable' : `PM2.5 ${snapshot.airQuality.pm25}`} />
-            <BBCDetailRow title="Pressure" value={`${current.pressureHpa ?? '--'} hPa`} detail="Surface pressure" />
-            <BBCDetailRow title="Sunrise and sunset" value={today?.sunrise ? timeLabel(today.sunrise) : '--'} detail={today?.sunset ? `Sunset ${timeLabel(today.sunset)}` : 'Times unavailable'} />
-          </div>
-        </section>
       </main>
     </>
   )
@@ -399,7 +386,7 @@ function DayBreakMarker({ label }: { label: string }) {
 function HourlyDetail({ hour }: { hour: WeatherSnapshot['hourly24'][number] }) {
   const isDay = Number(hour.time.slice(11, 13)) >= 7 && Number(hour.time.slice(11, 13)) <= 20
   return (
-    <div className="weather-hour-detail w-[242px] shrink-0 border-l border-[#88b3d8] bg-gradient-to-br from-[#0b4f8f] to-[#073866] px-3 py-3 text-white shadow-[inset_4px_0_0_rgba(255,255,255,0.18)]">
+    <div className="weather-hour-detail w-[142px] shrink-0 border-l border-[#88b3d8] bg-gradient-to-br from-[#0b4f8f] to-[#073866] px-2.5 py-3 text-white shadow-[inset_4px_0_0_rgba(255,255,255,0.18)]">
       <div className="flex items-start gap-2">
         <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="h-9 w-9 shrink-0" />
         <div className="min-w-0">
@@ -407,7 +394,7 @@ function HourlyDetail({ hour }: { hour: WeatherSnapshot['hourly24'][number] }) {
           <p className="mt-0.5 truncate text-[14px] font-black">{hour.condition}</p>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-[7px] bg-white/10 px-2 py-2 text-[11px] font-bold text-white/78">
+      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1.5 rounded-[7px] bg-white/10 px-2 py-2 text-[10.5px] font-bold text-white/78">
         <span>Feels</span>
         <span className="text-right text-white">{temperature(hour.apparentTemperature)}</span>
         <span>Rain</span>
@@ -419,18 +406,6 @@ function HourlyDetail({ hour }: { hour: WeatherSnapshot['hourly24'][number] }) {
         <span>UV</span>
         <span className="text-right text-white">{hour.uvIndex ?? '--'}</span>
       </div>
-    </div>
-  )
-}
-
-function BBCDetailRow({ title, value, detail }: { title: string; value: string; detail: string }) {
-  return (
-    <div className="grid grid-cols-[1fr_auto] gap-4 bg-white px-5 py-4">
-      <div className="min-w-0">
-        <p className="text-[15px] font-black tracking-normal text-[#111111]">{title}</p>
-        <p className="mt-0.5 text-[13px] font-semibold text-[#5b6670]">{detail}</p>
-      </div>
-      <p className="self-center text-right text-[17px] font-black tracking-normal text-[#111111]">{value}</p>
     </div>
   )
 }
@@ -564,8 +539,8 @@ function EmptyWeatherSetup({ onOpenSettings }: { onOpenSettings: () => void }) {
   )
 }
 
-function WeatherGlyph({ icon, className = 'h-6 w-6' }: { icon: string; className?: string }) {
-  return <img src={weatherIconAsset(icon)} alt="" className={`${className} object-contain`} loading="lazy" draggable={false} />
+function WeatherGlyph({ icon, className = 'h-6 w-6', eager = false }: { icon: string; className?: string; eager?: boolean }) {
+  return <img src={weatherIconAsset(icon)} alt="" className={`${className} object-contain`} loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} draggable={false} />
 }
 
 function weatherIconAsset(icon: string) {
@@ -611,10 +586,6 @@ function relativeTime(value: string) {
   if (minutes < 60) return `${minutes}m ago`
   const hours = Math.round(minutes / 60)
   return `${hours}h ago`
-}
-
-function timeLabel(value: string) {
-  return new Date(value).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })
 }
 
 function timeLabel24(value: string) {
@@ -710,34 +681,6 @@ function selectedDayLabel(index: number, date?: string) {
 
 function formatPercent(value: number | null | undefined) {
   return value == null ? '--' : `${value}%`
-}
-
-function formatMm(value: number | null | undefined) {
-  if (value == null) return '-- mm'
-  return `${Number.isInteger(value) ? value : value.toFixed(1)} mm`
-}
-
-function windLabel(degrees: number | null) {
-  if (degrees == null) return 'Direction unavailable'
-  const labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-  return `${labels[Math.round(degrees / 45) % 8]} ${degrees}°`
-}
-
-function uvLabel(value: number | null | undefined) {
-  if (value == null) return 'Unavailable'
-  if (value < 3) return 'Low'
-  if (value < 6) return 'Moderate'
-  if (value < 8) return 'High'
-  return 'Very high'
-}
-
-function aqiLabel(value: number | null | undefined) {
-  if (value == null) return '--'
-  if (value <= 20) return 'Good'
-  if (value <= 40) return 'Fair'
-  if (value <= 60) return 'Moderate'
-  if (value <= 80) return 'Poor'
-  return 'Very poor'
 }
 
 function moveSavedLocation(userId: string, locations: WeatherLocation[], index: number, delta: number) {
