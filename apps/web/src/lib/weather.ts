@@ -11,6 +11,20 @@ export type WeatherLocation = {
   countryCode?: string | null
 }
 
+export type WeatherHourlyPoint = {
+  time: string
+  temperature: number | null
+  apparentTemperature: number | null
+  rainChance: number | null
+  precipitationMm: number | null
+  conditionCode: number
+  condition: string
+  windMph: number | null
+  humidity: number | null
+  visibilityKm: number | null
+  uvIndex: number | null
+}
+
 export type WeatherSnapshot = {
   provider: string
   location: WeatherLocation
@@ -28,19 +42,8 @@ export type WeatherSnapshot = {
     precipitationMm: number | null
     pressureHpa: number | null
   }
-  hourly24: Array<{
-    time: string
-    temperature: number | null
-    apparentTemperature: number | null
-    rainChance: number | null
-    precipitationMm: number | null
-    conditionCode: number
-    condition: string
-    windMph: number | null
-    humidity: number | null
-    visibilityKm: number | null
-    uvIndex: number | null
-  }>
+  hourly24: WeatherHourlyPoint[]
+  hourlyByDay?: Record<string, WeatherHourlyPoint[]>
   daily10: Array<{
     date: string
     conditionCode: number
@@ -93,7 +96,7 @@ const DEFAULT_SHARED: WeatherSharedSettings = {
   units: { temperature: 'celsius', wind: 'mph', precipitation: 'mm' },
 }
 
-const WEATHER_CACHE_KEY = 'homeos:weather-cache'
+const WEATHER_CACHE_KEY = 'homeos:weather-cache:v2'
 
 export function readSharedWeatherSettings(settings: Record<string, unknown> | null | undefined): WeatherSharedSettings {
   const raw = settingObject(settings?.weather)
@@ -175,7 +178,7 @@ export function defaultWeatherLocationRef(shared: WeatherSharedSettings, persona
 
 export async function fetchWeatherSnapshot(locationRef: string, options: { allowCache?: boolean } = {}) {
   const cached = loadCachedWeather(locationRef)
-  if (options.allowCache && cached && (!navigator.onLine || Date.parse(cached.staleAt) > Date.now())) return cached
+  if (options.allowCache && cached && typeof navigator !== 'undefined' && !navigator.onLine) return cached
 
   try {
     const response = await fetch(`/api/weather/forecast?location=${encodeURIComponent(locationRef)}`, {

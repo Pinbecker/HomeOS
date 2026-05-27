@@ -197,6 +197,18 @@ function normalizeForecast(location: WeatherLocation, forecast: OpenMeteoForecas
   const currentHourlyIndex = nearestIndex(hourlyTimes, currentTime)
   const hourlyIndexes = hourlyTimes.slice(hourlyStartIndex, hourlyStartIndex + 23).map((_time, index) => hourlyStartIndex + index)
   const airIndex = nearestIndex(air?.hourly?.time ?? [], String(current.time ?? hourlyTimes[hourlyStartIndex] ?? ''))
+  const hourly24 = [null, ...hourlyIndexes].map(hourlyIndex => hourlyPoint(forecast, current, currentTime, currentHourlyIndex, hourlyIndex))
+  const forecastDayKeys = new Set(dailyTimes.slice(0, 10))
+  const hourlyByDay: Record<string, ReturnType<typeof hourlyPoint>[]> = {}
+  hourlyTimes.forEach((time, index) => {
+    const dayKey = time.slice(0, 10)
+    if (!forecastDayKeys.has(dayKey)) return
+    const list = hourlyByDay[dayKey] ?? []
+    list.push(hourlyPoint(forecast, current, currentTime, currentHourlyIndex, index))
+    hourlyByDay[dayKey] = list
+  })
+  const todayKey = currentTime.slice(0, 10)
+  hourlyByDay[todayKey] = hourly24
 
   return {
     provider: 'open-meteo',
@@ -222,19 +234,8 @@ function normalizeForecast(location: WeatherLocation, forecast: OpenMeteoForecas
       precipitationMm: round(current.precipitation),
       pressureHpa: round(current.surface_pressure),
     },
-    hourly24: [null, ...hourlyIndexes].map((hourlyIndex, displayIndex) => ({
-      time: hourlyIndex == null ? currentTime : hourlyTimes[hourlyIndex],
-      temperature: hourlyIndex == null ? round(current.temperature_2m) : round(forecast.hourly?.temperature_2m?.[hourlyIndex]),
-      apparentTemperature: hourlyIndex == null ? round(current.apparent_temperature) : round(forecast.hourly?.apparent_temperature?.[hourlyIndex]),
-      rainChance: round(forecast.hourly?.precipitation_probability?.[hourlyIndex ?? currentHourlyIndex]),
-      precipitationMm: hourlyIndex == null ? round(current.precipitation) : round(forecast.hourly?.precipitation?.[hourlyIndex]),
-      conditionCode: hourlyIndex == null ? Number(current.weather_code ?? 0) : Number(forecast.hourly?.weather_code?.[hourlyIndex] ?? 0),
-      condition: weatherLabel(hourlyIndex == null ? Number(current.weather_code ?? 0) : Number(forecast.hourly?.weather_code?.[hourlyIndex] ?? 0)),
-      windMph: hourlyIndex == null ? round(current.wind_speed_10m) : round(forecast.hourly?.wind_speed_10m?.[hourlyIndex]),
-      humidity: hourlyIndex == null ? round(current.relative_humidity_2m) : round(forecast.hourly?.relative_humidity_2m?.[hourlyIndex]),
-      visibilityKm: hourlyIndex == null || forecast.hourly?.visibility?.[hourlyIndex] == null ? null : round(Number(forecast.hourly.visibility[hourlyIndex]) / 1000, 1),
-      uvIndex: hourlyIndex == null ? null : round(forecast.hourly?.uv_index?.[hourlyIndex], 1),
-    })),
+    hourly24,
+    hourlyByDay,
     daily10: dailyTimes.slice(0, 10).map((time, index) => ({
       date: time,
       conditionCode: Number(forecast.daily?.weather_code?.[index] ?? 0),
@@ -290,6 +291,24 @@ function currentHourIndex(times: string[], currentTime: string) {
   const next = times.findIndex(time => Date.parse(time) > currentMs)
   if (next >= 0) return next
   return Math.max(0, times.length - 1)
+}
+
+function hourlyPoint(forecast: OpenMeteoForecast, current: Record<string, unknown>, currentTime: string, currentHourlyIndex: number, hourlyIndex: number | null) {
+  const sourceIndex = hourlyIndex ?? currentHourlyIndex
+  const code = hourlyIndex == null ? Number(current.weather_code ?? 0) : Number(forecast.hourly?.weather_code?.[hourlyIndex] ?? 0)
+  return {
+    time: hourlyIndex == null ? currentTime : stringValues(forecast.hourly?.time)[hourlyIndex] ?? currentTime,
+    temperature: hourlyIndex == null ? round(current.temperature_2m) : round(forecast.hourly?.temperature_2m?.[hourlyIndex]),
+    apparentTemperature: hourlyIndex == null ? round(current.apparent_temperature) : round(forecast.hourly?.apparent_temperature?.[hourlyIndex]),
+    rainChance: round(forecast.hourly?.precipitation_probability?.[sourceIndex]),
+    precipitationMm: hourlyIndex == null ? round(current.precipitation) : round(forecast.hourly?.precipitation?.[hourlyIndex]),
+    conditionCode: code,
+    condition: weatherLabel(code),
+    windMph: hourlyIndex == null ? round(current.wind_speed_10m) : round(forecast.hourly?.wind_speed_10m?.[hourlyIndex]),
+    humidity: hourlyIndex == null ? round(current.relative_humidity_2m) : round(forecast.hourly?.relative_humidity_2m?.[hourlyIndex]),
+    visibilityKm: hourlyIndex == null || forecast.hourly?.visibility?.[hourlyIndex] == null ? null : round(Number(forecast.hourly.visibility[hourlyIndex]) / 1000, 1),
+    uvIndex: hourlyIndex == null ? null : round(forecast.hourly?.uv_index?.[hourlyIndex], 1),
+  }
 }
 
 function stringValues(values: Array<unknown> | undefined) {
