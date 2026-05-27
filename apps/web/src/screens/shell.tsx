@@ -3,7 +3,7 @@ import { useSessionState } from '../lib/session-store'
 import { BottomNav } from './bottom-nav'
 import { LoginPage } from './shared'
 
-export function ScreenShell({ title, children, showHeader = true }: { title: string; children: ReactNode; showHeader?: boolean }) {
+export function ScreenShell({ title, children, showHeader = true, contentClassName = 'flex-1 pb-28' }: { title: string; children: ReactNode; showHeader?: boolean; contentClassName?: string }) {
   const sessionState = useSessionState(state => state)
 
   if (sessionState.status === 'loading') {
@@ -23,7 +23,7 @@ export function ScreenShell({ title, children, showHeader = true }: { title: str
             <h1 className="mt-1 text-[32px] font-bold text-text-1">{title}</h1>
           </header>
         ) : null}
-        <main className="flex-1 pb-28">{children}</main>
+        <main className={contentClassName}>{children}</main>
         <BottomNav />
       </div>
     </div>

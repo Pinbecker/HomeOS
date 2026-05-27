@@ -30,8 +30,7 @@ export function CycleTrackerPage() {
     entries: state.data.cycleEntries,
   }))
   const insights = useMemo(() => calculateCycleInsights(snapshot.entries), [snapshot.entries])
-  const latestAnchor = insights.latestStart ?? new Date()
-  const [month, setMonth] = useState(() => new Date(Date.UTC(latestAnchor.getUTCFullYear(), latestAnchor.getUTCMonth(), 1)))
+  const [month, setMonth] = useState(currentCycleCalendarMonth)
   const [startDate, setStartDate] = useState(() => cycleDateInput(new Date()))
   const [endDate, setEndDate] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -271,6 +270,11 @@ function MonthView({ month, entries, onPrevious, onNext }: { month: Date; entrie
       </div>
     </section>
   )
+}
+
+function currentCycleCalendarMonth() {
+  const now = new Date()
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))
 }
 
 function TimelineSheet({ open, entries, insights, onClose, onDelete, onSave }: { open: boolean; entries: CycleEntry[]; insights: CycleInsights; onClose: () => void; onDelete: (entry: CycleEntry) => void; onSave: (entry: CycleEntry, startDate: string, endDate: string, setMessage: (message: string | null) => void) => Promise<boolean> }) {

@@ -147,6 +147,26 @@ export function WeatherPage() {
     }
   }, [settingsOpen])
 
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const previousTheme = meta?.getAttribute('content') ?? null
+    const previousHtmlBg = document.documentElement.style.backgroundColor
+    const previousBodyBg = document.body.style.backgroundColor
+    const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()
+
+    if (appBg) {
+      meta?.setAttribute('content', appBg)
+      document.documentElement.style.backgroundColor = appBg
+      document.body.style.backgroundColor = appBg
+    }
+
+    return () => {
+      if (previousTheme != null) meta?.setAttribute('content', previousTheme)
+      document.documentElement.style.backgroundColor = previousHtmlBg
+      document.body.style.backgroundColor = previousBodyBg
+    }
+  }, [])
+
   function refresh() {
     if (!selectedRef) return
     setLoad(prev => ({ ...prev, loading: true, error: null }))
@@ -158,32 +178,32 @@ export function WeatherPage() {
   const snapshot = load.snapshot
 
   return (
-    <ScreenShell title="Weather" showHeader={false}>
-      <div className="min-h-dvh bg-[#eef1f4] pb-8 text-[#111111]">
-        <div className="sticky top-0 z-30 border-b border-[#d7dce2] bg-[#f7f8fa] px-4 shadow-[0_1px_0_rgba(17,17,17,0.03)]">
+    <ScreenShell title="Weather" showHeader={false} contentClassName="flex-1 pb-0">
+      <div className="bg-bg text-text-1">
+        <div className="sticky top-0 z-30 border-b border-border bg-bg px-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
           <div className="flex items-center justify-between pb-2 pt-[calc(env(safe-area-inset-top)+8px)]">
-              <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Back">
+              <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Back">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
               </a>
               <div className="min-w-0 px-3 text-center">
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#111111]">Weather</p>
-                <p className="mt-0.5 truncate text-[12px] font-semibold text-[#5a6673]">{snapshot?.location.name ?? 'Forecast'}</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-text-1">Weather</p>
+                <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{snapshot?.location.name ?? 'Forecast'}</p>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Refresh">
+                <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Refresh">
                   <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 ${load.loading ? 'animate-spin' : ''}`}><path d="M15 6a6 6 0 1 0 1 4" /><path d="M15 2v4h-4" /></svg>
                 </button>
-                <button onClick={() => setLocationsOpen(open => !open)} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Locations" aria-expanded={locationsOpen}>
+                <button onClick={() => setLocationsOpen(open => !open)} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Locations" aria-expanded={locationsOpen}>
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 18s6-5.2 6-10A6 6 0 1 0 4 8c0 4.8 6 10 6 10Z" /><circle cx="10" cy="8" r="2" /></svg>
                 </button>
-                <button onClick={() => setSettingsOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-[#111111] active:bg-black/5" aria-label="Settings">
+                <button onClick={() => setSettingsOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Settings">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 0 1-2.83 2.83l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.05a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 0 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 0 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 0 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.05A1.7 1.7 0 0 0 19.4 15Z" /></svg>
                 </button>
               </div>
           </div>
 
           {locationsOpen && locations.length > 0 ? (
-            <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+52px)] z-40 w-[220px] overflow-hidden rounded-[8px] border border-[#cbd3dc] bg-white shadow-[0_14px_36px_rgba(0,0,0,0.18)]">
+            <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+52px)] z-40 w-[220px] overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_14px_36px_rgba(0,0,0,0.14)]">
               {locations.map((row, index) => (
                 <button
                   key={row.ref}
@@ -191,10 +211,10 @@ export function WeatherPage() {
                     setSelectedRef(row.ref)
                     setLocationsOpen(false)
                   }}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left active:bg-[#eef6fc] ${index > 0 ? 'border-t border-[#e2e7ec]' : ''}`}
+                  className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left active:bg-accent-bg ${index > 0 ? 'border-t border-border' : ''}`}
                 >
-                  <span className="min-w-0 truncate text-[14px] font-bold text-[#111111]">{row.ref === 'home' ? 'Home' : row.label}</span>
-                  {selectedRef === row.ref ? <span className="text-[13px] font-black text-[#006def]">Selected</span> : null}
+                  <span className="min-w-0 truncate text-[14px] font-semibold text-text-1">{row.ref === 'home' ? 'Home' : row.label}</span>
+                  {selectedRef === row.ref ? <span className="text-[13px] font-bold text-accent">Selected</span> : null}
                 </button>
               ))}
             </div>
@@ -206,10 +226,10 @@ export function WeatherPage() {
         ) : snapshot ? (
           <WeatherForecastView snapshot={snapshot} loading={load.loading} error={load.error} />
         ) : (
-          <div className="px-5 pt-20 text-center text-[#111111]">
+          <div className="px-5 pt-20 text-center text-text-1">
             <WeatherGlyph icon="partly" className="mx-auto h-16 w-16 opacity-80" />
             <p className="mt-5 text-[18px] font-bold">Weather unavailable</p>
-            <p className="mt-2 text-[13px] text-[#5b6670]">{load.error ?? 'Open settings to check the home location.'}</p>
+            <p className="mt-2 text-[13px] text-text-2">{load.error ?? 'Open settings to check the home location.'}</p>
           </div>
         )}
 
@@ -252,27 +272,27 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
 
   return (
     <>
-      <section className="relative h-[196px] overflow-hidden bg-[#0b4f8f] px-5 pt-4 text-white">
+      <section className="relative h-[176px] overflow-hidden border-b border-accent-border px-5 pt-3 text-text-1" style={{ background: 'linear-gradient(145deg, color-mix(in srgb, var(--accent) 16%, var(--surface) 84%) 0%, color-mix(in srgb, var(--accent) 8%, var(--surface) 92%) 58%, var(--surface) 100%)' }}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-[24px] font-black leading-tight tracking-normal">{snapshot.location.name}</h1>
-            <p className="mt-1 text-[13px] font-semibold text-white/75">{loading ? 'Updating forecast...' : error || snapshot.stale ? 'Using saved forecast' : `Updated ${relativeTime(snapshot.updatedAt)}`}</p>
+            <h1 className="truncate text-[22px] font-bold leading-tight">{snapshot.location.name}</h1>
+            <p className="mt-1 text-[13px] font-semibold text-text-2">{loading ? 'Updating forecast...' : error || snapshot.stale ? 'Using saved forecast' : `Updated ${relativeTime(snapshot.updatedAt)}`}</p>
           </div>
         </div>
 
-        <div className="absolute right-5 top-11 flex h-[78px] w-[78px] items-center justify-center">
-          <WeatherGlyph icon={icon} className="h-[76px] w-[76px]" eager />
+        <div className="absolute right-5 top-10 flex h-[70px] w-[70px] items-center justify-center">
+          <WeatherGlyph icon={icon} className="h-[68px] w-[68px]" eager />
         </div>
 
-        <div className="mt-3">
+        <div className="mt-2.5">
           <div className="min-w-0">
             <div className="flex items-end gap-3 pr-[96px]">
-              <p className="text-[64px] font-black leading-[0.86] tracking-normal">{temperature(current.temperature)}</p>
-              {today ? <p className="pb-1.5 text-[13px] font-black text-white/82">H {temperature(today.temperatureMax)} L {temperature(today.temperatureMin)}</p> : null}
+              <p className="text-[58px] font-bold leading-[0.86] text-text-1">{temperature(current.temperature)}</p>
+              {today ? <p className="pb-1 text-[13px] font-bold text-text-2">H {temperature(today.temperatureMax)} L {temperature(today.temperatureMin)}</p> : null}
             </div>
-            <p className="mt-2 text-[17px] font-black leading-tight tracking-normal">{current.condition}</p>
+            <p className="mt-1.5 text-[16px] font-bold leading-tight text-text-1">{current.condition}</p>
             {today ? (
-              <p className="mt-1 h-5 truncate text-[13px] font-semibold leading-5 text-white/82">
+              <p className="mt-1 h-5 truncate text-[13px] font-semibold leading-5 text-text-2">
                 Feels like {temperature(current.apparentTemperature)}. {rainSummary}. Wind {current.windMph ?? '--'} mph.
               </p>
             ) : null}
@@ -280,10 +300,10 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
         </div>
       </section>
 
-      <main className="px-0 pb-5 text-[#111111]">
-        <section className="border-b border-[#c9d1da] bg-white">
-          <div className="px-5 pb-2 pt-4">
-            <h2 className="text-[19px] font-black tracking-normal">10 day forecast</h2>
+      <main className="px-0 pb-0 text-text-1">
+        <section className="border-b border-border bg-surface">
+          <div className="px-5 pb-1.5 pt-3">
+            <h2 className="text-[19px] font-bold">10 day forecast</h2>
           </div>
           <div className="no-scrollbar flex overflow-x-auto px-4">
             {snapshot.daily10.map((day, index) => (
@@ -293,25 +313,25 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
                 onClick={() => {
                   setSelectedDay(index)
                 }}
-                className={`relative flex min-h-[116px] w-[78px] shrink-0 flex-col items-center justify-start border-b-4 px-2 pb-2.5 pt-2 active:bg-[#eef6fc] ${selectedDay === index ? 'border-[#006def] bg-[#eef6fc]' : 'border-transparent'}`}
+                className={`relative flex min-h-[104px] w-[78px] shrink-0 flex-col items-center justify-start border-b-4 px-2 pb-2 pt-1.5 active:bg-accent-bg ${selectedDay === index ? 'border-accent bg-accent-bg' : 'border-transparent'}`}
               >
-                <span className="text-[13px] font-black text-[#111111]">{index === 0 ? 'Today' : weekday(day.date)}</span>
-                <span className="mt-0.5 text-[11px] font-semibold text-[#5b6670]">{shortDate(day.date)}</span>
-                <WeatherGlyph icon={dailyWeatherIcon(snapshot, day, index)} className="mt-1.5 h-8 w-8" />
-                <span className="mt-1.5 text-[14px] font-black text-[#111111]">{temperature(day.temperatureMax)}</span>
-                <span className="text-[12px] font-bold text-[#64707c]">{temperature(day.temperatureMin)}</span>
-                <span className="mt-0.5 text-[11px] font-black text-[#006def]">{formatPercent(day.rainChance)}</span>
+                <span className="text-[13px] font-bold text-text-1">{index === 0 ? 'Today' : weekday(day.date)}</span>
+                <span className="mt-0.5 text-[11px] font-semibold text-text-2">{shortDate(day.date)}</span>
+                <WeatherGlyph icon={dailyWeatherIcon(snapshot, day, index)} className="mt-1 h-7 w-7" />
+                <span className="mt-1 text-[14px] font-bold text-text-1">{temperature(day.temperatureMax)}</span>
+                <span className="text-[12px] font-semibold text-text-2">{temperature(day.temperatureMin)}</span>
+                <span className="mt-0.5 text-[11px] font-bold text-accent">{formatPercent(day.rainChance)}</span>
               </button>
             ))}
           </div>
 
           {selectedHours.length > 0 ? (
-            <div className="border-t border-[#006def]/35 bg-[#eef6fc]">
-              <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3">
-                <p className="text-[12px] font-black uppercase tracking-[0.08em] text-[#4d6175]">Hourly</p>
+            <div className="border-t border-accent-border bg-accent-bg">
+              <div className="flex items-center justify-between gap-3 px-5 pb-1.5 pt-2.5">
+                <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-text-2">Hourly</p>
               </div>
-              <div ref={hourlyScrollRef} className="no-scrollbar overflow-x-auto px-4 pb-4">
-                <div className="flex min-w-max overflow-hidden rounded-[8px] border border-[#c5d1dc] bg-white">
+              <div ref={hourlyScrollRef} className="no-scrollbar overflow-x-auto px-4 pb-3">
+                <div className="flex min-w-max overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_1px_0_rgba(255,255,255,0.45)_inset]">
                   {selectedHours.map((hour, index) => {
                     const showDayBreak = pickedDay ? dateKey(hour.time) !== pickedDay.date && (index === 0 || dateKey(selectedHours[index - 1]?.time) === pickedDay.date) : false
                     return (
@@ -343,7 +363,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
               </div>
             </div>
           ) : (
-            <div className="px-5 pb-8 pt-3 text-center text-[13px] font-semibold text-[#5b6670]">No hourly forecast available for this day.</div>
+            <div className="px-5 pb-4 pt-3 text-center text-[13px] font-semibold text-text-2">No hourly forecast available for this day.</div>
           )}
         </section>
 
@@ -358,15 +378,15 @@ function HourlyColumn({ hour, label, isDay, isFirst, selected, onSelect }: { hou
       <button
         type="button"
         onClick={event => onSelect(event.currentTarget)}
-        className={`flex w-[74px] shrink-0 flex-col items-center px-2 py-3 text-center ${isFirst ? '' : 'border-l border-[#d7dce2]'} ${selected ? 'bg-[#e6f2ff]' : 'bg-white active:bg-[#f2f7fb]'}`}
+        className={`flex w-[74px] shrink-0 flex-col items-center px-2 py-2.5 text-center ${isFirst ? '' : 'border-l border-border'} ${selected ? 'bg-accent-bg' : 'bg-surface active:bg-bg'}`}
         aria-pressed={selected}
       >
-        <span className="h-5 text-[12px] font-black text-[#111111]">{label}</span>
-        <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="mt-2 h-9 w-9" />
-        <span className="mt-2 text-[18px] font-black leading-none tracking-normal text-[#111111]">{temperature(hour.temperature)}</span>
-        <span className="mt-2 text-[11px] font-black text-[#006def]">{formatPercent(hour.rainChance)}</span>
-        <span className="mt-2 text-[11px] font-bold leading-tight text-[#5b6670]">{hour.windMph ?? '--'} mph</span>
-        <span className="mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#eef1f4] text-[#4a5663]" aria-hidden="true">
+        <span className="h-5 text-[12px] font-bold text-text-1">{label}</span>
+        <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="mt-1.5 h-8 w-8" />
+        <span className="mt-1.5 text-[17px] font-bold leading-none text-text-1">{temperature(hour.temperature)}</span>
+        <span className="mt-1.5 text-[11px] font-bold text-accent">{formatPercent(hour.rainChance)}</span>
+        <span className="mt-1.5 text-[11px] font-semibold leading-tight text-text-2">{hour.windMph ?? '--'} mph</span>
+        <span className="mt-1 flex h-5 w-5 items-center justify-center rounded-full bg-surface-2 text-text-2" aria-hidden="true">
           <svg viewBox="0 0 12 12" fill="currentColor" className="h-3 w-3">
             <path d="M6 1.5l3.2 8.2L6 8.2 2.8 9.7 6 1.5Z" />
           </svg>
@@ -379,8 +399,8 @@ function HourlyColumn({ hour, label, isDay, isFirst, selected, onSelect }: { hou
 
 function DayBreakMarker({ label }: { label: string }) {
   return (
-    <div className="flex w-[46px] shrink-0 items-center justify-center border-l border-r border-[#b8c7d5] bg-[#dcecf8] px-1 text-center">
-      <span className="text-[10px] font-black uppercase leading-3 tracking-[0.06em] text-[#486175]">{label}</span>
+    <div className="flex w-[46px] shrink-0 items-center justify-center border-l border-r border-accent-border bg-accent-bg px-1 text-center">
+      <span className="text-[10px] font-bold uppercase leading-3 tracking-[0.06em] text-accent">{label}</span>
     </div>
   )
 }
@@ -388,25 +408,25 @@ function DayBreakMarker({ label }: { label: string }) {
 function HourlyDetail({ hour }: { hour: WeatherSnapshot['hourly24'][number] }) {
   const isDay = Number(hour.time.slice(11, 13)) >= 7 && Number(hour.time.slice(11, 13)) <= 20
   return (
-    <div className="weather-hour-detail w-[142px] shrink-0 border-l border-[#88b3d8] bg-gradient-to-br from-[#0b4f8f] to-[#073866] px-2.5 py-3 text-white shadow-[inset_4px_0_0_rgba(255,255,255,0.18)]">
+    <div className="weather-hour-detail w-[142px] shrink-0 border-l border-accent-border bg-accent-bg px-2.5 py-2.5 text-text-1 shadow-[inset_4px_0_0_var(--accent-border)]">
       <div className="flex items-start gap-2">
         <WeatherGlyph icon={weatherIcon(hour.conditionCode, isDay)} className="h-9 w-9 shrink-0" />
         <div className="min-w-0">
-          <p className="text-[12px] font-black">{timeLabel24(hour.time)}</p>
-          <p className="mt-0.5 truncate text-[14px] font-black">{hour.condition}</p>
+          <p className="text-[12px] font-bold">{timeLabel24(hour.time)}</p>
+          <p className="mt-0.5 truncate text-[14px] font-bold">{hour.condition}</p>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1.5 rounded-[7px] bg-white/10 px-2 py-2 text-[10.5px] font-bold text-white/78">
+      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1.5 rounded-lg bg-surface px-2 py-2 text-[10.5px] font-semibold text-text-2 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset]">
         <span>Feels</span>
-        <span className="text-right text-white">{temperature(hour.apparentTemperature)}</span>
+        <span className="text-right text-text-1">{temperature(hour.apparentTemperature)}</span>
         <span>Rain</span>
-        <span className="text-right text-white">{formatPercent(hour.rainChance)}</span>
+        <span className="text-right text-text-1">{formatPercent(hour.rainChance)}</span>
         <span>Wind</span>
-        <span className="text-right text-white">{hour.windMph ?? '--'} mph</span>
+        <span className="text-right text-text-1">{hour.windMph ?? '--'} mph</span>
         <span>Humidity</span>
-        <span className="text-right text-white">{hour.humidity ?? '--'}%</span>
+        <span className="text-right text-text-1">{hour.humidity ?? '--'}%</span>
         <span>UV</span>
-        <span className="text-right text-white">{hour.uvIndex ?? '--'}</span>
+        <span className="text-right text-text-1">{hour.uvIndex ?? '--'}</span>
       </div>
     </div>
   )
@@ -532,11 +552,11 @@ function LocationSearch({ placeholder, onPick }: { placeholder: string; onPick: 
 
 function EmptyWeatherSetup({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
-    <div className="px-5 pt-20 text-center text-[#111111]">
+    <div className="px-5 pt-20 text-center text-text-1">
       <WeatherGlyph icon="partly" className="mx-auto h-20 w-20 opacity-90" />
       <h1 className="mt-6 text-[34px] font-bold leading-tight tracking-normal">Set your home weather</h1>
-      <p className="mx-auto mt-3 max-w-[280px] text-[14px] leading-6 text-[#5b6670]">Choose the family home location once, then add your own saved places from settings.</p>
-      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-[#111111] px-5 py-3 text-[15px] font-bold text-white active:opacity-80">Open settings</button>
+      <p className="mx-auto mt-3 max-w-[280px] text-[14px] leading-6 text-text-2">Choose the family home location once, then add your own saved places from settings.</p>
+      <button onClick={onOpenSettings} className="mt-7 rounded-full bg-accent px-5 py-3 text-[15px] font-bold text-white active:opacity-80">Open settings</button>
     </div>
   )
 }
