@@ -3,24 +3,28 @@ import { changePassword, signOut } from '@homeos/auth/client'
 import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
 import { SwipeRow } from '../components/swipe-row'
+import { WeatherGlyph } from '../components/weather-glyph'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
+import { cycleCalendarItems } from '../lib/cycle-tracker'
+import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
 import { ScreenShell } from './shell'
-import { WeatherHomeWidget } from './weather'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
-type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string }
+type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; href?: string; estimated?: boolean }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
+type ScheduleWeatherDay = { icon: string; high: string; low: string }
+type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolean; error: string | null }
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
-type DayGroup = { key: string; label: string; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
+type DayGroup = { key: string; label: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
 
 const BIN_DOT: Record<string, string> = {
   grey: '#6B7280',
@@ -50,6 +54,14 @@ function toDate(value: string | number | Date | null | undefined) {
 
 function startOfLocalDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+function forecastDateKey(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
 }
 
 function allDayAsLocal(date: Date) {
@@ -125,6 +137,8 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       sub: event.location,
       color: event.color,
       finishedToday: !event.allDay && event.endsAt.getTime() <= now.getTime() && startOfLocalDay(event.startsAt).getTime() === startOfLocalDay(now).getTime(),
+      href: event.href,
+      estimated: event.estimated,
     })
   }
 
@@ -168,12 +182,14 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
     const diff = Math.round((itemDay.getTime() - today.getTime()) / 86_400_000)
     let key: string
     let label: string
+    let dateKey: string | null = forecastDateKey(itemDay)
     let isToday = false
     let isOverdue = false
 
     if (diff < 0) {
       key = '__overdue'
       label = 'Overdue'
+      dateKey = null
       isOverdue = true
     } else if (diff === 0) {
       key = '__today'
@@ -187,7 +203,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       label = itemDay.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
     }
 
-    if (!groupMap.has(key)) groupMap.set(key, { key, label, isToday, isOverdue, entries: [] })
+    if (!groupMap.has(key)) groupMap.set(key, { key, label, dateKey, isToday, isOverdue, entries: [] })
     groupMap.get(key)!.entries.push(entry)
   }
 
@@ -705,19 +721,19 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   const border = hasBorder ? 'border-t border-border' : ''
 
   if (entry.kind === 'calendar') {
-    const rowHref = `/calendar?day=${encodeURIComponent(entry.dayKey)}&event=${encodeURIComponent(entry.eventId)}`
+    const rowHref = entry.href ?? `/calendar?day=${encodeURIComponent(entry.dayKey)}&event=${encodeURIComponent(entry.eventId)}`
     const textState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-1'
     const subState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'
     return (
-      <a href={rowHref} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: entry.finishedToday ? 'var(--surface-2)' : `color-mix(in srgb, ${entry.color} 15%, var(--surface))` }}>
+      <a href={rowHref} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`} style={{ opacity: entry.estimated ? 0.78 : 1 }}>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: entry.finishedToday ? 'var(--surface-2)' : `color-mix(in srgb, ${entry.color} ${entry.estimated ? 8 : 15}%, var(--surface))` }}>
           <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: entry.color }}>
             <rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 6.5h12" /><path d="M5 1v3M11 1v3" />
           </svg>
         </div>
         <div className="min-w-0 flex-1">
           <p className={`truncate text-[13.5px] font-semibold ${textState}`}>{entry.title}</p>
-          {entry.sub ? <p className={`mt-0.5 truncate text-[11.5px] ${subState}`}>{entry.sub}</p> : null}
+          {entry.sub || entry.estimated ? <p className={`mt-0.5 truncate text-[11.5px] ${subState}`}>{entry.sub ?? 'Estimated'}</p> : null}
         </div>
         <div className={`ml-2 flex min-w-[38px] shrink-0 flex-col items-end leading-tight ${entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'}`}>
           {entry.allDay ? (
@@ -769,28 +785,60 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   )
 }
 
-function GroupedTimeline({ groups, doneIds, onToggle, onDelete }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
+function ScheduleDayWeather({ weather, prominent }: { weather: ScheduleWeatherDay; prominent: boolean }) {
+  const arrowClassName = prominent ? 'h-3 w-3 text-white/80' : 'h-3 w-3 opacity-65'
+  return (
+    <a
+      href="/weather"
+      aria-label={`Weather high ${weather.high}, low ${weather.low}`}
+      className="flex self-stretch shrink-0 items-center gap-1.5 border-l px-3 text-[11px] font-bold normal-case tracking-normal active:opacity-85"
+      style={{
+        background: prominent
+          ? 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 84%, var(--surface) 16%) 0%, color-mix(in srgb, var(--accent) 66%, #000 34%) 100%)'
+          : 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--surface) 91%) 0%, color-mix(in srgb, var(--accent) 14%, var(--surface) 86%) 100%)',
+        borderColor: prominent ? 'rgba(255,255,255,0.16)' : 'color-mix(in srgb, var(--accent) 12%, var(--border) 88%)',
+        color: prominent ? '#fff' : 'color-mix(in srgb, var(--accent) 76%, var(--text-2) 24%)',
+      }}
+    >
+      <WeatherGlyph icon={weather.icon} className="h-5 w-5" />
+      <span className="inline-flex items-center gap-0.5">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={arrowClassName}><path d="M6 2.5v7" /><path d="M3.25 5.25 6 2.5l2.75 2.75" /></svg>
+        {weather.high}
+      </span>
+      <span className="inline-flex items-center gap-0.5">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={arrowClassName}><path d="M6 2.5v7" /><path d="M3.25 6.75 6 9.5l2.75-2.75" /></svg>
+        {weather.low}
+      </span>
+    </a>
+  )
+}
+
+function GroupedTimeline({ groups, doneIds, onToggle, onDelete, weatherByDate }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void; weatherByDate: Map<string, ScheduleWeatherDay> }) {
   return (
     <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-      {groups.map((group, groupIndex) => (
-        <div key={group.key}>
-          <div
-            className={`px-4 py-[7px] ${groupIndex > 0 ? 'border-t' : ''}`}
-            style={{
-              borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
-              background: group.isOverdue ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))' : group.isToday ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))' : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
-            }}
-          >
-            <p className={`text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
+      {groups.map((group, groupIndex) => {
+        const weather = group.dateKey ? weatherByDate.get(group.dateKey) : null
+        return (
+          <div key={group.key}>
+            <div
+              className={`flex min-h-[36px] items-stretch overflow-hidden ${groupIndex > 0 ? 'border-t' : ''}`}
+              style={{
+                borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
+                background: group.isOverdue ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))' : group.isToday ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))' : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
+              }}
+            >
+              <p className={`flex min-w-0 flex-1 items-center truncate px-4 text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
+              {weather ? <ScheduleDayWeather weather={weather} prominent={group.isToday} /> : null}
+            </div>
+            {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
           </div>
-          {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
-function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvents: CalEvent[]; tasks: Task[]; renewals: Renewal[]; now: Date }) {
+function ScheduleBlock({ calendarEvents, tasks, renewals, now, weatherByDate }: { calendarEvents: CalEvent[]; tasks: Task[]; renewals: Renewal[]; now: Date; weatherByDate: Map<string, ScheduleWeatherDay> }) {
   const [rangeDays, setRangeDaysState] = useState(7)
   const [mode, setModeState] = useState<'combined' | 'separate'>('combined')
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set())
@@ -903,12 +951,12 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now }: { calendarEvent
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
         </a>
       ) : mode === 'combined' ? (
-        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} />
+        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} />
       ) : (
         <div className="flex flex-col gap-4">
-          {eventGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
-          {taskGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
-          {renewalGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} /></div> : null}
+          {eventGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
+          {taskGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
+          {renewalGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
         </div>
       )}
     </section>
@@ -1002,6 +1050,20 @@ export function DashboardPage() {
           ? feedColorMap.get(event.calendarId.slice(4)) ?? defaultCalendarColor
           : defaultCalendarColor,
       }))
+    const cycleEvents = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true }).items
+      .map(item => ({
+        id: item.id,
+        title: item.title,
+        startsAt: item.start,
+        endsAt: item.endExclusive,
+        allDay: true,
+        location: item.estimated ? 'Estimated' : null,
+        timeLabel: 'All day',
+        color: item.color,
+        href: '/cycle-tracker',
+        estimated: item.estimated,
+      }))
+      .filter(event => event.startsAt >= startToday && event.startsAt <= scheduleWindow)
     const renewals = state.data.records
       .flatMap(record => {
         const renewalDate = toDate(record.renewalDate)
@@ -1027,15 +1089,31 @@ export function DashboardPage() {
       tasks: tasks as Task[],
       inboxCount: inbox.length,
       inboxPreview: inbox.slice(0, 2),
-      calendarEvents: calendarEvents as CalEvent[],
+      calendarEvents: [...calendarEvents, ...cycleEvents] as CalEvent[],
       renewals: renewals as Renewal[],
       bins: bins as BinWithDate[],
       pins,
+      householdSettings: state.data.household[0]?.settings ?? null,
     }
   })
   const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
   const [tonightShows, setTonightShows] = useState<TonightShow[]>(() => loadTonightCache())
+  const [homeWeather, setHomeWeather] = useState<DashboardWeatherState>(() => ({ snapshot: loadCachedWeather('home'), loading: false, error: null }))
   const now = useMemo(() => new Date(), [])
+  const sharedWeather = useMemo(() => readSharedWeatherSettings(snapshot.householdSettings), [snapshot.householdSettings])
+  const scheduleWeatherByDate = useMemo(() => {
+    const days = new Map<string, ScheduleWeatherDay>()
+    const snapshot = homeWeather.snapshot
+    if (!snapshot) return days
+    snapshot.daily10.forEach((day, index) => {
+      days.set(day.date, {
+        icon: dailyWeatherIcon(snapshot, day, index),
+        high: temperature(day.temperatureMax),
+        low: temperature(day.temperatureMin),
+      })
+    })
+    return days
+  }, [homeWeather.snapshot])
   const firstName = snapshot.user?.name?.split(' ')[0] ?? 'Dan'
   const hour = now.getHours()
   const greeting = hour < 12 ? `Good morning, ${firstName}` : hour < 17 ? `Good afternoon, ${firstName}` : `Good evening, ${firstName}`
@@ -1058,6 +1136,27 @@ export function DashboardPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!sharedWeather.home) {
+      setHomeWeather({ snapshot: null, loading: false, error: null })
+      return
+    }
+
+    let cancelled = false
+    setHomeWeather(current => ({ ...current, loading: true, error: null }))
+    fetchWeatherSnapshot('home', { allowCache: true })
+      .then(next => {
+        if (!cancelled) setHomeWeather({ snapshot: next, loading: false, error: null })
+      })
+      .catch(error => {
+        if (!cancelled) setHomeWeather(current => ({ ...current, loading: false, error: error instanceof Error ? error.message : 'Could not load weather' }))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sharedWeather.home?.latitude, sharedWeather.home?.longitude])
 
   async function toggleShopItem(item: ShoppingItem) {
     const willCheck = !checkedShopIds.has(item.id)
@@ -1087,10 +1186,7 @@ export function DashboardPage() {
     <ScreenShell title="Home" showHeader={false}>
       <header className="flex items-start justify-between px-5 pt-7 pb-5">
         <div className="min-w-0 flex-1 pr-4">
-          <div className="mb-1 flex min-w-0 items-center gap-2">
-            <p className="min-w-0 truncate text-[12px] font-medium tracking-[0.02em] text-text-3">{dateStr}</p>
-            <WeatherHomeWidget />
-          </div>
+          <p className="mb-1 min-w-0 truncate text-[12px] font-medium tracking-[0.02em] text-text-3">{dateStr}</p>
           <h1 className="text-[30px] font-bold leading-[1.1] text-text-1" style={{ letterSpacing: '-0.025em' }}>{greeting}</h1>
         </div>
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
@@ -1136,7 +1232,7 @@ export function DashboardPage() {
 
       {tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null}
 
-      <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} />
+      <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} weatherByDate={scheduleWeatherByDate} />
 
       <section className="mx-4 mb-4">
         <div className="mb-3 flex items-center justify-between">

@@ -122,6 +122,14 @@ type CalendarFeed = {
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
 }
+export type CycleEntry = {
+  id: string
+  householdId: string
+  startDate: string | number | Date
+  endDate?: string | number | Date | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
 type Bin = {
   id: string
   householdId: string
@@ -148,6 +156,7 @@ type AppData = {
   entityLinks: EntityLink[]
   calendarEvents: CalendarEvent[]
   calendarFeeds: CalendarFeed[]
+  cycleEntries: CycleEntry[]
   bins: Bin[]
 }
 
@@ -186,6 +195,7 @@ const emptyData: AppData = {
   entityLinks: [],
   calendarEvents: [],
   calendarFeeds: [],
+  cycleEntries: [],
   bins: [],
 }
 
@@ -341,6 +351,11 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.calendarFeeds, mutation.entityId)
         : mergeCollection(next.calendarFeeds, mutation.payload as CalendarFeed)
       break
+    case 'cycle_entry':
+      next.cycleEntries = mutation.operation === 'delete'
+        ? removeCollection(next.cycleEntries, mutation.entityId)
+        : mergeCollection(next.cycleEntries, mutation.payload as CycleEntry)
+      break
     default:
       break
   }
@@ -404,6 +419,11 @@ function applyChange(change: SyncChange) {
         next.data.calendarFeeds = change.operation === 'delete'
           ? removeCollection(next.data.calendarFeeds, change.entityId)
           : mergeCollection(next.data.calendarFeeds, change.payload as CalendarFeed)
+        break
+      case 'cycle_entry':
+        next.data.cycleEntries = change.operation === 'delete'
+          ? removeCollection(next.data.cycleEntries, change.entityId)
+          : mergeCollection(next.data.cycleEntries, change.payload as CycleEntry)
         break
       default:
         break

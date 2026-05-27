@@ -1,4 +1,4 @@
-const CACHE_NAME = 'homeos-web-shell-v8'
+const CACHE_NAME = 'homeos-web-shell-v9'
 const APP_SHELL = [
   '/',
   '/login',

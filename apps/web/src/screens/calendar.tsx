@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
+import { cycleCalendarItems } from '../lib/cycle-tracker'
 import { useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings, settingObject } from '../lib/user-preferences'
 import { ScreenShell } from './shell'
@@ -15,6 +16,11 @@ type CalEvent = {
   description: string | null
   calendarId: string | null
   householdId?: string
+  color?: string
+  cycle?: {
+    kind: 'logged' | 'predicted'
+    estimated: boolean
+  }
 }
 type CalTask = {
   id: string
@@ -165,6 +171,10 @@ function pillBg(color: string) {
 
 function pillText(color: string) {
   return `color-mix(in srgb, ${color} 72%, var(--text-1))`
+}
+
+function cycleEventBg(color: string, estimated?: boolean) {
+  return `color-mix(in srgb, ${color} ${estimated ? 9 : 18}%, var(--surface))`
 }
 
 function pad(n: number) {
@@ -398,6 +408,22 @@ function CalendarPageInner() {
       description: event.description ?? null,
       calendarId: event.calendarId ?? null,
     }))
+    const cycleEvents: CalEvent[] = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true }).items.map(item => ({
+      id: item.id,
+      householdId: state.data.household[0]?.id ?? 'default',
+      title: item.title,
+      start: item.start.getTime(),
+      end: item.endExclusive.getTime(),
+      allDay: true,
+      location: item.estimated ? 'Estimated' : null,
+      description: 'Based on logged data',
+      calendarId: 'cycle',
+      color: item.color,
+      cycle: {
+        kind: item.kind,
+        estimated: item.estimated,
+      },
+    }))
     const tasks: CalTask[] = state.data.items
       .filter(item => item.type === 'task' && item.dueDate && !item.deletedAt)
       .map(item => ({
@@ -412,7 +438,7 @@ function CalendarPageInner() {
       householdId: state.data.household[0]?.id ?? 'default',
       userId: sessionUser?.id ?? 'system',
       calendarColor: typeof savedCalendarColor === 'string' ? savedCalendarColor : null,
-      events,
+      events: [...events, ...cycleEvents],
       tasks,
       feeds: userFeeds as CalFeed[],
     }
@@ -472,6 +498,7 @@ function CalendarPageInner() {
 
   const feedMap = useMemo(() => new Map(snapshot.feeds.map(feed => [feed.id, feed])), [snapshot.feeds])
   const getEventColor = (event: CalEvent) => {
+    if (event.cycle) return event.color ?? '#C04A7A'
     if (event.calendarId?.startsWith('ics:')) return feedMap.get(event.calendarId.slice(4))?.color ?? calColor
     return calColor
   }
@@ -650,6 +677,14 @@ function CalendarPageInner() {
     setSheetOpen(true)
   }
 
+  function openEvent(event: CalEvent) {
+    if (event.cycle) {
+      window.location.href = '/cycle-tracker'
+      return
+    }
+    openDetail(event)
+  }
+
   function openTask(task: CalTask) {
     setSheetTask(task)
     setDetail(null)
@@ -804,7 +839,7 @@ function CalendarPageInner() {
                               key={bar.id}
                               onClick={event => {
                                 event.stopPropagation()
-                                if (bar.event) openDetail(bar.event)
+                                if (bar.event) openEvent(bar.event)
                                 else setSelectedKey(localDayKey(weekDays[bar.startCol]))
                               }}
                               className="pointer-events-auto absolute flex items-center overflow-hidden"
@@ -813,7 +848,9 @@ function CalendarPageInner() {
                                 width: `calc(${widthPct}% - ${insetL + insetR}px)`,
                                 top: bar.lane * mLaneH,
                                 height: MULTI_DAY_BAR_H,
-                                background: pillBg(bar.color),
+                                background: bar.event?.cycle ? cycleEventBg(bar.color, bar.event.cycle.estimated) : pillBg(bar.color),
+                                border: bar.event?.cycle?.estimated ? `1px dashed ${bar.color}` : undefined,
+                                opacity: bar.event?.cycle?.estimated ? 0.78 : 1,
                                 borderRadius: `${bar.roundLeft ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundRight ? 5 : 1}px ${bar.roundLeft ? 5 : 1}px`,
                                 paddingLeft: bar.roundLeft ? 6 : 3,
                                 paddingRight: bar.roundRight ? 6 : 3,
@@ -891,7 +928,7 @@ function CalendarPageInner() {
                                     type="button"
                                     onClick={event => {
                                       event.stopPropagation()
-                                      if (item.event) openDetail(item.event)
+                                      if (item.event) openEvent(item.event)
                                       else if (item.task) openTask(item.task)
                                       else setSelectedKey(localDayKey(date))
                                     }}
@@ -901,7 +938,9 @@ function CalendarPageInner() {
                                       width: `calc(${(1 / 7) * 100}% - 2px)`,
                                       top: singleOffset + itemTops[index],
                                       height: pillH,
-                                      background: pillBg(item.color),
+                                      background: item.event?.cycle ? cycleEventBg(item.color, item.event.cycle.estimated) : pillBg(item.color),
+                                      border: item.event?.cycle?.estimated ? `1px dashed ${item.color}` : undefined,
+                                      opacity: item.event?.cycle?.estimated ? 0.78 : 1,
                                       borderRadius: 5,
                                       paddingTop: 3,
                                       paddingBottom: 2,
@@ -990,7 +1029,7 @@ function CalendarPageInner() {
           ) : (
             <div className="mb-2 overflow-hidden rounded-2xl bg-bg">
               {selectedEvents.map((event, index) => (
-                <button key={event.id} onClick={() => openDetail(event)} className={`w-full items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''} ${flashEventId === event.id ? 'flash-highlight' : ''}`}>
+                <button key={event.id} onClick={() => openEvent(event)} className={`w-full items-start gap-3 px-4 py-1.5 text-left active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''} ${flashEventId === event.id ? 'flash-highlight' : ''}`} style={{ opacity: event.cycle?.estimated ? 0.78 : 1 }}>
                   <div className="flex items-start gap-3">
                     <div className="my-0.5 w-1 self-stretch rounded-full" style={{ background: getEventColor(event) }} />
                     <div className="min-w-0 flex-1">

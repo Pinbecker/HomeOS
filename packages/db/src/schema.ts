@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { sqliteTable, text, integer, index, check } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ============================================================
@@ -236,6 +237,23 @@ export const calendarEvents = sqliteTable('calendar_events', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
+
+// ============================================================
+// CYCLE TRACKER — simple logged period ranges and predictions
+//   Predictions are derived in the app from logged start dates.
+// ============================================================
+
+export const cycleEntries = sqliteTable('cycle_entries', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  startDate: integer('start_date', { mode: 'timestamp' }).notNull(),
+  endDate: integer('end_date', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  startIdx: index('cycle_entries_start_date_idx').on(table.startDate),
+  dateOrderCheck: check('cycle_entries_date_order_check', sql`${table.endDate} IS NULL OR ${table.endDate} >= ${table.startDate}`),
+}))
 
 // ============================================================
 // GOOGLE CALENDAR — per-user OAuth connection (tokens for the

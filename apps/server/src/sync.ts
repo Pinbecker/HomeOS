@@ -9,6 +9,7 @@ import {
   bins,
   calendarEvents,
   calendarFeeds,
+  cycleEntries,
   entityLinks,
   household,
   householdMembers,
@@ -62,6 +63,7 @@ export async function buildBootstrap() {
     allEntityLinks,
     allCalendarEvents,
     allCalendarFeeds,
+    allCycleEntries,
     allBins,
   ] = await Promise.all([
     db.select().from(users),
@@ -75,6 +77,7 @@ export async function buildBootstrap() {
     db.select().from(entityLinks),
     db.select().from(calendarEvents),
     db.select().from(calendarFeeds),
+    db.select().from(cycleEntries),
     db.select().from(bins),
   ])
 
@@ -92,6 +95,7 @@ export async function buildBootstrap() {
       entityLinks: allEntityLinks,
       calendarEvents: allCalendarEvents,
       calendarFeeds: allCalendarFeeds,
+      cycleEntries: allCycleEntries,
       bins: allBins,
     },
   }
@@ -230,6 +234,10 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
       const row = await db.query.calendarFeeds.findFirst({ where: eq(calendarFeeds.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
+    case 'cycle_entry': {
+      const row = await db.query.cycleEntries.findFirst({ where: eq(cycleEntries.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     default:
       return mutation
   }
@@ -325,8 +333,53 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       await db.delete(calendarFeeds).where(eq(calendarFeeds.id, mutation.entityId))
       await db.delete(calendarEvents).where(eq(calendarEvents.calendarId, `ics:${mutation.entityId}`))
       break
+    case 'cycle.entry.upsert':
+      await upsertCycleEntry(mutation)
+      break
+    case 'cycle.entry.delete':
+      await db.delete(cycleEntries).where(eq(cycleEntries.id, mutation.entityId))
+      break
     default:
       break
+  }
+}
+
+async function upsertCycleEntry(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.cycleEntries.findFirst({ where: eq(cycleEntries.id, mutation.entityId) })
+  const startDate = payload.startDate
+    ? new Date(payload.startDate as string | number)
+    : existing?.startDate
+  const endDate = payload.endDate === undefined
+    ? existing?.endDate ?? null
+    : (payload.endDate ? new Date(payload.endDate as string | number) : null)
+
+  if (!startDate || Number.isNaN(startDate.getTime())) {
+    throw new Error('Cycle start date is required')
+  }
+  if (endDate && Number.isNaN(endDate.getTime())) {
+    throw new Error('Cycle end date is invalid')
+  }
+  if (endDate && endDate.getTime() < startDate.getTime()) {
+    throw new Error('Cycle end date cannot be before start date')
+  }
+
+  if (existing) {
+    await db.update(cycleEntries).set({
+      startDate,
+      endDate,
+      updatedAt: now,
+    }).where(eq(cycleEntries.id, mutation.entityId))
+  } else {
+    await db.insert(cycleEntries).values({
+      id: mutation.entityId,
+      householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
+      startDate,
+      endDate,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+      updatedAt: payload.updatedAt ? new Date(payload.updatedAt as string | number) : now,
+    })
   }
 }
 

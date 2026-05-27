@@ -8,6 +8,7 @@ import { readUserSettings, saveUserSettings, settingObject } from './lib/user-pr
 import { DashboardPage } from './screens/dashboard'
 import { BottomNav } from './screens/bottom-nav'
 import { CalendarPage } from './screens/calendar'
+import { CycleTrackerPage } from './screens/cycle-tracker'
 import { BinsPage, HouseholdPage, HousePlansPage } from './screens/household'
 import { InboxCapturePage, InboxPage } from './screens/inbox'
 import { LifeCategoryPage, LifeEntityPage, LifeOverviewPage } from './screens/life'
@@ -207,6 +208,11 @@ const weatherRoute = createRoute({
   path: '/weather',
   component: WeatherPage,
 })
+const cycleTrackerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cycle-tracker',
+  component: CycleTrackerPage,
+})
 const householdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/household',
@@ -305,6 +311,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   calendarRoute,
   weatherRoute,
+  cycleTrackerRoute,
   householdRoute,
   householdBinsRoute,
   householdPlansRoute,

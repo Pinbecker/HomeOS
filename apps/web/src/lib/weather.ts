@@ -260,3 +260,67 @@ export function weatherIcon(code: number, isDay = true) {
   if ([95, 96, 99].includes(code)) return 'storm'
   return 'cloud'
 }
+
+export function dailyWeatherIcon(snapshot: WeatherSnapshot, day: WeatherSnapshot['daily10'][number], index: number) {
+  const hours = dailyWeatherHours(snapshot, index, day.date)
+  const daylight = hours.filter(hour => {
+    const hourOfDay = Number(hour.time.slice(11, 13))
+    return hourOfDay >= 7 && hourOfDay <= 20
+  })
+  const sample = daylight.length > 0 ? daylight : hours
+  const weighted = sample.map(hour => ({ icon: weatherIcon(hour.conditionCode, true), rainChance: hour.rainChance ?? 0 }))
+  const rainHours = weighted.filter(row => row.icon === 'rain' || row.icon === 'storm')
+  const strongRainHours = rainHours.filter(row => row.rainChance >= 45)
+
+  if (strongRainHours.length >= 3 || rainHours.length >= Math.ceil(sample.length * 0.35)) {
+    return strongRainHours.some(row => row.icon === 'storm') ? 'storm' : 'rain'
+  }
+
+  const counts = new Map<string, number>()
+  for (const row of weighted.filter(row => row.icon !== 'rain' && row.icon !== 'storm')) {
+    counts.set(row.icon, (counts.get(row.icon) ?? 0) + 1)
+  }
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  return best ?? weatherIcon(day.conditionCode, true)
+}
+
+function dailyWeatherHours(snapshot: WeatherSnapshot, selectedDay: number, date: string) {
+  if (selectedDay === 0) {
+    const nextDate = addForecastDays(date, 1)
+    const end = forecastHourBoundary(nextDate, 5)
+    return uniqueWeatherHours(snapshot.hourly24).filter(hour => {
+      const time = Date.parse(hour.time)
+      return time <= end
+    })
+  }
+
+  const currentDay = snapshot.hourlyByDay?.[date] ?? []
+  const nextDate = addForecastDays(date, 1)
+  const nextDay = snapshot.hourlyByDay?.[nextDate] ?? []
+  const combined = uniqueWeatherHours([...currentDay, ...nextDay])
+  const start = forecastHourBoundary(date, 6)
+  const end = forecastHourBoundary(nextDate, 5)
+  return combined.filter(hour => {
+    const time = Date.parse(hour.time)
+    return time >= start && time <= end
+  })
+}
+
+function uniqueWeatherHours(hours: WeatherSnapshot['hourly24']) {
+  const seen = new Set<string>()
+  return hours.filter(hour => {
+    if (seen.has(hour.time)) return false
+    seen.add(hour.time)
+    return true
+  })
+}
+
+function forecastHourBoundary(date: string, hour: number) {
+  return new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`).getTime()
+}
+
+function addForecastDays(date: string, days: number) {
+  const next = new Date(`${date}T12:00:00`)
+  next.setDate(next.getDate() + days)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
+}

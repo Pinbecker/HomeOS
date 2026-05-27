@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { WeatherGlyph } from '../components/weather-glyph'
 import { useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import {
+  dailyWeatherIcon,
   defaultWeatherLocationRef,
   fetchWeatherSnapshot,
   loadCachedWeather,
@@ -295,7 +297,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
               >
                 <span className="text-[13px] font-black text-[#111111]">{index === 0 ? 'Today' : weekday(day.date)}</span>
                 <span className="mt-0.5 text-[11px] font-semibold text-[#5b6670]">{shortDate(day.date)}</span>
-                <WeatherGlyph icon={dayIcon(snapshot, day, index)} className="mt-1.5 h-8 w-8" />
+                <WeatherGlyph icon={dailyWeatherIcon(snapshot, day, index)} className="mt-1.5 h-8 w-8" />
                 <span className="mt-1.5 text-[14px] font-black text-[#111111]">{temperature(day.temperatureMax)}</span>
                 <span className="text-[12px] font-bold text-[#64707c]">{temperature(day.temperatureMin)}</span>
                 <span className="mt-0.5 text-[11px] font-black text-[#006def]">{formatPercent(day.rainChance)}</span>
@@ -539,31 +541,6 @@ function EmptyWeatherSetup({ onOpenSettings }: { onOpenSettings: () => void }) {
   )
 }
 
-function WeatherGlyph({ icon, className = 'h-6 w-6', eager = false }: { icon: string; className?: string; eager?: boolean }) {
-  return <img src={weatherIconAsset(icon)} alt="" className={`${className} object-contain`} loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} draggable={false} />
-}
-
-function weatherIconAsset(icon: string) {
-  const name = icon === 'sun'
-    ? 'clear-day'
-    : icon === 'moon'
-      ? 'clear-night'
-      : icon === 'partly'
-        ? 'partly-cloudy-day'
-        : icon === 'partly-night'
-          ? 'partly-cloudy-night'
-          : icon === 'rain'
-            ? 'rain'
-            : icon === 'storm'
-              ? 'thunderstorms-rain'
-              : icon === 'snow'
-                ? 'snow'
-                : icon === 'fog'
-                  ? 'fog'
-                  : 'overcast'
-  return `/weather-icons/${name}.svg`
-}
-
 function tinyWeatherStyle(tone?: string): CSSProperties {
   const base = toneColors(tone)
   return {
@@ -592,29 +569,6 @@ function relativeTime(value: string) {
 
 function timeLabel24(value: string) {
   return new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-function dayIcon(snapshot: WeatherSnapshot, day: WeatherSnapshot['daily10'][number], index: number) {
-  const hours = weatherDayHours(snapshot, index, day.date)
-  const daylight = hours.filter(hour => {
-    const hourOfDay = Number(hour.time.slice(11, 13))
-    return hourOfDay >= 7 && hourOfDay <= 20
-  })
-  const sample = daylight.length > 0 ? daylight : hours
-  const weighted = sample.map(hour => ({ icon: weatherIcon(hour.conditionCode, true), rainChance: hour.rainChance ?? 0 }))
-  const rainHours = weighted.filter(row => row.icon === 'rain' || row.icon === 'storm')
-  const strongRainHours = rainHours.filter(row => row.rainChance >= 45)
-
-  if (strongRainHours.length >= 3 || rainHours.length >= Math.ceil(sample.length * 0.35)) {
-    return strongRainHours.some(row => row.icon === 'storm') ? 'storm' : 'rain'
-  }
-
-  const counts = new Map<string, number>()
-  for (const row of weighted.filter(row => row.icon !== 'rain' && row.icon !== 'storm')) {
-    counts.set(row.icon, (counts.get(row.icon) ?? 0) + 1)
-  }
-  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
-  return best ?? weatherIcon(day.conditionCode, true)
 }
 
 function weatherDayHours(snapshot: WeatherSnapshot, selectedDay: number, date: string) {

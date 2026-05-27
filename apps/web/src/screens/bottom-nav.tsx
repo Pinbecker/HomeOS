@@ -108,6 +108,18 @@ const menuItems: MenuItem[] = [
     ),
   },
   {
+    href: '/weather',
+    label: 'Weather',
+    color: '#32ADE6',
+    icon: (
+      <MenuIcon>
+        <circle cx="8" cy="8" r="3.2" />
+        <path d="M8 1.8v1.4M8 12.8v1.4M3.6 3.6l1 1M11.4 11.4l1 1M1.8 8h1.4M12.8 8h1.4" />
+        <path d="M18.2 19.5H9.4a3.4 3.4 0 0 1-.4-6.8 4.9 4.9 0 0 1 8.6-2.4 4.2 4.2 0 0 1 .6 8.4z" />
+      </MenuIcon>
+    ),
+  },
+  {
     href: '/household',
     label: 'Household',
     color: 'var(--sage)',
@@ -137,6 +149,17 @@ const menuItems: MenuItem[] = [
       <MenuIcon>
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
         <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </MenuIcon>
+    ),
+  },
+  {
+    href: '/cycle-tracker',
+    label: 'Cycle',
+    color: '#C04A7A',
+    icon: (
+      <MenuIcon>
+        <path d="M12 3c3.8 3.4 6 6.5 6 10a6 6 0 0 1-12 0c0-3.5 2.2-6.6 6-10z" />
+        <path d="M9 14a3 3 0 0 0 6 0" />
       </MenuIcon>
     ),
   },

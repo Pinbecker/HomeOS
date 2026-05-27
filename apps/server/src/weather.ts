@@ -196,7 +196,7 @@ function normalizeForecast(location: WeatherLocation, forecast: OpenMeteoForecas
   const hourlyStartIndex = currentHourIndex(hourlyTimes, currentTime)
   const currentHourlyIndex = nearestIndex(hourlyTimes, currentTime)
   const hourlyIndexes = hourlyTimes.slice(hourlyStartIndex, hourlyStartIndex + 23).map((_time, index) => hourlyStartIndex + index)
-  const airIndex = nearestIndex(air?.hourly?.time ?? [], String(current.time ?? hourlyTimes[hourlyStartIndex] ?? ''))
+  const airIndex = nearestIndex(stringValues(air?.hourly?.time), String(current.time ?? hourlyTimes[hourlyStartIndex] ?? ''))
   const hourly24 = [null, ...hourlyIndexes].map(hourlyIndex => hourlyPoint(forecast, current, currentTime, currentHourlyIndex, hourlyIndex))
   const forecastDayKeys = new Set(dailyTimes.slice(0, 10))
   const hourlyByDay: Record<string, ReturnType<typeof hourlyPoint>[]> = {}
