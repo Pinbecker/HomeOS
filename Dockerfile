@@ -1,67 +1,31 @@
-# ============================================================
-# HomeApp — Multi-stage Dockerfile
-# Builds a minimal production image for the Next.js app.
-# ============================================================
+FROM node:20-bookworm-slim
 
-# Stage 1: Install dependencies
-FROM node:20-alpine AS deps
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
-
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile
-
-
-# Stage 2: Build the application
-FROM node:20-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
-WORKDIR /app
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Bake in build-time env vars if needed
-ARG NEXT_PUBLIC_APP_URL
-ARG NEXT_PUBLIC_APP_NAME
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS=--max-old-space-size=896
-ENV SKIP_BUILD_CHECKS=1
 
-RUN pnpm build
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json postcss.config.mjs ./
+COPY apps/web/package.json apps/web/package.json
+COPY apps/server/package.json apps/server/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/auth/package.json packages/auth/package.json
+COPY packages/db/package.json packages/db/package.json
 
+RUN --mount=type=cache,id=homeos-pnpm-store,target=/pnpm/store \
+    corepack enable \
+    && corepack prepare pnpm@9.15.9 --activate \
+    && pnpm config set store-dir /pnpm/store \
+    && pnpm install --frozen-lockfile
 
-# Stage 3: Production runtime (minimal image)
-FROM node:20-alpine AS runner
-WORKDIR /app
+COPY apps ./apps
+COPY packages ./packages
+COPY lib/db/migrations ./lib/db/migrations
+COPY scripts/migrate.cjs ./scripts/migrate.cjs
+
+RUN cd apps/web && ./node_modules/.bin/vite build
 
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs
-
-# Copy Next.js standalone output
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/lib/db/migrations ./lib/db/migrations
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.js ./scripts/start.js
-
-# Next's standalone tracer copies only the CJS entry for temporal-polyfill,
-# but Node 20.20 resolves the package's module-sync export to index.js.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/temporal-polyfill@0.3.2/node_modules/temporal-polyfill ./node_modules/temporal-polyfill
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/temporal-spec@0.3.1/node_modules/temporal-spec ./node_modules/temporal-spec
-
-# Create data directories (these will be overridden by Docker volumes in prod)
-RUN mkdir -p /data/db /data/files && chown -R nextjs:nodejs /data
-
-USER nextjs
 
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
 
-# Run DB migrations then start the server
-CMD ["node", "scripts/start.js"]
+CMD ["sh", "-c", "node scripts/migrate.cjs && exec node --import tsx apps/server/src/index.ts"]
