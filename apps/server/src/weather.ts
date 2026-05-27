@@ -190,9 +190,13 @@ async function fetchForecast(location: WeatherLocation) {
 function normalizeForecast(location: WeatherLocation, forecast: OpenMeteoForecast, air: OpenMeteoAirQuality | null) {
   const current = forecast.current ?? {}
   const nowIso = new Date().toISOString()
-  const hourlyTimes = forecast.hourly?.time ?? []
-  const dailyTimes = forecast.daily?.time ?? []
-  const airIndex = nearestIndex(air?.hourly?.time ?? [], String(current.time ?? hourlyTimes[0] ?? ''))
+  const hourlyTimes = stringValues(forecast.hourly?.time)
+  const dailyTimes = stringValues(forecast.daily?.time)
+  const currentTime = String(current.time ?? nowIso)
+  const hourlyStartIndex = currentHourIndex(hourlyTimes, currentTime)
+  const currentHourlyIndex = nearestIndex(hourlyTimes, currentTime)
+  const hourlyIndexes = hourlyTimes.slice(hourlyStartIndex, hourlyStartIndex + 23).map((_time, index) => hourlyStartIndex + index)
+  const airIndex = nearestIndex(air?.hourly?.time ?? [], String(current.time ?? hourlyTimes[hourlyStartIndex] ?? ''))
 
   return {
     provider: 'open-meteo',
@@ -218,18 +222,18 @@ function normalizeForecast(location: WeatherLocation, forecast: OpenMeteoForecas
       precipitationMm: round(current.precipitation),
       pressureHpa: round(current.surface_pressure),
     },
-    hourly24: hourlyTimes.slice(0, 24).map((time, index) => ({
-      time,
-      temperature: round(forecast.hourly?.temperature_2m?.[index]),
-      apparentTemperature: round(forecast.hourly?.apparent_temperature?.[index]),
-      rainChance: round(forecast.hourly?.precipitation_probability?.[index]),
-      precipitationMm: round(forecast.hourly?.precipitation?.[index]),
-      conditionCode: Number(forecast.hourly?.weather_code?.[index] ?? 0),
-      condition: weatherLabel(Number(forecast.hourly?.weather_code?.[index] ?? 0)),
-      windMph: round(forecast.hourly?.wind_speed_10m?.[index]),
-      humidity: round(forecast.hourly?.relative_humidity_2m?.[index]),
-      visibilityKm: forecast.hourly?.visibility?.[index] == null ? null : round(Number(forecast.hourly.visibility[index]) / 1000, 1),
-      uvIndex: round(forecast.hourly?.uv_index?.[index], 1),
+    hourly24: [null, ...hourlyIndexes].map((hourlyIndex, displayIndex) => ({
+      time: hourlyIndex == null ? currentTime : hourlyTimes[hourlyIndex],
+      temperature: hourlyIndex == null ? round(current.temperature_2m) : round(forecast.hourly?.temperature_2m?.[hourlyIndex]),
+      apparentTemperature: hourlyIndex == null ? round(current.apparent_temperature) : round(forecast.hourly?.apparent_temperature?.[hourlyIndex]),
+      rainChance: round(forecast.hourly?.precipitation_probability?.[hourlyIndex ?? currentHourlyIndex]),
+      precipitationMm: hourlyIndex == null ? round(current.precipitation) : round(forecast.hourly?.precipitation?.[hourlyIndex]),
+      conditionCode: hourlyIndex == null ? Number(current.weather_code ?? 0) : Number(forecast.hourly?.weather_code?.[hourlyIndex] ?? 0),
+      condition: weatherLabel(hourlyIndex == null ? Number(current.weather_code ?? 0) : Number(forecast.hourly?.weather_code?.[hourlyIndex] ?? 0)),
+      windMph: hourlyIndex == null ? round(current.wind_speed_10m) : round(forecast.hourly?.wind_speed_10m?.[hourlyIndex]),
+      humidity: hourlyIndex == null ? round(current.relative_humidity_2m) : round(forecast.hourly?.relative_humidity_2m?.[hourlyIndex]),
+      visibilityKm: hourlyIndex == null || forecast.hourly?.visibility?.[hourlyIndex] == null ? null : round(Number(forecast.hourly.visibility[hourlyIndex]) / 1000, 1),
+      uvIndex: hourlyIndex == null ? null : round(forecast.hourly?.uv_index?.[hourlyIndex], 1),
     })),
     daily10: dailyTimes.slice(0, 10).map((time, index) => ({
       date: time,
@@ -278,7 +282,21 @@ function nearestIndex(times: string[], target: string) {
   return best
 }
 
-function valueAt(values: Array<number | null | undefined> | undefined, index: number) {
+function currentHourIndex(times: string[], currentTime: string) {
+  if (!times.length) return 0
+  const currentMs = Date.parse(currentTime)
+  if (!Number.isFinite(currentMs)) return 0
+
+  const next = times.findIndex(time => Date.parse(time) > currentMs)
+  if (next >= 0) return next
+  return Math.max(0, times.length - 1)
+}
+
+function stringValues(values: Array<unknown> | undefined) {
+  return Array.isArray(values) ? values.map(value => String(value)).filter(Boolean) : []
+}
+
+function valueAt(values: Array<unknown> | undefined, index: number) {
   if (!values || index < 0) return null
   return round(values[index], 1)
 }

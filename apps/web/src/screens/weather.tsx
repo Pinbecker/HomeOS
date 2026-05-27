@@ -63,7 +63,7 @@ export function WeatherHomeWidget() {
   const snapshot = state.snapshot
   const current = snapshot?.current
   const today = snapshot?.daily10[0]
-  const rain = today?.rainChance ?? snapshot?.hourly24[0]?.rainChance ?? null
+  const rain = snapshot?.hourly24[0]?.rainChance ?? null
   const icon = current ? weatherIcon(current.conditionCode, current.isDay) : 'partly'
 
   return (
@@ -231,7 +231,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           </div>
 
           <div className="mt-6 grid grid-cols-3 gap-2">
-            <HeroStat label="Rain" value={`${today?.rainChance ?? pickedHour?.rainChance ?? 0}%`} />
+            <HeroStat label="Rain" value={`${pickedHour?.rainChance ?? 0}%`} />
             <HeroStat label="Wind" value={`${current.windMph ?? '--'} mph`} />
             <HeroStat label="AQI" value={aqiLabel(snapshot.airQuality.europeanAqi)} />
           </div>
@@ -268,13 +268,13 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           ) : null}
         </section>
 
-        <section className="mb-4 overflow-hidden rounded-[24px] bg-surface shadow-sm">
+        <section className="mb-3 overflow-hidden rounded-[24px] bg-surface shadow-sm">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="text-[13px] font-semibold text-text-2">10-day forecast</p>
-            {pickedDay ? <p className="text-[12px] font-semibold text-text-3">{pickedDay.condition}</p> : null}
+            {pickedDay ? <p className="text-[12px] font-semibold text-accent">{selectedDay === 0 ? 'Today' : weekday(pickedDay.date)}</p> : null}
           </div>
           {snapshot.daily10.map((day, index) => (
-            <button key={day.date} type="button" onClick={() => setSelectedDay(index)} className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-surface-2 ${selectedDay === index ? 'bg-accent-bg' : ''} ${index > 0 ? 'border-t border-border' : ''}`}>
+            <button key={day.date} type="button" onClick={() => setSelectedDay(index)} className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-surface-2 ${selectedDay === index ? 'bg-accent-bg shadow-[inset_3px_0_0_var(--accent)]' : ''} ${index > 0 ? 'border-t border-border' : ''}`}>
               <span className="w-20 text-[14px] font-semibold text-text-1">{index === 0 ? 'Today' : weekday(day.date)}</span>
               <WeatherGlyph icon={weatherIcon(day.conditionCode, true)} className="h-6 w-6 shrink-0 text-accent" />
               <span className="w-9 text-right text-[13px] font-semibold text-text-2">{temperature(day.temperatureMin)}</span>
@@ -285,14 +285,9 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
               <span className="w-9 text-right text-[11px] font-semibold text-accent">{day.rainChance ?? 0}%</span>
             </button>
           ))}
-          {pickedDay ? (
-            <div className="grid grid-cols-3 border-t border-border bg-bg/60 px-4 py-3 text-center">
-              <MiniDetail label="Rain" value={`${pickedDay.precipitationMm ?? 0}mm`} />
-              <MiniDetail label="Wind" value={`${pickedDay.windMph ?? '--'} mph`} />
-              <MiniDetail label="UV" value={String(pickedDay.uvIndex ?? '--')} />
-            </div>
-          ) : null}
         </section>
+
+        {pickedDay ? <DayDetailPanel day={pickedDay} selectedDay={selectedDay} /> : null}
 
         <section className="grid grid-cols-2 gap-3 pb-4">
           <Metric title="Wind" value={`${current.windMph ?? '--'} mph`} detail={windLabel(current.windDirection)} />
@@ -446,6 +441,59 @@ function Metric({ title, value, detail }: { title: string; value: string; detail
   )
 }
 
+function DayDetailPanel({ day, selectedDay }: { day: WeatherSnapshot['daily10'][number]; selectedDay: number }) {
+  return (
+    <section className="mb-4 overflow-hidden rounded-[26px] border border-accent-border bg-surface shadow-[0_12px_34px_rgba(0,0,0,0.08)]">
+      <div className="relative overflow-hidden p-4">
+        <div className="absolute right-[-22px] top-[-28px] h-28 w-28 rounded-full bg-accent-bg" />
+        <div className="relative flex items-start gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] bg-accent-bg text-accent">
+            <WeatherGlyph icon={weatherIcon(day.conditionCode, true)} className="h-11 w-11" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-text-3">{selectedDay === 0 ? 'Today' : fullDay(day.date)}</p>
+            <p className="mt-1 text-[24px] font-bold tracking-normal text-text-1">{day.condition}</p>
+            <p className="mt-1 text-[13px] leading-5 text-text-2">
+              {temperature(day.temperatureMin)} to {temperature(day.temperatureMax)}
+              {day.apparentMin != null || day.apparentMax != null ? ` · feels ${temperature(day.apparentMin)} to ${temperature(day.apparentMax)}` : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="relative mt-4 grid grid-cols-4 gap-2">
+          <DayChip label="Rain" value={`${day.rainChance ?? 0}%`} />
+          <DayChip label="Total" value={`${day.precipitationMm ?? 0}mm`} />
+          <DayChip label="Wind" value={`${day.windMph ?? '--'}mph`} />
+          <DayChip label="UV" value={String(day.uvIndex ?? '--')} />
+        </div>
+
+        <div className="relative mt-4 grid grid-cols-2 gap-2 border-t border-border pt-4">
+          <SunLine label="Sunrise" value={day.sunrise ? timeLabel(day.sunrise) : '--'} />
+          <SunLine label="Sunset" value={day.sunset ? timeLabel(day.sunset) : '--'} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function DayChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[16px] bg-bg px-2 py-2.5 text-center">
+      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-text-3">{label}</p>
+      <p className="mt-1 text-[13px] font-bold tracking-normal text-text-1">{value}</p>
+    </div>
+  )
+}
+
+function SunLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[16px] bg-bg px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-text-3">{label}</p>
+      <p className="mt-1 text-[14px] font-bold tracking-normal text-text-1">{value}</p>
+    </div>
+  )
+}
+
 function HeroStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[18px] border border-white/12 bg-white/12 px-3 py-3 text-left backdrop-blur">
@@ -528,6 +576,10 @@ function timeLabel(value: string) {
 
 function weekday(value: string) {
   return new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short' })
+}
+
+function fullDay(value: string) {
+  return new Date(`${value}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 function rangeWidth(min: number | null, max: number | null, days: WeatherSnapshot['daily10']) {
