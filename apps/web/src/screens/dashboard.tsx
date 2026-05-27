@@ -1059,14 +1059,16 @@ export function DashboardPage() {
   return (
     <ScreenShell title="Home" showHeader={false}>
       <header className="flex items-start justify-between px-5 pt-7 pb-5">
-        <div>
-          <p className="mb-1 text-[12px] font-medium tracking-[0.02em] text-text-3">{dateStr}</p>
+        <div className="min-w-0 flex-1 pr-4">
+          <div className="mb-1 flex min-w-0 items-center gap-2">
+            <p className="min-w-0 truncate text-[12px] font-medium tracking-[0.02em] text-text-3">{dateStr}</p>
+            <WeatherHomeWidget />
+          </div>
           <h1 className="text-[30px] font-bold leading-[1.1] text-text-1" style={{ letterSpacing: '-0.025em' }}>{greeting}</h1>
         </div>
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
       </header>
 
-      <WeatherHomeWidget />
       <AiCapture surface="home" placeholder="Speak or type anything for the house brain" />
       <PinnedBoardLite pins={snapshot.pins} />
 

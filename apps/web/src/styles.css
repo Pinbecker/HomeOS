@@ -199,3 +199,25 @@ select {
 }
 .flash-highlight { animation: flash-highlight 1.4s ease-out; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes weather-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-7px) rotate(1deg); }
+}
+
+@keyframes weather-drift {
+  0% { transform: translateX(-6%); }
+  100% { transform: translateX(6%); }
+}
+
+.weather-float { animation: weather-float 5.5s ease-in-out infinite; }
+.weather-drift { animation: weather-drift 18s ease-in-out infinite alternate; }
+.weather-drift-slow { animation: weather-drift 28s ease-in-out infinite alternate-reverse; }
+
+@media (prefers-reduced-motion: reduce) {
+  .weather-float,
+  .weather-drift,
+  .weather-drift-slow {
+    animation: none;
+  }
+}
