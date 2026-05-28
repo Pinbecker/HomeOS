@@ -145,6 +145,98 @@ type Bin = {
   active?: boolean
   createdAt?: string | number | Date
 }
+export type MediaType = 'movie' | 'tv'
+export type MediaUserStatus = 'wishlist' | 'watching' | 'watched' | 'not_interested'
+export type MediaFamilyStatus = 'wishlist' | 'watching' | 'watched' | 'not_interested'
+export type MediaRating = 'liked' | 'neutral' | 'disliked'
+export type MediaInteractionAction = 'watched_liked' | 'watched_neutral' | 'watched_disliked' | 'wishlist' | 'not_interested' | 'skip'
+export type MediaItem = {
+  id: string
+  tmdbId: number
+  mediaType: MediaType
+  title: string
+  originalTitle?: string | null
+  overview?: string | null
+  posterPath?: string | null
+  backdropPath?: string | null
+  releaseDate?: string | null
+  firstAirDate?: string | null
+  year?: number | null
+  runtimeMinutes?: number | null
+  episodeRunTime?: number[] | null
+  genres?: string[] | null
+  originCountry?: string[] | null
+  originalLanguage?: string | null
+  voteAverageX10?: number | null
+  voteCount?: number | null
+  popularityX100?: number | null
+  providers?: Record<string, unknown> | null
+  seasons?: Array<Record<string, unknown>> | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
+export type MediaUserState = {
+  id: string
+  householdId: string
+  userId: string
+  mediaItemId: string
+  status: MediaUserStatus
+  rating?: MediaRating | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
+export type MediaFamilyState = {
+  id: string
+  householdId: string
+  mediaItemId: string
+  status: MediaFamilyStatus
+  addedByUserId?: string | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
+export type MediaSeason = {
+  id: string
+  mediaItemId: string
+  seasonNumber: number
+  name: string
+  overview?: string | null
+  posterPath?: string | null
+  airDate?: string | null
+  episodeCount: number
+  updatedAt: string | number | Date
+}
+export type MediaEpisode = {
+  id: string
+  mediaItemId: string
+  seasonId: string
+  seasonNumber: number
+  episodeNumber: number
+  name: string
+  overview?: string | null
+  stillPath?: string | null
+  airDate?: string | null
+  runtimeMinutes?: number | null
+  updatedAt: string | number | Date
+}
+export type MediaEpisodeProgress = {
+  id: string
+  householdId: string
+  scopeType: 'user' | 'family'
+  scopeId: string
+  mediaItemId: string
+  episodeId: string
+  watchedAt?: string | number | Date | null
+  updatedAt: string | number | Date
+}
+export type MediaInteraction = {
+  id: string
+  householdId: string
+  userId: string
+  mediaItemId: string
+  action: MediaInteractionAction
+  source?: string | null
+  createdAt: string | number | Date
+}
 
 type AppData = {
   users: User[]
@@ -160,6 +252,13 @@ type AppData = {
   calendarFeeds: CalendarFeed[]
   cycleEntries: CycleEntry[]
   bins: Bin[]
+  mediaItems: MediaItem[]
+  mediaUserStates: MediaUserState[]
+  mediaFamilyStates: MediaFamilyState[]
+  mediaSeasons: MediaSeason[]
+  mediaEpisodes: MediaEpisode[]
+  mediaEpisodeProgress: MediaEpisodeProgress[]
+  mediaInteractions: MediaInteraction[]
 }
 
 export type AppState = {
@@ -199,6 +298,13 @@ const emptyData: AppData = {
   calendarFeeds: [],
   cycleEntries: [],
   bins: [],
+  mediaItems: [],
+  mediaUserStates: [],
+  mediaFamilyStates: [],
+  mediaSeasons: [],
+  mediaEpisodes: [],
+  mediaEpisodeProgress: [],
+  mediaInteractions: [],
 }
 
 let state: AppState = loadState()
@@ -358,6 +464,41 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.cycleEntries, mutation.entityId)
         : mergeCollection(next.cycleEntries, mutation.payload as CycleEntry)
       break
+    case 'media_item':
+      next.mediaItems = mutation.operation === 'delete'
+        ? removeCollection(next.mediaItems, mutation.entityId)
+        : mergeCollection(next.mediaItems, mutation.payload as MediaItem)
+      break
+    case 'media_user_state':
+      next.mediaUserStates = mutation.operation === 'delete'
+        ? removeCollection(next.mediaUserStates, mutation.entityId)
+        : mergeCollection(next.mediaUserStates, mutation.payload as MediaUserState)
+      break
+    case 'media_family_state':
+      next.mediaFamilyStates = mutation.operation === 'delete'
+        ? removeCollection(next.mediaFamilyStates, mutation.entityId)
+        : mergeCollection(next.mediaFamilyStates, mutation.payload as MediaFamilyState)
+      break
+    case 'media_season':
+      next.mediaSeasons = mutation.operation === 'delete'
+        ? removeCollection(next.mediaSeasons, mutation.entityId)
+        : mergeCollection(next.mediaSeasons, mutation.payload as MediaSeason)
+      break
+    case 'media_episode':
+      next.mediaEpisodes = mutation.operation === 'delete'
+        ? removeCollection(next.mediaEpisodes, mutation.entityId)
+        : mergeCollection(next.mediaEpisodes, mutation.payload as MediaEpisode)
+      break
+    case 'media_episode_progress':
+      next.mediaEpisodeProgress = mutation.operation === 'delete'
+        ? removeCollection(next.mediaEpisodeProgress, mutation.entityId)
+        : mergeCollection(next.mediaEpisodeProgress, mutation.payload as MediaEpisodeProgress)
+      break
+    case 'media_interaction':
+      next.mediaInteractions = mutation.operation === 'delete'
+        ? removeCollection(next.mediaInteractions, mutation.entityId)
+        : mergeCollection(next.mediaInteractions, mutation.payload as MediaInteraction)
+      break
     default:
       break
   }
@@ -426,6 +567,41 @@ function applyChange(change: SyncChange) {
         next.data.cycleEntries = change.operation === 'delete'
           ? removeCollection(next.data.cycleEntries, change.entityId)
           : mergeCollection(next.data.cycleEntries, change.payload as CycleEntry)
+        break
+      case 'media_item':
+        next.data.mediaItems = change.operation === 'delete'
+          ? removeCollection(next.data.mediaItems, change.entityId)
+          : mergeCollection(next.data.mediaItems, change.payload as MediaItem)
+        break
+      case 'media_user_state':
+        next.data.mediaUserStates = change.operation === 'delete'
+          ? removeCollection(next.data.mediaUserStates, change.entityId)
+          : mergeCollection(next.data.mediaUserStates, change.payload as MediaUserState)
+        break
+      case 'media_family_state':
+        next.data.mediaFamilyStates = change.operation === 'delete'
+          ? removeCollection(next.data.mediaFamilyStates, change.entityId)
+          : mergeCollection(next.data.mediaFamilyStates, change.payload as MediaFamilyState)
+        break
+      case 'media_season':
+        next.data.mediaSeasons = change.operation === 'delete'
+          ? removeCollection(next.data.mediaSeasons, change.entityId)
+          : mergeCollection(next.data.mediaSeasons, change.payload as MediaSeason)
+        break
+      case 'media_episode':
+        next.data.mediaEpisodes = change.operation === 'delete'
+          ? removeCollection(next.data.mediaEpisodes, change.entityId)
+          : mergeCollection(next.data.mediaEpisodes, change.payload as MediaEpisode)
+        break
+      case 'media_episode_progress':
+        next.data.mediaEpisodeProgress = change.operation === 'delete'
+          ? removeCollection(next.data.mediaEpisodeProgress, change.entityId)
+          : mergeCollection(next.data.mediaEpisodeProgress, change.payload as MediaEpisodeProgress)
+        break
+      case 'media_interaction':
+        next.data.mediaInteractions = change.operation === 'delete'
+          ? removeCollection(next.data.mediaInteractions, change.entityId)
+          : mergeCollection(next.data.mediaInteractions, change.payload as MediaInteraction)
         break
       default:
         break

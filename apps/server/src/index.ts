@@ -15,6 +15,7 @@ import { transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
 import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
 import { registerWeatherRoutes } from './weather'
+import { registerMediaRoutes } from './media'
 
 const app = Fastify({
   logger: true,
@@ -433,6 +434,7 @@ app.get('/api/ai/jobs', async (request, reply) => {
 })
 
 registerWeatherRoutes(app)
+registerMediaRoutes(app)
 
 app.get('/*', async (request, reply) => {
   if (request.url.startsWith('/api/')) {

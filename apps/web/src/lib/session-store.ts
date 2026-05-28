@@ -106,6 +106,10 @@ export function useSessionState<T>(selector: (value: SessionState) => T) {
   )
 }
 
+export function getSessionState() {
+  return state
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener)
   return () => listeners.delete(listener)

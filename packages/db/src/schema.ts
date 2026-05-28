@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { sqliteTable, text, integer, index, check } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex, check } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ============================================================
@@ -507,6 +507,136 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
   auth: text('auth').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
+
+// ============================================================
+// MEDIA — TMDB-backed personal/family film and TV tracker
+// ============================================================
+
+export type MediaType = 'movie' | 'tv'
+export type MediaUserStatus = 'wishlist' | 'watching' | 'watched' | 'not_interested'
+export type MediaFamilyStatus = 'wishlist' | 'watching' | 'watched' | 'not_interested'
+export type MediaRating = 'liked' | 'neutral' | 'disliked'
+export type MediaProgressScope = 'user' | 'family'
+export type MediaInteractionAction =
+  | 'watched_liked'
+  | 'watched_neutral'
+  | 'watched_disliked'
+  | 'wishlist'
+  | 'not_interested'
+  | 'skip'
+
+export const mediaItems = sqliteTable('media_items', {
+  id: text('id').primaryKey(),
+  tmdbId: integer('tmdb_id').notNull(),
+  mediaType: text('media_type').$type<MediaType>().notNull(),
+  title: text('title').notNull(),
+  originalTitle: text('original_title'),
+  overview: text('overview'),
+  posterPath: text('poster_path'),
+  backdropPath: text('backdrop_path'),
+  releaseDate: text('release_date'),
+  firstAirDate: text('first_air_date'),
+  year: integer('year'),
+  runtimeMinutes: integer('runtime_minutes'),
+  episodeRunTime: text('episode_run_time', { mode: 'json' }).$type<number[]>(),
+  genres: text('genres', { mode: 'json' }).$type<string[]>(),
+  originCountry: text('origin_country', { mode: 'json' }).$type<string[]>(),
+  originalLanguage: text('original_language'),
+  voteAverageX10: integer('vote_average_x10'),
+  voteCount: integer('vote_count'),
+  popularityX100: integer('popularity_x100'),
+  providers: text('providers', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+  seasons: text('seasons', { mode: 'json' }).$type<Array<Record<string, unknown>> | null>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  tmdbUniqueIdx: uniqueIndex('media_items_tmdb_unique_idx').on(table.mediaType, table.tmdbId),
+  typeIdx: index('media_items_type_idx').on(table.mediaType),
+}))
+
+export const mediaUserStates = sqliteTable('media_user_states', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  status: text('status').$type<MediaUserStatus>().notNull(),
+  rating: text('rating').$type<MediaRating>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  userMediaUniqueIdx: uniqueIndex('media_user_states_user_media_unique_idx').on(table.userId, table.mediaItemId),
+  userStatusIdx: index('media_user_states_user_status_idx').on(table.userId, table.status),
+}))
+
+export const mediaFamilyStates = sqliteTable('media_family_states', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  status: text('status').$type<MediaFamilyStatus>().notNull(),
+  addedByUserId: text('added_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  householdMediaUniqueIdx: uniqueIndex('media_family_states_household_media_unique_idx').on(table.householdId, table.mediaItemId),
+  householdStatusIdx: index('media_family_states_household_status_idx').on(table.householdId, table.status),
+}))
+
+export const mediaSeasons = sqliteTable('media_seasons', {
+  id: text('id').primaryKey(),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  seasonNumber: integer('season_number').notNull(),
+  name: text('name').notNull(),
+  overview: text('overview'),
+  posterPath: text('poster_path'),
+  airDate: text('air_date'),
+  episodeCount: integer('episode_count').notNull().default(0),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  seasonUniqueIdx: uniqueIndex('media_seasons_media_season_unique_idx').on(table.mediaItemId, table.seasonNumber),
+}))
+
+export const mediaEpisodes = sqliteTable('media_episodes', {
+  id: text('id').primaryKey(),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  seasonId: text('season_id').notNull().references(() => mediaSeasons.id, { onDelete: 'cascade' }),
+  seasonNumber: integer('season_number').notNull(),
+  episodeNumber: integer('episode_number').notNull(),
+  name: text('name').notNull(),
+  overview: text('overview'),
+  stillPath: text('still_path'),
+  airDate: text('air_date'),
+  runtimeMinutes: integer('runtime_minutes'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  episodeUniqueIdx: uniqueIndex('media_episodes_media_episode_unique_idx').on(table.mediaItemId, table.seasonNumber, table.episodeNumber),
+  mediaSeasonIdx: index('media_episodes_media_season_idx').on(table.mediaItemId, table.seasonNumber),
+}))
+
+export const mediaEpisodeProgress = sqliteTable('media_episode_progress', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  scopeType: text('scope_type').$type<MediaProgressScope>().notNull(),
+  scopeId: text('scope_id').notNull(),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  episodeId: text('episode_id').notNull().references(() => mediaEpisodes.id, { onDelete: 'cascade' }),
+  watchedAt: integer('watched_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  scopeEpisodeUniqueIdx: uniqueIndex('media_episode_progress_scope_episode_unique_idx').on(table.scopeType, table.scopeId, table.episodeId),
+  scopeMediaIdx: index('media_episode_progress_scope_media_idx').on(table.scopeType, table.scopeId, table.mediaItemId),
+}))
+
+export const mediaInteractions = sqliteTable('media_interactions', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
+  action: text('action').$type<MediaInteractionAction>().notNull(),
+  source: text('source'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  userCreatedIdx: index('media_interactions_user_created_idx').on(table.userId, table.createdAt),
+}))
 
 // ============================================================
 // ACTIVITY LOG

@@ -19,7 +19,7 @@ COPY packages ./packages
 COPY lib/db/migrations ./lib/db/migrations
 COPY scripts/migrate.cjs ./scripts/migrate.cjs
 
-RUN cd apps/web && ./node_modules/.bin/vite build
+RUN cd apps/web && NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/.bin/vite build
 
 ENV NODE_ENV=production
 

@@ -16,6 +16,13 @@ import {
   items,
   listItems,
   lists,
+  mediaEpisodeProgress,
+  mediaEpisodes,
+  mediaFamilyStates,
+  mediaInteractions,
+  mediaItems,
+  mediaSeasons,
+  mediaUserStates,
   records,
   reminders,
   syncChanges,
@@ -65,6 +72,13 @@ export async function buildBootstrap() {
     allCalendarFeeds,
     allCycleEntries,
     allBins,
+    allMediaItems,
+    allMediaUserStates,
+    allMediaFamilyStates,
+    allMediaSeasons,
+    allMediaEpisodes,
+    allMediaEpisodeProgress,
+    allMediaInteractions,
   ] = await Promise.all([
     db.select().from(users),
     db.select().from(household),
@@ -79,6 +93,13 @@ export async function buildBootstrap() {
     db.select().from(calendarFeeds),
     db.select().from(cycleEntries),
     db.select().from(bins),
+    db.select().from(mediaItems),
+    db.select().from(mediaUserStates),
+    db.select().from(mediaFamilyStates),
+    db.select().from(mediaSeasons),
+    db.select().from(mediaEpisodes),
+    db.select().from(mediaEpisodeProgress),
+    db.select().from(mediaInteractions),
   ])
 
   return {
@@ -97,6 +118,13 @@ export async function buildBootstrap() {
       calendarFeeds: allCalendarFeeds,
       cycleEntries: allCycleEntries,
       bins: allBins,
+      mediaItems: allMediaItems,
+      mediaUserStates: allMediaUserStates,
+      mediaFamilyStates: allMediaFamilyStates,
+      mediaSeasons: allMediaSeasons,
+      mediaEpisodes: allMediaEpisodes,
+      mediaEpisodeProgress: allMediaEpisodeProgress,
+      mediaInteractions: allMediaInteractions,
     },
   }
 }
@@ -238,6 +266,34 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
       const row = await db.query.cycleEntries.findFirst({ where: eq(cycleEntries.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
+    case 'media_item': {
+      const row = await db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_user_state': {
+      const row = await db.query.mediaUserStates.findFirst({ where: eq(mediaUserStates.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_family_state': {
+      const row = await db.query.mediaFamilyStates.findFirst({ where: eq(mediaFamilyStates.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_season': {
+      const row = await db.query.mediaSeasons.findFirst({ where: eq(mediaSeasons.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_episode': {
+      const row = await db.query.mediaEpisodes.findFirst({ where: eq(mediaEpisodes.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_episode_progress': {
+      const row = await db.query.mediaEpisodeProgress.findFirst({ where: eq(mediaEpisodeProgress.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'media_interaction': {
+      const row = await db.query.mediaInteractions.findFirst({ where: eq(mediaInteractions.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     default:
       return mutation
   }
@@ -339,9 +395,176 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
     case 'cycle.entry.delete':
       await db.delete(cycleEntries).where(eq(cycleEntries.id, mutation.entityId))
       break
+    case 'media.item.upsert':
+      await upsertMediaItem(mutation)
+      break
+    case 'media.user_state.upsert':
+      await upsertMediaUserState(userId, mutation)
+      break
+    case 'media.user_state.delete':
+      await db.delete(mediaUserStates).where(eq(mediaUserStates.id, mutation.entityId))
+      break
+    case 'media.family_state.upsert':
+      await upsertMediaFamilyState(userId, mutation)
+      break
+    case 'media.family_state.delete':
+      await db.delete(mediaFamilyStates).where(eq(mediaFamilyStates.id, mutation.entityId))
+      break
+    case 'media.episode_progress.upsert':
+      await upsertMediaEpisodeProgress(mutation)
+      break
+    case 'media.episode_progress.delete':
+      await db.delete(mediaEpisodeProgress).where(eq(mediaEpisodeProgress.id, mutation.entityId))
+      break
+    case 'media.interaction.create':
+      await createMediaInteraction(userId, mutation)
+      break
     default:
       break
   }
+}
+
+async function upsertMediaItem(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mutation.entityId) })
+  const mediaType = payload.mediaType as 'movie' | 'tv' | undefined
+  const tmdbId = Number(payload.tmdbId ?? existing?.tmdbId)
+
+  if (!mediaType && !existing?.mediaType) throw new Error('Media type is required')
+  if (!Number.isFinite(tmdbId)) throw new Error('TMDB id is required')
+
+  const values = {
+    tmdbId,
+    mediaType: mediaType ?? existing!.mediaType,
+    title: (payload.title as string | undefined) ?? existing?.title ?? 'Untitled',
+    originalTitle: payload.originalTitle === undefined ? existing?.originalTitle ?? null : (payload.originalTitle as string | null),
+    overview: payload.overview === undefined ? existing?.overview ?? null : (payload.overview as string | null),
+    posterPath: payload.posterPath === undefined ? existing?.posterPath ?? null : (payload.posterPath as string | null),
+    backdropPath: payload.backdropPath === undefined ? existing?.backdropPath ?? null : (payload.backdropPath as string | null),
+    releaseDate: payload.releaseDate === undefined ? existing?.releaseDate ?? null : (payload.releaseDate as string | null),
+    firstAirDate: payload.firstAirDate === undefined ? existing?.firstAirDate ?? null : (payload.firstAirDate as string | null),
+    year: payload.year === undefined ? existing?.year ?? null : (payload.year as number | null),
+    runtimeMinutes: payload.runtimeMinutes === undefined ? existing?.runtimeMinutes ?? null : (payload.runtimeMinutes as number | null),
+    episodeRunTime: payload.episodeRunTime === undefined ? existing?.episodeRunTime ?? null : (payload.episodeRunTime as number[] | null),
+    genres: payload.genres === undefined ? existing?.genres ?? null : (payload.genres as string[] | null),
+    originCountry: payload.originCountry === undefined ? existing?.originCountry ?? null : (payload.originCountry as string[] | null),
+    originalLanguage: payload.originalLanguage === undefined ? existing?.originalLanguage ?? null : (payload.originalLanguage as string | null),
+    voteAverageX10: payload.voteAverageX10 === undefined ? existing?.voteAverageX10 ?? null : (payload.voteAverageX10 as number | null),
+    voteCount: payload.voteCount === undefined ? existing?.voteCount ?? null : (payload.voteCount as number | null),
+    popularityX100: payload.popularityX100 === undefined ? existing?.popularityX100 ?? null : (payload.popularityX100 as number | null),
+    providers: payload.providers === undefined ? existing?.providers ?? null : (payload.providers as Record<string, unknown> | null),
+    seasons: payload.seasons === undefined ? existing?.seasons ?? null : (payload.seasons as Array<Record<string, unknown>> | null),
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(mediaItems).set(values).where(eq(mediaItems.id, mutation.entityId))
+  } else {
+    await db.insert(mediaItems).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertMediaUserState(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.mediaUserStates.findFirst({ where: eq(mediaUserStates.id, mutation.entityId) })
+  const targetUserId = (payload.userId as string | undefined) ?? existing?.userId ?? userId
+  const mediaItemId = (payload.mediaItemId as string | undefined) ?? existing?.mediaItemId
+  if (!mediaItemId) throw new Error('Media item is required')
+
+  const values = {
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
+    userId: targetUserId,
+    mediaItemId,
+    status: (payload.status as typeof mediaUserStates.$inferInsert.status | undefined) ?? existing?.status ?? 'wishlist',
+    rating: payload.rating === undefined ? existing?.rating ?? null : (payload.rating as typeof mediaUserStates.$inferInsert.rating | null),
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(mediaUserStates).set(values).where(eq(mediaUserStates.id, mutation.entityId))
+  } else {
+    await db.insert(mediaUserStates).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertMediaFamilyState(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.mediaFamilyStates.findFirst({ where: eq(mediaFamilyStates.id, mutation.entityId) })
+  const mediaItemId = (payload.mediaItemId as string | undefined) ?? existing?.mediaItemId
+  if (!mediaItemId) throw new Error('Media item is required')
+
+  const values = {
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
+    mediaItemId,
+    status: (payload.status as typeof mediaFamilyStates.$inferInsert.status | undefined) ?? existing?.status ?? 'wishlist',
+    addedByUserId: payload.addedByUserId === undefined ? existing?.addedByUserId ?? userId : (payload.addedByUserId as string | null),
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(mediaFamilyStates).set(values).where(eq(mediaFamilyStates.id, mutation.entityId))
+  } else {
+    await db.insert(mediaFamilyStates).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertMediaEpisodeProgress(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.mediaEpisodeProgress.findFirst({ where: eq(mediaEpisodeProgress.id, mutation.entityId) })
+  const mediaItemId = (payload.mediaItemId as string | undefined) ?? existing?.mediaItemId
+  const episodeId = (payload.episodeId as string | undefined) ?? existing?.episodeId
+  if (!mediaItemId || !episodeId) throw new Error('Media item and episode are required')
+
+  const values = {
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
+    scopeType: (payload.scopeType as typeof mediaEpisodeProgress.$inferInsert.scopeType | undefined) ?? existing?.scopeType ?? 'user',
+    scopeId: (payload.scopeId as string | undefined) ?? existing?.scopeId ?? '',
+    mediaItemId,
+    episodeId,
+    watchedAt: payload.watchedAt === undefined
+      ? existing?.watchedAt ?? null
+      : (payload.watchedAt ? new Date(payload.watchedAt as string | number) : null),
+    updatedAt: now,
+  }
+  if (!values.scopeId) throw new Error('Progress scope is required')
+
+  if (existing) {
+    await db.update(mediaEpisodeProgress).set(values).where(eq(mediaEpisodeProgress.id, mutation.entityId))
+  } else {
+    await db.insert(mediaEpisodeProgress).values({ id: mutation.entityId, ...values })
+  }
+}
+
+async function createMediaInteraction(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const mediaItemId = payload.mediaItemId as string | undefined
+  if (!mediaItemId) throw new Error('Media item is required')
+
+  await db.insert(mediaInteractions).values({
+    id: mutation.entityId,
+    householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
+    userId: (payload.userId as string | undefined) ?? userId,
+    mediaItemId,
+    action: (payload.action as typeof mediaInteractions.$inferInsert.action | undefined) ?? 'skip',
+    source: (payload.source as string | null | undefined) ?? null,
+    createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : new Date(),
+  })
 }
 
 async function upsertCycleEntry(mutation: SyncMutation) {

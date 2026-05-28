@@ -12,6 +12,7 @@ import { CycleTrackerPage } from './screens/cycle-tracker'
 import { BinsPage, HouseholdPage, HousePlansPage } from './screens/household'
 import { InboxCapturePage, InboxPage } from './screens/inbox'
 import { LifeCategoryPage, LifeEntityPage, LifeOverviewPage } from './screens/life'
+import { MediaPage } from './screens/media'
 import { NotesPage } from './screens/notes'
 import { RemindersPage } from './screens/reminders'
 import { ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
@@ -288,6 +289,11 @@ const watchRoute = createRoute({
   path: '/watch',
   component: WatchPage,
 })
+const mediaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/media',
+  component: MediaPage,
+})
 const remindersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/reminders',
@@ -328,6 +334,7 @@ const routeTree = rootRoute.addChildren([
   lifeAdminRoute,
   lifeAdminEntityRoute,
   watchRoute,
+  mediaRoute,
   remindersRoute,
 ])
 

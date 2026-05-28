@@ -3,6 +3,7 @@ import {
   Bell,
   CalendarDays,
   CloudSun,
+  Clapperboard,
   Droplet,
   FileText,
   Grid3X3,
@@ -70,6 +71,12 @@ const menuItems: MenuItem[] = [
     label: 'Watch',
     color: 'var(--red)',
     icon: Tv,
+  },
+  {
+    href: '/media',
+    label: 'Media',
+    color: '#AF52DE',
+    icon: Clapperboard,
   },
   {
     href: '/weather',
