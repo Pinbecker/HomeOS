@@ -354,6 +354,10 @@ async function upsertCycleEntry(mutation: SyncMutation) {
   const endDate = payload.endDate === undefined
     ? existing?.endDate ?? null
     : (payload.endDate ? new Date(payload.endDate as string | number) : null)
+  const ovulationDate = payload.ovulationDate === undefined
+    ? existing?.ovulationDate ?? null
+    : (payload.ovulationDate ? new Date(payload.ovulationDate as string | number) : null)
+  const ovulationSource = ovulationDate ? 'known' : null
 
   if (!startDate || Number.isNaN(startDate.getTime())) {
     throw new Error('Cycle start date is required')
@@ -364,11 +368,16 @@ async function upsertCycleEntry(mutation: SyncMutation) {
   if (endDate && endDate.getTime() < startDate.getTime()) {
     throw new Error('Cycle end date cannot be before start date')
   }
+  if (ovulationDate && Number.isNaN(ovulationDate.getTime())) {
+    throw new Error('Known ovulation date is invalid')
+  }
 
   if (existing) {
     await db.update(cycleEntries).set({
       startDate,
       endDate,
+      ovulationDate,
+      ovulationSource,
       updatedAt: now,
     }).where(eq(cycleEntries.id, mutation.entityId))
   } else {
@@ -377,6 +386,8 @@ async function upsertCycleEntry(mutation: SyncMutation) {
       householdId: (payload.householdId as string | undefined) ?? process.env.HOUSEHOLD_ID ?? 'default',
       startDate,
       endDate,
+      ovulationDate,
+      ovulationSource,
       createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
       updatedAt: payload.updatedAt ? new Date(payload.updatedAt as string | number) : now,
     })

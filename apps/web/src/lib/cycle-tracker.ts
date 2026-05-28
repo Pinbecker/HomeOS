@@ -6,15 +6,24 @@ const MAX_VALID_INTERVAL = 60
 const DEFAULT_PERIOD_DAYS = 5
 const CYCLE_COLOR = '#C04A7A'
 const CYCLE_PREDICTED_COLOR = '#B45A84'
+const FERTILE_COLOR = '#7C6CE4'
+const OVULATION_COLOR = '#E58A2A'
 const PREDICTION_LOOKBACK_MONTHS = 12
+const DEFAULT_LUTEAL_DAYS = 14
 
 export type CycleConfidence = 'none' | 'low' | 'medium' | 'high'
+
+export type CycleTrackerSettings = {
+  showOvulationWindows: boolean
+}
 
 export type NormalizedCycleEntry = {
   id: string
   householdId?: string
   start: Date
   end: Date | null
+  ovulationDate: Date | null
+  ovulationSource: 'known' | null
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
@@ -41,6 +50,12 @@ export type CycleInsights = {
   windowStart: Date | null
   windowEnd: Date | null
   confidence: CycleConfidence
+  predictedOvulation: Date | null
+  fertileWindowStart: Date | null
+  fertileWindowEnd: Date | null
+  averageLutealLength: number | null
+  ovulationConfidence: CycleConfidence
+  knownOvulationCount: number
 }
 
 export type CycleCalendarItem = {
@@ -49,8 +64,17 @@ export type CycleCalendarItem = {
   start: Date
   endExclusive: Date
   color: string
-  kind: 'logged' | 'predicted'
+  kind: 'logged' | 'predicted' | 'fertile' | 'ovulation'
   estimated: boolean
+  confidence?: CycleConfidence
+}
+
+export function readCycleTrackerSettings(settings: Record<string, unknown> | null | undefined): CycleTrackerSettings {
+  const raw = settings?.cycleTracker
+  const cycleTracker = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  return {
+    showOvulationWindows: cycleTracker.showOvulationWindows === true,
+  }
 }
 
 export function parseCycleDateInput(value: string) {
@@ -116,7 +140,20 @@ export function calculateCycleInsights(entries: CycleEntry[]): CycleInsights {
   const estimatedPeriodLength = averagePeriodLength ?? DEFAULT_PERIOD_DAYS
   const predictedStart = latestStart && averageCycleLength ? addCycleDays(latestStart, averageCycleLength) : null
   const confidence = confidenceFor(recentIntervals)
-  const windowPadding = confidence === 'high' ? 2 : confidence === 'medium' ? 3 : 5
+  const windowPadding = 1
+  const knownOvulations = normalized.filter(entry => entry.ovulationDate)
+  const lutealLengths = knownOvulations.flatMap(entry => {
+    const nextStart = normalized.find(next => next.start.getTime() > entry.start.getTime())?.start ?? null
+    if (!nextStart || !entry.ovulationDate) return []
+    const days = daysBetween(entry.ovulationDate, nextStart)
+    return days >= 8 && days <= 18 ? [days] : []
+  })
+  const averageLutealLength = lutealLengths.length
+    ? Math.round(lutealLengths.reduce((sum, days) => sum + days, 0) / lutealLengths.length)
+    : null
+  const ovulationOffset = averageLutealLength ?? DEFAULT_LUTEAL_DAYS
+  const predictedOvulation = predictedStart ? addCycleDays(predictedStart, -ovulationOffset) : null
+  const ovulationConfidence = ovulationConfidenceFor(confidence, recentIntervals, lutealLengths.length, knownOvulations.length)
 
   return {
     entries: normalized,
@@ -131,61 +168,95 @@ export function calculateCycleInsights(entries: CycleEntry[]): CycleInsights {
     windowStart: predictedStart ? addCycleDays(predictedStart, -windowPadding) : null,
     windowEnd: predictedStart ? addCycleDays(predictedStart, windowPadding) : null,
     confidence,
+    predictedOvulation,
+    fertileWindowStart: predictedOvulation ? addCycleDays(predictedOvulation, -5) : null,
+    fertileWindowEnd: predictedOvulation ? addCycleDays(predictedOvulation, 1) : null,
+    averageLutealLength,
+    ovulationConfidence,
+    knownOvulationCount: knownOvulations.length,
   }
 }
 
-export function cycleCalendarItems(entries: CycleEntry[], options: { includePrediction?: boolean } = {}) {
+export function cycleCalendarItems(entries: CycleEntry[], options: { includePrediction?: boolean; includeOvulation?: boolean; includeKnownOvulation?: boolean } = {}) {
   const insights = calculateCycleInsights(entries)
+  const today = cycleDate(new Date())
+  const latestEntryId = insights.entries.at(-1)?.id ?? null
   const items: CycleCalendarItem[] = insights.entries.flatMap(entry => {
     if (entry.end) {
-      return [{
-        id: `cycle-${entry.id}`,
-        title: 'Period',
-        start: entry.start,
-        endExclusive: addCycleDays(entry.start, Math.max(1, daysBetween(entry.start, entry.end) + 1)),
+      return eachPeriodDay(entry.start, entry.end).map(day => ({
+        id: `cycle-${entry.id}-day-${day.day}`,
+        title: `Period Day ${day.day}`,
+        start: day.date,
+        endExclusive: addCycleDays(day.date, 1),
         color: CYCLE_COLOR,
         kind: 'logged' as const,
         estimated: false,
-      }]
+      }))
     }
 
-    const estimatedDuration = Math.max(1, insights.estimatedPeriodLength)
-    const loggedStart: CycleCalendarItem = {
-      id: `cycle-${entry.id}`,
-      title: 'Period',
-      start: entry.start,
-      endExclusive: addCycleDays(entry.start, 1),
+    const openEnd = entry.id === latestEntryId && entry.start.getTime() <= today.getTime() ? today : entry.start
+    return eachPeriodDay(entry.start, openEnd).map(day => ({
+      id: `cycle-${entry.id}-day-${day.day}`,
+      title: `Period Day ${day.day}`,
+      start: day.date,
+      endExclusive: addCycleDays(day.date, 1),
       color: CYCLE_COLOR,
-      kind: 'logged',
+      kind: 'logged' as const,
       estimated: false,
-    }
-
-    if (estimatedDuration <= 1) return [loggedStart]
-
-    return [
-      loggedStart,
-      {
-        id: `cycle-${entry.id}-estimate`,
-        title: 'Period - estimated',
-        start: addCycleDays(entry.start, 1),
-        endExclusive: addCycleDays(entry.start, estimatedDuration),
-        color: CYCLE_COLOR,
-        kind: 'logged',
-        estimated: true,
-      },
-    ]
+    }))
   })
 
   if (options.includePrediction && insights.predictedStart) {
     items.push({
       id: 'cycle-predicted-next',
-      title: 'Likely period',
-      start: insights.predictedStart,
-      endExclusive: addCycleDays(insights.predictedStart, insights.estimatedPeriodLength),
+      title: 'Period Est.',
+      start: insights.windowStart ?? insights.predictedStart,
+      endExclusive: addCycleDays(insights.windowEnd ?? insights.predictedStart, 1),
       color: CYCLE_PREDICTED_COLOR,
       kind: 'predicted',
       estimated: true,
     })
+  }
+
+  if (options.includeKnownOvulation) {
+    for (const entry of insights.entries) {
+      if (!entry.ovulationDate) continue
+      items.push({
+        id: `cycle-${entry.id}-known-ovulation`,
+        title: 'Known ovulation',
+        start: entry.ovulationDate,
+        endExclusive: addCycleDays(entry.ovulationDate, 1),
+        color: OVULATION_COLOR,
+        kind: 'ovulation',
+        estimated: false,
+        confidence: 'high',
+      })
+    }
+  }
+
+  if (options.includeOvulation) {
+    if (insights.predictedOvulation && insights.fertileWindowStart && insights.fertileWindowEnd) {
+      items.push({
+        id: 'cycle-estimated-fertile-window',
+        title: 'Estimated fertile window',
+        start: insights.fertileWindowStart,
+        endExclusive: addCycleDays(insights.fertileWindowEnd, 1),
+        color: FERTILE_COLOR,
+        kind: 'fertile',
+        estimated: true,
+        confidence: insights.ovulationConfidence,
+      })
+      items.push({
+        id: 'cycle-predicted-ovulation',
+        title: 'Ovulation (prediction)',
+        start: insights.predictedOvulation,
+        endExclusive: addCycleDays(insights.predictedOvulation, 1),
+        color: OVULATION_COLOR,
+        kind: 'ovulation',
+        estimated: true,
+        confidence: insights.ovulationConfidence,
+      })
+    }
   }
 
   return { items, insights }
@@ -196,17 +267,35 @@ function normalizeCycleEntries(entries: CycleEntry[]) {
     .flatMap((entry): NormalizedCycleEntry[] => {
       const start = entry.startDate ? cycleDate(entry.startDate) : null
       const end = entry.endDate ? cycleDate(entry.endDate) : null
+      const ovulationDate = entry.ovulationDate ? cycleDate(entry.ovulationDate) : null
       if (!start || Number.isNaN(start.getTime())) return []
       return [{
         id: entry.id,
         householdId: entry.householdId,
         start,
         end: end && !Number.isNaN(end.getTime()) ? end : null,
+        ovulationDate: ovulationDate && !Number.isNaN(ovulationDate.getTime()) ? ovulationDate : null,
+        ovulationSource: entry.ovulationSource === 'known' ? 'known' : null,
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
       }]
     })
     .sort((a, b) => a.start.getTime() - b.start.getTime())
+}
+
+function ovulationConfidenceFor(cycleConfidence: CycleConfidence, intervals: CycleInterval[], lutealSamples: number, knownOvulations: number): CycleConfidence {
+  if (!intervals.length) return knownOvulations > 0 ? 'medium' : 'none'
+  if (knownOvulations > 0 && (lutealSamples > 0 || cycleConfidence === 'high')) return 'high'
+  if (knownOvulations > 0 || cycleConfidence === 'high' || cycleConfidence === 'medium') return 'medium'
+  return 'low'
+}
+
+function eachPeriodDay(start: Date, end: Date) {
+  const days = Math.max(1, daysBetween(start, end) + 1)
+  return Array.from({ length: days }, (_, index) => ({
+    date: addCycleDays(start, index),
+    day: index + 1,
+  }))
 }
 
 function confidenceFor(intervals: CycleInterval[]): CycleConfidence {

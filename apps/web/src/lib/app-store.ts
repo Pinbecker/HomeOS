@@ -127,6 +127,8 @@ export type CycleEntry = {
   householdId: string
   startDate: string | number | Date
   endDate?: string | number | Date | null
+  ovulationDate?: string | number | Date | null
+  ovulationSource?: 'known' | null
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }

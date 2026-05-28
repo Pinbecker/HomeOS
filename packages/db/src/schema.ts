@@ -248,6 +248,8 @@ export const cycleEntries = sqliteTable('cycle_entries', {
   householdId: text('household_id').notNull().references(() => household.id),
   startDate: integer('start_date', { mode: 'timestamp' }).notNull(),
   endDate: integer('end_date', { mode: 'timestamp' }),
+  ovulationDate: integer('ovulation_date', { mode: 'timestamp' }),
+  ovulationSource: text('ovulation_source').$type<'known'>(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 }, table => ({

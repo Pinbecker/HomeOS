@@ -5,10 +5,10 @@ import { ColorPickerPanel, normalizeHex } from '../components/color-control'
 import { SwipeRow } from '../components/swipe-row'
 import { WeatherGlyph } from '../components/weather-glyph'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
-import { enqueueMutation, makeId, useAppState } from '../lib/app-store'
+import { enqueueMutation, makeId, type CycleEntry, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
-import { cycleCalendarItems } from '../lib/cycle-tracker'
+import { calculateCycleInsights, cycleCalendarItems, cycleDate, formatCycleDate, readCycleTrackerSettings } from '../lib/cycle-tracker'
 import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
 import { ScreenShell } from './shell'
 
@@ -20,6 +20,8 @@ type BinWithDate = { id: string; name: string; colour: string; nextCollection: D
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
 type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolean; error: string | null }
+type HomeSectionKey = 'ai' | 'cycleStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
+type HomeScreenSettings = Record<HomeSectionKey, boolean>
 type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
@@ -46,6 +48,24 @@ const STATIC_BIN_SCHEDULES = [
   { id: 'hygiene-nappy', name: 'Hygiene and nappy waste bag', colour: 'pink', firstCollectionDate: '2026-06-03', intervalWeeks: 2 },
 ]
 const TONIGHT_CACHE_KEY = 'homeos:dashboard-tonight:v1'
+const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> = [
+  { key: 'ai', label: 'AI input', sub: 'Quick capture box' },
+  { key: 'cycleStatus', label: 'Cycle status', sub: 'Period day card when active' },
+  { key: 'pinned', label: 'Pinned', sub: 'Pinned notes and facts' },
+  { key: 'headsUp', label: 'Heads up', sub: 'Bins and inbox alerts' },
+  { key: 'tonight', label: 'On Tonight', sub: 'TV section when shows are available' },
+  { key: 'schedule', label: 'Schedule', sub: 'Calendar, tasks and renewals' },
+  { key: 'shopping', label: 'Shopping', sub: 'Shopping preview' },
+]
+const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
+  ai: true,
+  cycleStatus: true,
+  pinned: false,
+  headsUp: true,
+  tonight: true,
+  schedule: true,
+  shopping: true,
+}
 
 function toDate(value: string | number | Date | null | undefined) {
   if (!value) return null
@@ -117,6 +137,16 @@ function saveTonightCache(shows: TonightShow[]) {
   } catch {
     // Cache is best-effort only.
   }
+}
+
+function readHomeScreenSettings(value: unknown): HomeScreenSettings {
+  const raw = settingObject(value)
+  return HOME_SECTIONS.reduce<HomeScreenSettings>((next, section) => {
+    next[section.key] = typeof raw[section.key] === 'boolean'
+      ? raw[section.key] as boolean
+      : DEFAULT_HOME_SCREEN_SETTINGS[section.key]
+    return next
+  }, { ...DEFAULT_HOME_SCREEN_SETTINGS })
 }
 
 function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Renewal[], now: Date): DayGroup[] {
@@ -351,7 +381,7 @@ function TimeCommitInput({ value, disabled, onCommit }: { value: string; disable
 
 function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<'menu' | 'appearance' | 'notifications' | 'password'>('menu')
+  const [view, setView] = useState<'menu' | 'appearance' | 'home' | 'notifications' | 'password'>('menu')
   const currentUser = useSessionState(state => state.user)
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => currentThemeMode())
   const [isDark, setIsDark] = useState(() => actualThemeIsDark())
@@ -359,6 +389,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const householdRow = useAppState(state => state.data.household[0] ?? null)
   const personalSettings = readUserSettings(householdRow?.settings, currentUser?.id)
   const syncedAppearance = settingObject(personalSettings.appearance)
+  const homeScreenSettings = readHomeScreenSettings(personalSettings.homeScreen)
   const notificationPreferences = notificationPreferencesFromSettings(personalSettings.notificationPreferences as Record<string, unknown> | null | undefined)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -430,6 +461,17 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
     await saveUserSettings(currentUser.id, current => ({ ...current, notificationPreferences: next }))
   }
 
+  function updateHomeScreenSetting(key: HomeSectionKey, enabled: boolean) {
+    if (!currentUser) return
+    void saveUserSettings(currentUser.id, current => ({
+      ...current,
+      homeScreen: {
+        ...readHomeScreenSettings(current.homeScreen),
+        [key]: enabled,
+      },
+    }))
+  }
+
   function updateNotificationPreferences(recipe: (current: NotificationPreferences) => NotificationPreferences) {
     void saveNotificationPreferences(recipe(notificationPreferences))
   }
@@ -492,6 +534,12 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       <span className="h-4 w-4 rounded-full border-2 border-white/70" style={{ background: accent }} />
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
                     </button>
+                    <button onClick={() => setView('home')} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-text-2"><path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" /><path d="M8 3v4" /><path d="M16 10v4" /><path d="M11 17v4" /></svg>
+                      <span className="flex-1 text-[15px] font-medium text-text-1">Edit Home Screen</span>
+                      <span className="text-[13px] text-text-2">{HOME_SECTIONS.filter(section => homeScreenSettings[section.key]).length} shown</span>
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+                    </button>
                     <button onClick={() => setView('notifications')} className="flex w-full items-center gap-3 border-t border-border px-4 py-3.5 text-left active:bg-surface-2">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-text-2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
                       <span className="flex-1 text-[15px] font-medium text-text-1">Notification Centre</span>
@@ -507,6 +555,27 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[19px] w-[19px] text-red"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                       <span className="flex-1 text-[15px] font-semibold text-red">{busy ? 'Logging out...' : 'Log Out'}</span>
                     </button>
+                  </div>
+                </>
+              ) : null}
+
+              {view === 'home' ? (
+                <>
+                  <div className="mb-1 flex items-center justify-between px-1 py-2">
+                    <button onClick={() => setView('menu')} className="text-[16px] text-accent active:opacity-60">Back</button>
+                    <span className="text-[16px] font-semibold text-text-1">Home Screen</span>
+                    <span className="w-10" />
+                  </div>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    {HOME_SECTIONS.map((section, index) => (
+                      <div key={section.key} className={`flex items-center gap-3 px-4 py-3.5 ${index > 0 ? 'border-t border-border' : ''}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-semibold text-text-1">{section.label}</p>
+                          <p className="mt-0.5 text-[12px] text-text-2">{section.sub}</p>
+                        </div>
+                        <Switch checked={homeScreenSettings[section.key]} onChange={enabled => updateHomeScreenSetting(section.key, enabled)} />
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : null}
@@ -668,7 +737,7 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
             </div>
             {view !== 'password' ? (
               <div className="shrink-0 px-4 pt-2 pb-[calc(env(safe-area-inset-bottom)+12px)]">
-                <button onClick={close} className="h-12 w-full rounded-2xl bg-surface text-[16px] font-semibold text-accent active:opacity-70">{view === 'appearance' || view === 'notifications' ? 'Done' : 'Cancel'}</button>
+                <button onClick={close} className="h-12 w-full rounded-2xl bg-surface text-[16px] font-semibold text-accent active:opacity-70">{view === 'appearance' || view === 'notifications' || view === 'home' ? 'Done' : 'Cancel'}</button>
               </div>
             ) : null}
           </div>
@@ -988,6 +1057,28 @@ function OnTonightCard({ shows }: { shows: Array<{ title: string; channel: strin
   )
 }
 
+function HomePeriodCard({ entry, onEnd }: { entry: CycleEntry; onEnd: () => void }) {
+  const start = cycleDate(entry.startDate)
+  const day = Math.max(1, Math.floor((cycleDate(new Date()).getTime() - start.getTime()) / 86_400_000) + 1)
+
+  return (
+    <section className="mx-4 mb-4">
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold text-white" style={{ background: '#C04A7A' }}>
+          Day {day}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-bold text-text-1">Period Day {day}</p>
+          <p className="mt-0.5 truncate text-[11.5px] text-text-2">Started {formatCycleDate(start, { day: 'numeric', month: 'short' })}</p>
+        </div>
+        <button type="button" onClick={onEnd} className="shrink-0 rounded-xl border border-border bg-surface-2 px-3 py-2 text-[12.5px] font-bold text-text-1 active:opacity-75">
+          End period
+        </button>
+      </div>
+    </section>
+  )
+}
+
 export function DashboardPage() {
   const sessionUser = useSessionState(state => state.user)
   const snapshot = useAppState(state => {
@@ -996,8 +1087,18 @@ export function DashboardPage() {
     const scheduleWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 31, 23, 59, 59)
     const renewalWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30, 23, 59, 59)
     const lists = state.data.lists
+    const householdSettings = state.data.household[0]?.settings ?? null
+    const personalSettings = readUserSettings(householdSettings, sessionUser?.id)
+    const homeScreenSettings = readHomeScreenSettings(personalSettings.homeScreen)
+    const cycleSettings = readCycleTrackerSettings(householdSettings)
+    const cycleInsights = calculateCycleInsights(state.data.cycleEntries)
+    const todayCycle = cycleDate(now)
+    const openCycle = cycleInsights.entries
+      .filter(entry => !entry.end && entry.start.getTime() <= todayCycle.getTime())
+      .at(-1) ?? null
+    const openCycleEntry = openCycle ? state.data.cycleEntries.find(entry => entry.id === openCycle.id) ?? null : null
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
-    const savedCalendarColor = settingObject(readUserSettings(state.data.household[0]?.settings ?? null, sessionUser?.id).calendar).color
+    const savedCalendarColor = settingObject(personalSettings.calendar).color
     const defaultCalendarColor = normalizeHex(typeof savedCalendarColor === 'string' ? savedCalendarColor : null)
       ?? normalizeHex(typeof window !== 'undefined' ? window.localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? window.localStorage.getItem('homeos:cal-color') : null)
       ?? '#007AFF'
@@ -1050,7 +1151,7 @@ export function DashboardPage() {
           ? feedColorMap.get(event.calendarId.slice(4)) ?? defaultCalendarColor
           : defaultCalendarColor,
       }))
-    const cycleEvents = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true }).items
+    const cycleEvents = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true, includeKnownOvulation: true, includeOvulation: cycleSettings.showOvulationWindows }).items
       .map(item => ({
         id: item.id,
         title: item.title,
@@ -1093,7 +1194,9 @@ export function DashboardPage() {
       renewals: renewals as Renewal[],
       bins: bins as BinWithDate[],
       pins,
-      householdSettings: state.data.household[0]?.settings ?? null,
+      householdSettings,
+      homeScreenSettings,
+      openCycleEntry,
     }
   })
   const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
@@ -1182,6 +1285,32 @@ export function DashboardPage() {
     })
   }
 
+  async function endCurrentPeriod() {
+    const entry = snapshot.openCycleEntry
+    if (!entry) return
+    const nowIso = new Date().toISOString()
+    const payload: CycleEntry = {
+      ...entry,
+      endDate: cycleDate(new Date()).toISOString(),
+      updatedAt: nowIso,
+    }
+
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'cycle.entry.upsert',
+      entityType: 'cycle_entry',
+      entityId: entry.id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        cycleEntries: prev.data.cycleEntries.map(row => row.id === entry.id ? payload : row),
+      },
+    }))
+  }
+
   return (
     <ScreenShell title="Home" showHeader={false}>
       <header className="flex items-start justify-between px-5 pt-7 pb-5">
@@ -1192,10 +1321,13 @@ export function DashboardPage() {
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
       </header>
 
-      <AiCapture surface="home" placeholder="Speak or type anything for the house brain" />
-      <PinnedBoardLite pins={snapshot.pins} />
+      {snapshot.homeScreenSettings.ai ? <AiCapture surface="home" placeholder="Speak or type anything for the house brain" /> : null}
 
-      {hasAlerts ? (
+      {snapshot.homeScreenSettings.cycleStatus && snapshot.openCycleEntry ? <HomePeriodCard entry={snapshot.openCycleEntry} onEnd={() => void endCurrentPeriod()} /> : null}
+
+      {snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null}
+
+      {snapshot.homeScreenSettings.headsUp && hasAlerts ? (
         <section className="mx-4 mb-4">
           <div className="mb-3 flex items-center">
             <h2 className="text-[19px] font-bold" style={{ color: '#FF9500', letterSpacing: '-0.01em' }}>Heads up</h2>
@@ -1230,11 +1362,11 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      {tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null}
+      {snapshot.homeScreenSettings.tonight && tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null}
 
-      <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} weatherByDate={scheduleWeatherByDate} />
+      {snapshot.homeScreenSettings.schedule ? <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} weatherByDate={scheduleWeatherByDate} /> : null}
 
-      <section className="mx-4 mb-4">
+      {snapshot.homeScreenSettings.shopping ? <section className="mx-4 mb-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-[19px] font-bold" style={{ color: '#34C759', letterSpacing: '-0.01em' }}>Shopping</h2>
           <a href="/household/shopping" className="text-[13px] font-semibold text-accent">Full list</a>
@@ -1262,7 +1394,7 @@ export function DashboardPage() {
             {snapshot.shoppingTotal > snapshot.shoppingItems.length ? <div className="px-2 pt-1 pb-0.5"><span className="text-[12px] text-text-3">+ {snapshot.shoppingTotal - snapshot.shoppingItems.length} more</span></div> : null}
           </div>
         )}
-      </section>
+      </section> : null}
 
       <div className="h-4" />
     </ScreenShell>

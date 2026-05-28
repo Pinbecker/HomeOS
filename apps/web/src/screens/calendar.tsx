@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
-import { cycleCalendarItems } from '../lib/cycle-tracker'
+import { cycleCalendarItems, readCycleTrackerSettings } from '../lib/cycle-tracker'
 import { useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings, settingObject } from '../lib/user-preferences'
 import { ScreenShell } from './shell'
@@ -18,7 +18,7 @@ type CalEvent = {
   householdId?: string
   color?: string
   cycle?: {
-    kind: 'logged' | 'predicted'
+    kind: 'logged' | 'predicted' | 'fertile' | 'ovulation'
     estimated: boolean
   }
 }
@@ -392,6 +392,7 @@ function CalendarPageInner() {
   const snapshot = useAppState(state => {
     const listColors = new Map(state.data.lists.map(list => [list.id, list.color ?? '#FF9500']))
     const personalSettings = readUserSettings(state.data.household[0]?.settings ?? null, sessionUser?.id)
+    const cycleSettings = readCycleTrackerSettings(state.data.household[0]?.settings ?? null)
     const savedCalendarColor = settingObject(personalSettings.calendar).color
     const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
     const userFeedIds = new Set(userFeeds.map(feed => feed.id))
@@ -408,7 +409,7 @@ function CalendarPageInner() {
       description: event.description ?? null,
       calendarId: event.calendarId ?? null,
     }))
-    const cycleEvents: CalEvent[] = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true }).items.map(item => ({
+    const cycleEvents: CalEvent[] = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true, includeKnownOvulation: true, includeOvulation: cycleSettings.showOvulationWindows }).items.map(item => ({
       id: item.id,
       householdId: state.data.household[0]?.id ?? 'default',
       title: item.title,
@@ -416,7 +417,7 @@ function CalendarPageInner() {
       end: item.endExclusive.getTime(),
       allDay: true,
       location: item.estimated ? 'Estimated' : null,
-      description: 'Based on logged data',
+      description: item.confidence ? `Based on logged data. Confidence: ${item.confidence}.` : 'Based on logged data',
       calendarId: 'cycle',
       color: item.color,
       cycle: {
