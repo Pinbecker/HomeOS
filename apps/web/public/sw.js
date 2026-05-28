@@ -1,7 +1,8 @@
-const CACHE_NAME = 'homeos-web-shell-v11'
+const CACHE_NAME = 'homeos-web-shell-v21'
 const APP_SHELL = [
   '/',
   '/login',
+  '/media-card-designs',
   '/manifest.json',
   '/apple-touch-icon.png',
   '/icons/icon-192.png',

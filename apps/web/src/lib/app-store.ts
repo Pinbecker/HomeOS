@@ -361,11 +361,73 @@ function loadMutationQueue(): SyncMutation[] {
   }
 }
 
+function compactMediaItemForStorage(item: MediaItem): MediaItem {
+  return {
+    ...item,
+    overview: item.overview ? item.overview.slice(0, 420) : item.overview,
+    credits: null,
+    seasons: Array.isArray(item.seasons)
+      ? item.seasons.map(season => {
+        const source = season as {
+          id?: unknown
+          name?: unknown
+          season_number?: unknown
+          seasonNumber?: unknown
+          episode_count?: unknown
+          episodeCount?: unknown
+          poster_path?: unknown
+          posterPath?: unknown
+          air_date?: unknown
+          airDate?: unknown
+        }
+        return {
+          id: source.id,
+          name: source.name,
+          season_number: source.season_number,
+          seasonNumber: source.seasonNumber,
+          episode_count: source.episode_count,
+          episodeCount: source.episodeCount,
+          poster_path: source.poster_path,
+          posterPath: source.posterPath,
+          air_date: source.air_date,
+          airDate: source.airDate,
+        }
+      })
+      : item.seasons,
+  }
+}
+
+function compactStateForStorage(value: AppState): AppState {
+  return {
+    ...value,
+    data: {
+      ...value.data,
+      mediaItems: value.data.mediaItems.map(compactMediaItemForStorage),
+    },
+  }
+}
+
 function persist() {
   if (typeof window === 'undefined') return
   if (!activeUserId) return
-  localStorage.setItem(storageKey(), JSON.stringify(state))
-  localStorage.setItem(mutationQueueKey(), JSON.stringify(mutationQueue))
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify(compactStateForStorage(state)))
+  } catch {
+    try {
+      localStorage.removeItem(storageKey())
+    } catch {
+      // Ignore storage cleanup failures; in-memory state should continue to update.
+    }
+  }
+  try {
+    localStorage.setItem(mutationQueueKey(), JSON.stringify(mutationQueue))
+  } catch {
+    try {
+      localStorage.removeItem(mutationQueueKey())
+    } catch {
+      // Ignore storage cleanup failures; queued mutations still flush from memory.
+    }
+  }
 }
 
 function emit() {
@@ -644,9 +706,13 @@ async function flushMutationQueue() {
 
   flushPromise = (async () => {
     try {
-      await push(mutationQueue)
-      mutationQueue = []
-      persist()
+      while (mutationQueue.length) {
+        const batch = mutationQueue
+        const sentIds = new Set(batch.map(mutation => mutation.id))
+        await push(batch)
+        mutationQueue = mutationQueue.filter(mutation => !sentIds.has(mutation.id))
+        persist()
+      }
       schedulePostPushRefresh()
     } finally {
       flushPromise = null
@@ -832,6 +898,20 @@ export function useAppState<T>(selector: (state: AppState) => T) {
     getSnapshot,
     getSnapshot,
   )
+}
+
+export function mergeMediaEpisodeProgress(rows: MediaEpisodeProgress[]) {
+  if (!rows.length) return
+  setState(prev => ({
+    ...prev,
+    data: {
+      ...prev.data,
+      mediaEpisodeProgress: rows.reduce(
+        (next, row) => mergeCollection(next, row),
+        prev.data.mediaEpisodeProgress,
+      ),
+    },
+  }))
 }
 
 function subscribe(listener: () => void) {

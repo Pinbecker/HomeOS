@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '@homeos/db'
-import { mediaFamilyStates, mediaInteractions, mediaUserStates } from '@homeos/db/schema'
+import { mediaEpisodeProgress, mediaFamilyStates, mediaInteractions, mediaUserStates } from '@homeos/db/schema'
 import { discoverFeed, getMediaDetails, getSeason, getWatchProviders, isTmdbConfigured, searchMedia, type MediaType } from './tmdb'
 import { getSession } from './sync'
 
@@ -80,7 +80,16 @@ export function registerMediaRoutes(app: FastifyInstance) {
     if (!Number.isFinite(tmdbId) || !Number.isFinite(seasonNumber)) {
       return reply.status(400).send({ error: 'Invalid season request' })
     }
-    return reply.send(await getSeason(tmdbId, seasonNumber))
+    const payload = await getSeason(tmdbId, seasonNumber)
+    const episodeIds = payload.episodes.map(episode => episode.id)
+    const progress = episodeIds.length
+      ? await db.select().from(mediaEpisodeProgress).where(and(
+        eq(mediaEpisodeProgress.scopeType, 'user'),
+        eq(mediaEpisodeProgress.scopeId, session.user.id),
+        inArray(mediaEpisodeProgress.episodeId, episodeIds),
+      ))
+      : []
+    return reply.send({ ...payload, progress })
   })
 
   app.get('/api/media/providers', async (request, reply) => {

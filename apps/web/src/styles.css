@@ -231,6 +231,8 @@ select {
   --media-yellow: var(--accent);
   --media-yellow-soft: var(--accent-bg);
   --media-shadow: 0 14px 34px rgba(0,0,0,0.10);
+  font-family: inherit;
+  letter-spacing: inherit;
 }
 
 .media-swipe-card {

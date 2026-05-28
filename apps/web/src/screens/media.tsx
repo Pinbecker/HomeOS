@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEventHandler, type ReactNode } from 'react'
-import { Calendar, Check, ChevronDown, ChevronRight, Circle, Clapperboard, Clock, Eye, Film, ListPlus, Search, SlidersHorizontal, Star, ThumbsDown, ThumbsUp, Tv, Users, X } from 'lucide-react'
+import { Calendar, Check, ChevronDown, ChevronRight, Circle, Clapperboard, Clock, Eye, ListPlus, Search, SlidersHorizontal, Star, ThumbsDown, ThumbsUp, Tv, Users, X } from 'lucide-react'
 import { BottomNav } from './bottom-nav'
 import { SwipeRow } from '../components/swipe-row'
-import { enqueueMutation, getCurrentState, makeId, useAppState, type AppState, type MediaEpisode, type MediaFamilyState, type MediaItem, type MediaSeason, type MediaUserState, type MediaUserStatus } from '../lib/app-store'
+import { enqueueMutation, getCurrentState, makeId, mergeMediaEpisodeProgress, useAppState, type AppState, type MediaEpisode, type MediaFamilyState, type MediaItem, type MediaUserState, type MediaUserStatus } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
-import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, yearLabel } from '../lib/media'
+import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, type MediaSeasonPayload, yearLabel } from '../lib/media'
 
 type Tab = 'swipe' | 'search' | 'mine' | 'family' | 'services'
 type MyListTab = 'watchlist' | 'seen' | 'liked'
@@ -168,7 +168,7 @@ export function MediaPage() {
   const [familyListGenre, setFamilyListGenre] = useState('all')
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null)
   const [dismissedDiscoverIds, setDismissedDiscoverIds] = useState<Set<string>>(() => new Set())
-  const [seasonCache, setSeasonCache] = useState<Record<string, { season: MediaSeason; episodes: MediaEpisode[] }>>({})
+  const [seasonCache, setSeasonCache] = useState<Record<string, MediaSeasonPayload>>({})
   const [seasonErrors, setSeasonErrors] = useState<Record<string, string>>({})
   const [openSeasonKey, setOpenSeasonKey] = useState<string | null>(null)
   const household = useAppState(state => state.data.household[0] ?? null)
@@ -187,12 +187,12 @@ export function MediaPage() {
     .filter(row => row.userId === userId && row.status !== 'not_interested')
     .map(row => ({ state: row, item: itemById.get(row.mediaItemId) }))
     .filter((row): row is { state: typeof userStates[number]; item: MediaItem } => Boolean(row.item))
-    .sort((a, b) => Number(new Date(b.state.updatedAt)) - Number(new Date(a.state.updatedAt))), [itemById, userId, userStates])
+    .sort((a, b) => Number(new Date(b.state.createdAt)) - Number(new Date(a.state.createdAt))), [itemById, userId, userStates])
   const familyRows = useMemo(() => familyStates
     .filter(row => row.status !== 'not_interested')
     .map(row => ({ state: row, item: itemById.get(row.mediaItemId) }))
     .filter((row): row is { state: typeof familyStates[number]; item: MediaItem } => Boolean(row.item))
-    .sort((a, b) => Number(new Date(b.state.updatedAt)) - Number(new Date(a.state.updatedAt))), [familyStates, itemById])
+    .sort((a, b) => Number(new Date(b.state.createdAt)) - Number(new Date(a.state.createdAt))), [familyStates, itemById])
   const excludedDiscoverIds = useMemo(() => {
     const skipCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
     return new Set([
@@ -387,6 +387,7 @@ export function MediaPage() {
     })
     try {
       const payload = await fetchSeason(item.tmdbId, seasonNumber)
+      mergeMediaEpisodeProgress(payload.progress ?? [])
       setSeasonCache(prev => ({ ...prev, [key]: payload }))
     } catch (error) {
       setSeasonErrors(prev => ({ ...prev, [key]: error instanceof Error ? error.message : 'Episodes failed to load' }))
@@ -404,6 +405,7 @@ export function MediaPage() {
     })
     try {
       const payload = await fetchSeason(item.tmdbId, seasonNumber)
+      mergeMediaEpisodeProgress(payload.progress ?? [])
       setSeasonCache(prev => ({ ...prev, [key]: payload }))
       return payload.episodes
     } catch (error) {
@@ -494,8 +496,8 @@ export function MediaPage() {
         <header className="safe-top sticky top-0 z-20 border-b border-[var(--media-line)] bg-[color-mix(in_srgb,var(--media-bg)_90%,transparent)] px-4 pb-3 pt-3 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--media-faint)]">HomeOS</p>
-              <h1 className="mt-0.5 text-[24px] font-black text-[var(--media-ink)]">Media</h1>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--media-faint)]">HomeOS</p>
+              <h1 className="mt-0.5 text-[24px] font-bold text-[var(--media-ink)]">Media</h1>
             </div>
           </div>
           <div className="mt-3">
@@ -505,7 +507,7 @@ export function MediaPage() {
                 key={option.id}
                 type="button"
                 onClick={() => setTab(option.id)}
-                className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-black transition ${
+                className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-bold transition ${
                   tab === option.id ? 'bg-[var(--media-yellow-soft)] text-[var(--media-ink)]' : 'text-[var(--media-muted)]'
                 }`}
               >
@@ -540,15 +542,10 @@ export function MediaPage() {
               results={results}
               userStates={userStates}
               userId={userId}
-              familyStates={familyStates}
               selectedProviderIds={selectedProviderIds}
               onAction={async (item, action) => {
                 const result = await handleAction(item, action, { advance: false })
                 if (result === 'applied') setResults(prev => prev.filter(row => row.id !== item.id))
-              }}
-              onFamily={async (item, enabled) => {
-                await setFamilyMediaWatchlist(item, enabled)
-                notify(enabled ? 'Added to family list' : 'Removed from family list')
               }}
               onOpen={openDetails}
             />
@@ -565,11 +562,6 @@ export function MediaPage() {
               setSearch={setMyListSearch}
               setActiveGenre={setMyListGenre}
               selectedProviderIds={selectedProviderIds}
-              familyStates={familyStates}
-              onFamily={async (item, enabled) => {
-                await setFamilyMediaWatchlist(item, enabled)
-                notify(enabled ? 'Added to family list' : 'Removed from family list')
-              }}
               onStatus={async (item, status, rating) => {
                 if (item.mediaType === 'tv' && status === 'watched') {
                   setTvSheetItem(item)
@@ -579,6 +571,10 @@ export function MediaPage() {
                 }
                 await setUserMediaState(item, status, rating)
                 notify(status === 'wishlist' ? 'Added to watchlist' : rating === 'liked' ? 'Marked liked' : rating === 'disliked' ? 'Marked disliked' : 'Updated')
+              }}
+              onRating={async (item, rating, status = 'watched') => {
+                await setUserMediaState(item, status, rating)
+                notify(rating === 'liked' ? 'Marked liked' : rating === 'disliked' ? 'Marked disliked' : 'Rating cleared')
               }}
               onDelete={deleteUserState}
               onOpen={openDetails}
@@ -715,7 +711,7 @@ export function MediaPage() {
           notify(enabled ? 'Added to family watchlist' : 'Removed from family watchlist')
         }}
       />
-      {feedback ? <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-[90] mx-auto max-w-sm rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-4 py-3 text-center text-[13px] font-black text-[var(--media-ink)] shadow-2xl">{feedback}</div> : null}
+      {feedback ? <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-[90] mx-auto max-w-sm rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-4 py-3 text-center text-[13px] font-bold text-[var(--media-ink)] shadow-2xl">{feedback}</div> : null}
     </div>
   )
 }
@@ -787,7 +783,7 @@ function SwipeView({ item, nextItem, loading, selectedProviderIds, onOpen, onAct
     return (
       <div className="rounded-[18px] border border-[var(--media-line)] bg-[var(--media-panel)] px-5 py-8 text-center">
         <p className="text-[16px] font-bold text-[var(--media-ink)]">No more cards loaded</p>
-        <button type="button" onClick={onRefresh} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-[14px] font-black text-white">Refresh feed</button>
+        <button type="button" onClick={onRefresh} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-[14px] font-bold text-white">Refresh feed</button>
       </div>
     )
   }
@@ -1008,20 +1004,14 @@ function MediaCard({ item, selectedProviderIds, intent, intentStrength = 0, isPr
             color: meta?.tone.includes('red') ? 'var(--red)' : meta?.tone.includes('sage') ? 'var(--sage)' : meta?.tone.includes('amber') ? 'var(--amber)' : 'var(--accent)',
           }}
         />
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/42 to-transparent px-4 pb-4 pt-16 text-white">
-          <div className="flex flex-wrap items-center gap-2 text-[12px] font-bold">
-            <span className="rounded-full bg-white/18 px-2.5 py-1">{mediaLabel(item)}</span>
-            <span className="rounded-full bg-white/18 px-2.5 py-1">{yearLabel(item)}</span>
-            {item.voteAverageX10 ? <span className="rounded-full bg-white/18 px-2.5 py-1">{(item.voteAverageX10 / 10).toFixed(1)}</span> : null}
-          </div>
-          <h2 className="mt-2 line-clamp-2 text-[24px] font-black leading-[1.03]">{item.title}</h2>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/46 to-transparent px-4 pb-4 pt-16 text-white">
+          <MediaInlineMeta item={item} light />
+          <h2 className="mt-2 line-clamp-2 text-[24px] font-bold leading-[1.06]">{item.title}</h2>
         </div>
       </div>
       <div className="shrink-0 px-4 py-3">
-        <MediaProviderPills providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {(item.genres ?? []).slice(0, 3).map(genre => <span key={genre} className="rounded-full bg-[var(--media-panel-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--media-muted)]">{genre}</span>)}
-        </div>
+        <MediaProviderSection providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
+        {(item.genres ?? []).length ? <p className="mt-2.5 truncate text-[11px] font-semibold uppercase text-[var(--media-faint)]">{(item.genres ?? []).slice(0, 3).join(' / ')}</p> : null}
         <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-[var(--media-muted)]">{item.overview || 'No synopsis available.'}</p>
       </div>
     </article>
@@ -1035,48 +1025,96 @@ function SwipeDirectionIndicators({ intent, strength }: { intent: SwipeIntent | 
   return (
     <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
       <div className="absolute left-1/2" style={{ top: 'calc(var(--media-swipe-gutter-y) / 2)', transform: `translate(-50%, -50%) scale(${pillScale('liked')})`, opacity: pillOpacity('liked') }}>
-        <span className="block rounded-full bg-sage px-2.5 py-1 text-[10px] font-black uppercase text-white shadow-sm">Like</span>
+        <span className="block rounded-full bg-sage px-2.5 py-1 text-[10px] font-bold uppercase text-white shadow-sm">Like</span>
       </div>
       <div className="absolute left-1/2" style={{ bottom: 'calc(var(--media-swipe-gutter-y) / 2)', transform: `translate(-50%, 50%) scale(${pillScale('disliked')})`, opacity: pillOpacity('disliked') }}>
-        <span className="block rounded-full bg-red px-2.5 py-1 text-[10px] font-black uppercase text-white shadow-sm">Dislike</span>
+        <span className="block rounded-full bg-red px-2.5 py-1 text-[10px] font-bold uppercase text-white shadow-sm">Dislike</span>
       </div>
       <div className="absolute top-1/2" style={{ right: 'calc(var(--media-swipe-gutter-x) / 2)', transform: `translate(50%, -50%) scale(${pillScale('watched')})`, opacity: pillOpacity('watched') }}>
-        <span className="block rounded-full bg-accent px-2 py-1 text-[10px] font-black uppercase text-white shadow-sm [writing-mode:vertical-rl]">Watched</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white shadow-sm" aria-label="Watched"><Check className="h-[18px] w-[18px]" strokeWidth={3} /></span>
       </div>
       <div className="absolute top-1/2" style={{ left: 'calc(var(--media-swipe-gutter-x) / 2)', transform: `translate(-50%, -50%) scale(${pillScale('not_watched')})`, opacity: pillOpacity('not_watched') }}>
-        <span className="block rounded-full bg-text-1 px-2 py-1 text-[10px] font-black uppercase text-bg shadow-sm [writing-mode:vertical-rl]">Skip</span>
+        <span className="block rounded-full bg-text-1 px-2 py-1 text-[10px] font-bold uppercase text-bg shadow-sm [writing-mode:vertical-rl]">Skip</span>
       </div>
     </div>
   )
 }
 
-function MediaProviderPills({ providers, emptyText, compact = false }: { providers: MediaProvider[]; emptyText?: string; compact?: boolean }) {
+function MediaProviderSection({ providers, emptyText, compact = false, trailing }: { providers: MediaProvider[]; emptyText?: string; compact?: boolean; trailing?: ReactNode }) {
   if (!providers.length) {
-    return emptyText ? <p className={`${compact ? 'text-[11px]' : 'text-[12px]'} font-bold text-[var(--media-faint)]`}>{emptyText}</p> : null
+    return (
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        {emptyText ? <p className={`${compact ? 'text-[11px]' : 'text-[12px]'} font-semibold text-[var(--media-faint)]`}>{emptyText}</p> : <span />}
+        {trailing ? <span className="shrink-0">{trailing}</span> : null}
+      </div>
+    )
   }
+
+  const visibleProviders = providers.slice(0, compact ? 3 : 4)
+  const overflow = providers.length - visibleProviders.length
+
   return (
-    <div className="flex min-w-0 flex-wrap gap-1.5">
-      {providers.map(provider => (
-        <span key={provider.provider_id} className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--media-line)] bg-[var(--media-panel-2)] ${compact ? 'px-1.5 py-1 text-[10.5px]' : 'px-2 py-1 text-[11px]'} font-black text-[var(--media-ink)]`}>
-          {provider.logo_path ? <img src={posterUrl(provider.logo_path, 'w92')} alt="" className={`${compact ? 'h-4 w-4 rounded-[4px]' : 'h-5 w-5 rounded-[5px]'} shrink-0 object-cover`} /> : null}
-          <span className="max-w-[118px] truncate">{provider.provider_name}</span>
-        </span>
-      ))}
+    <div className={`${compact ? 'py-1.5' : 'py-2.5'} border-y border-[var(--media-line)]`}>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="shrink-0 text-[9.5px] font-bold uppercase text-[var(--media-faint)]">Streaming</span>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          {visibleProviders.map(provider => (
+            <span key={provider.provider_id} className="flex min-w-0 items-center gap-1.5">
+              {provider.logo_path ? <img src={posterUrl(provider.logo_path, 'w92')} alt="" className={`${compact ? 'h-[18px] w-[18px] rounded-[4px]' : 'h-5 w-5 rounded-[5px]'} shrink-0 object-cover`} /> : null}
+            </span>
+          ))}
+          {overflow > 0 ? <span className="shrink-0 text-[11px] font-semibold text-[var(--media-muted)]">+{overflow}</span> : null}
+        </div>
+        {trailing ? <span className="shrink-0">{trailing}</span> : null}
+      </div>
     </div>
   )
 }
 
-function SearchView({ query, setQuery, searching, results, userStates, userId, familyStates, selectedProviderIds, onAction, onFamily, onOpen }: {
+function MediaInlineMeta({ item, light = false, showType = true }: { item: MediaItem; light?: boolean; showType?: boolean }) {
+  const rating = item.voteAverageX10 ? (item.voteAverageX10 / 10).toFixed(1) : null
+  const runtime = runtimeLabel(item)
+  const textClass = light ? 'text-white/82' : 'text-[var(--media-muted)]'
+  const strongClass = light ? 'text-white' : 'text-[var(--media-ink)]'
+  const dividerClass = light ? 'bg-white/34' : 'bg-[var(--media-line)]'
+
+  return (
+    <div className={`flex min-w-0 flex-wrap items-center text-[12px] font-semibold uppercase ${textClass}`}>
+      {showType ? (
+        <>
+          <span>{mediaLabel(item)}</span>
+          <span className={`mx-2 h-3.5 w-px ${dividerClass}`} />
+        </>
+      ) : null}
+      <span>{yearLabel(item)}</span>
+      {rating ? (
+        <>
+          <span className={`mx-2 h-3.5 w-px ${dividerClass}`} />
+          <span className={`flex items-center gap-1 ${strongClass}`}>
+            <Star className="h-3.5 w-3.5 fill-current" />
+            {rating}
+          </span>
+        </>
+      ) : null}
+      {runtime ? (
+        <>
+          <span className={`mx-2 h-3.5 w-px ${dividerClass}`} />
+          <span>{runtime}</span>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function SearchView({ query, setQuery, searching, results, userStates, userId, selectedProviderIds, onAction, onOpen }: {
   query: string
   setQuery: (value: string) => void
   searching: boolean
   results: MediaItem[]
   userStates: MediaUserState[]
   userId: string
-  familyStates: MediaFamilyState[]
   selectedProviderIds: number[]
   onAction: (item: MediaItem, action: keyof typeof actionMeta | 'skip') => void
-  onFamily: (item: MediaItem, enabled: boolean) => void
   onOpen: (item: MediaItem) => void
 }) {
   return (
@@ -1087,27 +1125,24 @@ function SearchView({ query, setQuery, searching, results, userStates, userId, f
       </label>
       <div className="mt-4 space-y-3">
         {searching ? <p className="px-1 text-[13px] font-semibold text-[var(--media-muted)]">Searching...</p> : null}
-        {results.map(item => {
-          const familyActive = familyStates.some(row => row.mediaItemId === item.id && row.status === 'wishlist' && Boolean(row.watchlist))
-          return <CompactMediaRow key={item.id} item={item} watchlistActive={userStates.some(row => row.userId === userId && row.mediaItemId === item.id && row.status === 'wishlist' && Boolean(row.watchlist))} familyActive={familyActive} selectedProviderIds={selectedProviderIds} onAction={onAction} onFamily={onFamily} onOpen={onOpen} />
-        })}
+        {results.map(item => <CompactMediaRow key={item.id} item={item} watchlistActive={userStates.some(row => row.userId === userId && row.mediaItemId === item.id && row.status === 'wishlist' && Boolean(row.watchlist))} selectedProviderIds={selectedProviderIds} onAction={onAction} onOpen={onOpen} />)}
         {!searching && query.trim().length >= 2 && !results.length ? <EmptyCard text="No matches found." /> : null}
       </div>
     </section>
   )
 }
 
-function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, familyActive = false, statusLabel, rating, onAction, onFamily, onOpen, trailing }: {
+function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, statusLabel, rating, onAction, onRating, onOpen, trailing, providerTrailing }: {
   item: MediaItem
   selectedProviderIds: number[]
   watchlistActive?: boolean
-  familyActive?: boolean
   statusLabel?: string
   rating?: 'liked' | 'neutral' | 'disliked' | null
   onAction?: (item: MediaItem, action: keyof typeof actionMeta | 'skip') => void
-  onFamily?: (item: MediaItem, enabled: boolean) => void
+  onRating?: (rating: 'liked' | 'disliked') => void
   onOpen?: (item: MediaItem) => void
   trailing?: ReactNode
+  providerTrailing?: ReactNode
 }) {
   const providers = serviceProviders(item, selectedProviderIds)
   const people = castNames(item, 2)
@@ -1128,44 +1163,90 @@ function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, f
         {item.posterPath ? <img src={posterUrl(item.posterPath, 'w185')} alt="" className="h-full w-full object-cover" loading="lazy" /> : (
           <div className="flex h-full w-full items-center justify-center text-[var(--media-faint)]"><Clapperboard className="h-9 w-9" strokeWidth={1.5} /></div>
         )}
-        <span className="absolute left-1.5 top-1.5 rounded-full bg-black/72 px-1.5 py-0.5 text-[9px] font-black uppercase text-white backdrop-blur">{item.mediaType === 'movie' ? 'Film' : 'TV'}</span>
+        <span className="absolute left-1.5 top-1.5 text-[9px] font-bold uppercase text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{item.mediaType === 'movie' ? 'Film' : 'TV'}</span>
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="line-clamp-2 text-[15px] font-black leading-tight text-[var(--media-ink)]">{item.title}</h3>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <p className="text-[11.5px] font-bold text-[var(--media-muted)]">{yearLabel(item)}{item.voteAverageX10 ? ` · ${(item.voteAverageX10 / 10).toFixed(1)}` : ''}{runtimeLabel(item) ? ` · ${runtimeLabel(item)}` : ''}</p>
-              {statusLabel ? <MediaStatusPill label={statusLabel} rating={rating} /> : null}
-            </div>
+            <h3 className="line-clamp-2 text-[15px] font-bold leading-tight text-[var(--media-ink)]">{item.title}</h3>
+            <CompactPrimaryMeta item={item} rating={rating} showRatingActions={statusLabel === 'Watched' || statusLabel === 'Watching' || statusLabel === 'Seen'} onRating={onRating} />
+            <CompactStatusMeta item={item} statusLabel={statusLabel} />
           </div>
-          <div onClick={stop} className="shrink-0">
-            {trailing ?? (item.mediaType === 'tv' ? <Tv className="h-4 w-4 text-[var(--media-faint)]" strokeWidth={1.8} /> : <Film className="h-4 w-4 text-[var(--media-faint)]" strokeWidth={1.8} />)}
-          </div>
+          {trailing ? <div onClick={stop} className="shrink-0">{trailing}</div> : null}
         </div>
         {people.length ? <p className="mt-1 truncate text-[11.5px] font-semibold text-[var(--media-muted)]">{people.join(', ')}</p> : null}
-        <div className="mt-2 min-h-[24px]">
-          <MediaProviderPills providers={providers} compact emptyText={providerEmptyText(item, selectedProviderIds)} />
+        <div className="mt-2 min-h-[28px]" onClick={stop}>
+          <MediaProviderSection providers={providers} compact emptyText={providerEmptyText(item, selectedProviderIds)} trailing={providerTrailing} />
         </div>
         <div className="mt-auto flex items-center gap-1.5 pt-2" onClick={stop}>
           {onAction ? <IconAction label={watchlistActive ? 'In watchlist' : 'Add to watchlist'} onClick={() => onAction(item, 'wishlist')} active={watchlistActive}><ListPlus className="h-4 w-4" strokeWidth={2.3} /></IconAction> : null}
-          {onAction ? <IconAction label="Mark seen and liked" onClick={() => onAction(item, 'watched_liked')}><ThumbsUp className="h-4 w-4" strokeWidth={2.3} /></IconAction> : null}
-          {onFamily ? <IconAction label={familyActive ? 'Remove from family' : 'Add to family'} onClick={() => onFamily(item, !familyActive)} active={familyActive}><Users className="h-4 w-4" strokeWidth={2.3} /></IconAction> : null}
         </div>
       </div>
     </article>
   )
 }
 
-function MediaStatusPill({ label, rating }: { label: string; rating?: 'liked' | 'neutral' | 'disliked' | null }) {
-  const tone = rating === 'liked'
-    ? 'bg-sage-bg text-sage'
-    : rating === 'disliked'
-      ? 'bg-red-bg text-red'
-      : label === 'Watching'
-        ? 'bg-accent-bg text-accent'
-        : 'bg-[var(--media-panel-2)] text-[var(--media-muted)]'
-  return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${tone}`}>{label}</span>
+function InlineRatingActions({ rating, onRating }: { rating?: 'liked' | 'neutral' | 'disliked' | null; onRating?: (rating: 'liked' | 'disliked') => void }) {
+  if (!onRating) return null
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button type="button" onClick={event => { event.stopPropagation(); onRating('liked') }} className={`text-sage ${rating === 'liked' ? 'opacity-100' : 'opacity-45'}`} aria-label={rating === 'liked' ? 'Remove like' : 'Mark liked'} title={rating === 'liked' ? 'Remove like' : 'Mark liked'}>
+        <ThumbsUp className={`h-3.5 w-3.5 ${rating === 'liked' ? 'fill-current' : ''}`} strokeWidth={2.2} />
+      </button>
+      <button type="button" onClick={event => { event.stopPropagation(); onRating('disliked') }} className={`text-red ${rating === 'disliked' ? 'opacity-100' : 'opacity-45'}`} aria-label={rating === 'disliked' ? 'Remove dislike' : 'Mark disliked'} title={rating === 'disliked' ? 'Remove dislike' : 'Mark disliked'}>
+        <ThumbsDown className={`h-3.5 w-3.5 ${rating === 'disliked' ? 'fill-current' : ''}`} strokeWidth={2.2} />
+      </button>
+    </span>
+  )
+}
+
+function CompactPrimaryMeta({ item, rating, showRatingActions, onRating }: { item: MediaItem; rating?: 'liked' | 'neutral' | 'disliked' | null; showRatingActions: boolean; onRating?: (rating: 'liked' | 'disliked') => void }) {
+  const score = item.voteAverageX10 ? (item.voteAverageX10 / 10).toFixed(1) : null
+  return (
+    <div className="mt-1 flex flex-wrap items-center text-[12px] font-semibold text-[var(--media-muted)]">
+      <span>{yearLabel(item)}</span>
+      {score ? (
+        <>
+          <MetaDivider />
+          <span className="flex items-center gap-1 text-[var(--media-ink)]">
+            <Star className="h-3.5 w-3.5 fill-current" />
+            {score}
+          </span>
+        </>
+      ) : null}
+      {showRatingActions ? (
+        <>
+          <MetaDivider />
+          <InlineRatingActions rating={rating} onRating={onRating} />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function CompactStatusMeta({ item, statusLabel }: { item: MediaItem; statusLabel?: string }) {
+  const runtime = runtimeLabel(item)
+  if (!runtime && !statusLabel) return null
+  return (
+    <div className="mt-1 flex flex-wrap items-center text-[11.5px] font-semibold text-[var(--media-muted)]">
+      {runtime ? <span>{runtime}</span> : null}
+      {runtime && statusLabel ? <MetaDivider /> : null}
+      {statusLabel ? <MediaStatusText label={statusLabel} /> : null}
+    </div>
+  )
+}
+
+function MetaDivider() {
+  return <span className="mx-2 h-3.5 w-px bg-[var(--media-line)]" />
+}
+
+function MediaStatusText({ label }: { label: string }) {
+  const tone = label === 'Watching'
+    ? 'text-[#32ADE6] dark:text-[#64D2FF]'
+    : label === 'Watched' || label === 'Seen'
+      ? 'text-sage'
+      : 'text-[var(--media-muted)]'
+  return <span className={`font-bold ${tone}`}>{label}</span>
 }
 
 function IconAction({ label, active = false, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
@@ -1182,7 +1263,7 @@ function IconAction({ label, active = false, onClick, children }: { label: strin
   )
 }
 
-function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, familyStates, onFamily, onStatus, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onStatus, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaUserState; item: MediaItem }>
   activeTab: MyListTab
   activeFilter: MediaFilter
@@ -1193,15 +1274,14 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
   setSearch: (value: string) => void
   setActiveGenre: (value: string) => void
   selectedProviderIds: number[]
-  familyStates: MediaFamilyState[]
-  onFamily: (item: MediaItem, enabled: boolean) => void
   onStatus: (item: MediaItem, status: MediaUserStatus, rating?: 'liked' | 'neutral' | 'disliked' | null) => void
+  onRating: (item: MediaItem, rating: 'liked' | 'disliked' | null, status?: MediaUserStatus) => void
   onDelete: (row: MediaUserState) => void
   onOpen: (item: MediaItem) => void
   expandedShowId: string | null
   onExpandShow: (id: string | null) => void
   progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
-  seasonCache: Record<string, { season: MediaSeason; episodes: MediaEpisode[] }>
+  seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
   onLoadSeason: (item: MediaItem, seasonNumber: number) => void
@@ -1242,8 +1322,8 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
             }}
             className={`rounded-[9px] px-1.5 py-2 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}
           >
-            <span className="block text-[12px] font-black leading-none">{label}</span>
-            <span className="mt-1 block text-[10px] font-black leading-none text-[var(--media-faint)]">{count}</span>
+            <span className="block text-[12px] font-bold leading-none">{label}</span>
+            <span className="mt-1 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
           </button>
         ))}
       </div>
@@ -1259,16 +1339,16 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-black uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
-          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-black text-[var(--media-ink)] outline-none">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
+          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
             <option value="all">All</option>
             <option value="movie">Films</option>
             <option value="tv">TV</option>
           </select>
         </label>
         <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-black uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
-          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-black text-[var(--media-ink)] outline-none">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
+          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
             <option value="all">All categories</option>
             {genres.map(genre => <option key={genre} value={genre}>{genre}</option>)}
           </select>
@@ -1284,27 +1364,18 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                   selectedProviderIds={selectedProviderIds}
                   statusLabel={labelStatus(row.state.status)}
                   rating={row.state.rating}
-                  familyActive={familyStates.some(state => state.mediaItemId === row.item.id && state.status === 'wishlist' && Boolean(state.watchlist))}
-                  onFamily={onFamily}
+                  onRating={row.state.status === 'watched' || row.state.status === 'watching' ? nextRating => onRating(row.item, row.state.rating === nextRating ? null : nextRating, row.state.status) : undefined}
                   onOpen={onOpen}
-                  trailing={row.item.mediaType === 'tv' && (row.state.status === 'watched' || row.state.status === 'watching') ? (
-                    <button type="button" onClick={() => onExpandShow(expandedShowId === row.item.id ? null : row.item.id)} className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label={expandedShowId === row.item.id ? 'Hide seasons' : 'Show seasons'}>
-                      {expandedShowId === row.item.id ? <ChevronDown className="h-4.5 w-4.5" /> : <ChevronRight className="h-4.5 w-4.5" />}
-                    </button>
-                  ) : activeTab === 'watchlist' ? (
+                  trailing={activeTab === 'watchlist' ? (
                     <button type="button" onClick={() => onStatus(row.item, 'watched', 'neutral')} className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Add to seen">
                       <Check className="h-4.5 w-4.5" strokeWidth={2.2} />
                     </button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => onStatus(row.item, 'watched', row.state.rating === 'liked' ? null : 'liked')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.rating === 'liked' ? 'border-sage bg-sage-bg text-sage' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.rating === 'liked' ? 'Remove like' : 'Mark liked'}>
-                        <ThumbsUp className="h-4 w-4" strokeWidth={2} />
-                      </button>
-                      <button type="button" onClick={() => onStatus(row.item, 'watched', row.state.rating === 'disliked' ? null : 'disliked')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.rating === 'disliked' ? 'border-red/30 bg-red/10 text-red' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.rating === 'disliked' ? 'Remove dislike' : 'Mark disliked'}>
-                        <ThumbsDown className="h-4 w-4" strokeWidth={2} />
-                      </button>
-                    </div>
-                  )}
+                  ) : null}
+                  providerTrailing={row.item.mediaType === 'tv' && (row.state.status === 'watched' || row.state.status === 'watching') ? (
+                    <button type="button" onClick={() => onExpandShow(expandedShowId === row.item.id ? null : row.item.id)} className="flex h-6 w-6 items-center justify-center text-[var(--media-muted)]" aria-label={expandedShowId === row.item.id ? 'Hide seasons' : 'Show seasons'}>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${expandedShowId === row.item.id ? 'rotate-180' : ''}`} strokeWidth={2.3} />
+                    </button>
+                  ) : null}
                 />
                 <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${expandedShowId === row.item.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                   <div className="overflow-hidden">
@@ -1374,8 +1445,8 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
           ['liked', 'Liked', countFor('liked')],
         ] as Array<[FamilyListTab, string, number]>).map(([id, label, count]) => (
           <button key={id} type="button" onClick={() => { setActiveTab(id); setActiveGenre('all') }} className={`rounded-[9px] px-1.5 py-2 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}>
-            <span className="block text-[12px] font-black leading-none">{label}</span>
-            <span className="mt-1 block text-[10px] font-black leading-none text-[var(--media-faint)]">{count}</span>
+            <span className="block text-[12px] font-bold leading-none">{label}</span>
+            <span className="mt-1 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
           </button>
         ))}
       </div>
@@ -1386,16 +1457,16 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-black uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
-          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-black text-[var(--media-ink)] outline-none">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
+          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
             <option value="all">All</option>
             <option value="movie">Films</option>
             <option value="tv">TV</option>
           </select>
         </label>
         <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-black uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
-          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-black text-[var(--media-ink)] outline-none">
+          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
+          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
             <option value="all">All categories</option>
             {genres.map(genre => <option key={genre} value={genre}>{genre}</option>)}
           </select>
@@ -1410,23 +1481,14 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
                 selectedProviderIds={selectedProviderIds}
                 statusLabel={labelStatus(row.state.status)}
                 rating={row.state.rating}
-                familyActive={row.state.status === 'wishlist' && Boolean(row.state.watchlist)}
                 onOpen={onOpen}
+                onRating={row.state.status === 'watched' || row.state.status === 'watching' ? rating => onRating(row.item, rating) : undefined}
                 trailing={
                   activeTab === 'watchlist' ? (
                     <button type="button" onClick={() => onSeen(row.item, row.state.status !== 'watched')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.status === 'watched' ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.status === 'watched' ? 'Remove family seen' : 'Mark seen by family'}>
                       <Eye className="h-4 w-4" strokeWidth={2} />
                     </button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => onRating(row.item, 'liked')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.rating === 'liked' ? 'border-sage bg-sage-bg text-sage' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.rating === 'liked' ? 'Remove family like' : 'Family liked'}>
-                        <ThumbsUp className="h-4 w-4" strokeWidth={2} />
-                      </button>
-                      <button type="button" onClick={() => onRating(row.item, 'disliked')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.rating === 'disliked' ? 'border-red/30 bg-red/10 text-red' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.rating === 'disliked' ? 'Remove family dislike' : 'Family disliked'}>
-                        <ThumbsDown className="h-4 w-4" strokeWidth={2} />
-                      </button>
-                    </div>
-                  )
+                  ) : null
                 }
               />
             </SwipeRow>
@@ -1440,7 +1502,7 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
 function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   item: MediaItem
   progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
-  seasonCache: Record<string, { season: MediaSeason; episodes: MediaEpisode[] }>
+  seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
   onLoadSeason: (item: MediaItem, seasonNumber: number) => void
@@ -1458,8 +1520,14 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
             const cached = seasonCache[key]
             const error = seasonErrors[key]
             const episodes = cached?.episodes ?? []
-            const watchedCount = episodes.filter(episode => watched.has(episode.id)).length
-            const allWatched = episodes.length > 0 && episodes.every(episode => watched.has(episode.id))
+            const expectedEpisodeCount = episodes.length || Number(raw.episodeCount ?? 0)
+            const watchedCount = episodes.length
+              ? episodes.filter(episode => watched.has(episode.id)).length
+              : progress.filter(row => row.watchedAt && row.episodeId.startsWith(`${key}:e`)).length
+            const allWatched = expectedEpisodeCount > 0 && watchedCount >= expectedEpisodeCount
+            const seasonSummary = watchedCount > 0 || cached
+              ? `${watchedCount} of ${expectedEpisodeCount} watched`
+              : `${expectedEpisodeCount} episodes`
             return (
               <div key={key} className="overflow-hidden rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)]">
                 <div className="flex items-center gap-2 px-3 py-2.5">
@@ -1468,8 +1536,8 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
                   </button>
                   <button type="button" onClick={() => onLoadSeason(item, seasonNumber)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-black text-[var(--media-ink)]">{String(raw.name ?? `Season ${seasonNumber}`)}</span>
-                      <span className="block truncate text-[11.5px] font-bold text-[var(--media-muted)]">{cached ? `${watchedCount} of ${episodes.length} watched` : `${Number(raw.episodeCount ?? 0)} episodes`}</span>
+                      <span className="block truncate text-[14px] font-bold text-[var(--media-ink)]">{String(raw.name ?? `Season ${seasonNumber}`)}</span>
+                      <span className="block truncate text-[11.5px] font-bold text-[var(--media-muted)]">{seasonSummary}</span>
                     </span>
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]">
                       {openSeasonKey === key ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -1530,7 +1598,7 @@ function ServicesView({ providers, selectedIds, onChange }: { providers: MediaPr
       <div className="rounded-[16px] border border-[var(--media-line)] bg-[var(--media-panel)] p-4 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-bg text-accent"><SlidersHorizontal className="h-4.5 w-4.5" strokeWidth={2.2} /></span>
-          <h2 className="text-[18px] font-black text-[var(--media-ink)]">Streaming services</h2>
+          <h2 className="text-[18px] font-bold text-[var(--media-ink)]">Streaming</h2>
         </div>
         <p className="mt-2 text-[13px] leading-5 text-[var(--media-muted)]">Pick what the household has. Availability badges only show matching services once TMDB has provider data for a title.</p>
       </div>
@@ -1584,24 +1652,17 @@ function MediaDetailSheet({ item, loading, userState, familyState, selectedProvi
             <X className="h-5 w-5" />
           </button>
           <div className="absolute inset-x-0 bottom-0 px-4 pb-4 text-white">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
-              <span className="rounded-full bg-white/18 px-2.5 py-1">{mediaLabel(item)}</span>
-              <span className="rounded-full bg-white/18 px-2.5 py-1">{yearLabel(item)}</span>
-              {item.voteAverageX10 ? <span className="rounded-full bg-white/18 px-2.5 py-1">{(item.voteAverageX10 / 10).toFixed(1)}</span> : null}
-            </div>
-            <h2 className="mt-2 line-clamp-2 text-[25px] font-black leading-[1.04]">{item.title}</h2>
+            <MediaInlineMeta item={item} light showType={false} />
+            <h2 className="mt-2 line-clamp-2 text-[25px] font-bold leading-[1.04]">{item.title}</h2>
           </div>
         </div>
         <div className="max-h-[calc(88dvh-178px)] overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-4">
           {loading ? <p className="mb-3 rounded-[12px] bg-[var(--media-panel-2)] px-3 py-2 text-[12px] font-bold text-[var(--media-muted)]">Refreshing details...</p> : null}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {runtime ? <DetailStat icon={<Clock className="h-4 w-4" />} label={runtime} /> : null}
             <DetailStat icon={<Calendar className="h-4 w-4" />} label={item.releaseDate || item.firstAirDate || 'No date'} />
-            <DetailStat icon={item.mediaType === 'tv' ? <Tv className="h-4 w-4" /> : <Film className="h-4 w-4" />} label={item.mediaType === 'tv' ? 'TV show' : 'Film'} />
           </div>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {(item.genres ?? []).slice(0, 6).map(genre => <span key={genre} className="rounded-full bg-[var(--media-panel-2)] px-2.5 py-1 text-[11px] font-black text-[var(--media-muted)]">{genre}</span>)}
-          </div>
+          {(item.genres ?? []).length ? <p className="mt-4 truncate text-[11px] font-semibold uppercase text-[var(--media-faint)]">{(item.genres ?? []).slice(0, 6).join(' / ')}</p> : null}
           <p className="mt-4 text-[14px] font-medium leading-6 text-[var(--media-ink)]">{item.overview || 'No synopsis available.'}</p>
           {cast.length || crew.length ? (
             <div className="mt-4 space-y-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-bg)] p-3">
@@ -1610,7 +1671,7 @@ function MediaDetailSheet({ item, loading, userState, familyState, selectedProvi
             </div>
           ) : null}
           <div className="mt-4">
-            <MediaProviderPills providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
+            <MediaProviderSection providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
           </div>
           <div className="mt-5 grid grid-cols-5 gap-2">
             <DetailAction label="Watchlist" active={inWatchlist} onClick={() => void onWatchlist(item, !inWatchlist)}><ListPlus className="h-4.5 w-4.5" /></DetailAction>
@@ -1630,7 +1691,7 @@ function DetailAction({ label, active = false, onClick, children }: { label: str
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border text-[11px] font-black transition ${active ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] bg-[var(--media-bg)] text-[var(--media-ink)]'}`}
+      className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border text-[11px] font-bold transition ${active ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] bg-[var(--media-bg)] text-[var(--media-ink)]'}`}
     >
       {children}
       <span>{label}</span>
@@ -1642,7 +1703,7 @@ function DetailStat({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-bg)] px-2 text-center text-[var(--media-muted)]">
       {icon}
-      <span className="line-clamp-2 text-[11px] font-black leading-tight">{label}</span>
+      <span className="line-clamp-2 text-[11px] font-bold leading-tight">{label}</span>
     </div>
   )
 }
@@ -1653,11 +1714,11 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
     <div className="fixed inset-0 z-[70] flex items-end bg-black/45" onClick={onClose}>
       <div className="media-page mx-auto w-full max-w-lg rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-4" onClick={event => event.stopPropagation()}>
         <div className="mx-auto h-1.5 w-10 rounded-full bg-[var(--media-faint)]" />
-        <h2 className="mt-5 text-[22px] font-black text-[var(--media-ink)]">{item.title}</h2>
+        <h2 className="mt-5 text-[22px] font-bold text-[var(--media-ink)]">{item.title}</h2>
         <p className="mt-1 text-[14px] text-[var(--media-muted)]">How much have you watched?</p>
         <div className="mt-5 grid gap-2">
-          <button type="button" onClick={() => onChoose('all')} className="flex items-center gap-3 rounded-[16px] bg-accent px-4 py-4 text-left text-[15px] font-black text-white"><Eye className="h-5 w-5" strokeWidth={2.2} />Watched all episodes</button>
-          <button type="button" onClick={() => onChoose('track')} className="flex items-center gap-3 rounded-[16px] border border-[var(--media-line)] bg-[var(--media-bg)] px-4 py-4 text-left text-[15px] font-black text-[var(--media-ink)]"><Tv className="h-5 w-5" strokeWidth={2.2} />Choose seasons and episodes</button>
+          <button type="button" onClick={() => onChoose('all')} className="flex items-center gap-3 rounded-[16px] bg-accent px-4 py-4 text-left text-[15px] font-bold text-white"><Eye className="h-5 w-5" strokeWidth={2.2} />Watched all episodes</button>
+          <button type="button" onClick={() => onChoose('track')} className="flex items-center gap-3 rounded-[16px] border border-[var(--media-line)] bg-[var(--media-bg)] px-4 py-4 text-left text-[15px] font-bold text-[var(--media-ink)]"><Tv className="h-5 w-5" strokeWidth={2.2} />Choose seasons and episodes</button>
         </div>
       </div>
     </div>
@@ -1667,7 +1728,7 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
 function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeasonKey, onClose, onLoadSeason, onEpisode, onSeason }: {
   item: MediaItem | null
   progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
-  seasonCache: Record<string, { season: MediaSeason; episodes: MediaEpisode[] }>
+  seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
   onClose: () => void
@@ -1681,8 +1742,8 @@ function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeason
       <div className="media-page mx-auto max-h-[82dvh] w-full max-w-lg overflow-hidden rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)]" onClick={event => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 border-b border-[var(--media-line)] px-4 pb-3 pt-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--media-faint)]">Episode progress</p>
-            <h2 className="mt-1 line-clamp-2 text-[20px] font-black leading-tight text-[var(--media-ink)]">{item.title}</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--media-faint)]">Episode progress</p>
+            <h2 className="mt-1 line-clamp-2 text-[20px] font-bold leading-tight text-[var(--media-ink)]">{item.title}</h2>
           </div>
           <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Close episode progress">
             <X className="h-4.5 w-4.5" />

@@ -1,4 +1,4 @@
-import { enqueueMutation, getCurrentState, makeId, type AppState, type MediaEpisode, type MediaFamilyState, type MediaItem, type MediaRating, type MediaSeason, type MediaUserState, type MediaUserStatus } from './app-store'
+import { enqueueMutation, getCurrentState, makeId, type AppState, type MediaEpisode, type MediaEpisodeProgress, type MediaFamilyState, type MediaItem, type MediaRating, type MediaSeason, type MediaUserState, type MediaUserStatus } from './app-store'
 import { getSessionState } from './session-store'
 
 export type MediaProvider = {
@@ -6,6 +6,12 @@ export type MediaProvider = {
   provider_name: string
   logo_path?: string | null
   mediaTypes?: Array<'movie' | 'tv'>
+}
+
+export type MediaSeasonPayload = {
+  season: MediaSeason
+  episodes: MediaEpisode[]
+  progress?: MediaEpisodeProgress[]
 }
 
 export function posterUrl(path?: string | null, size = 'w500') {
@@ -49,7 +55,7 @@ export async function fetchMediaDetails(item: MediaItem) {
 }
 
 export async function fetchSeason(tmdbId: number, seasonNumber: number) {
-  return api<{ season: MediaSeason; episodes: MediaEpisode[] }>(`/api/media/tv/${tmdbId}/season/${seasonNumber}`)
+  return api<MediaSeasonPayload>(`/api/media/tv/${tmdbId}/season/${seasonNumber}`)
 }
 
 export async function fetchProviders() {
