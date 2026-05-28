@@ -172,6 +172,7 @@ export type MediaItem = {
   popularityX100?: number | null
   providers?: Record<string, unknown> | null
   seasons?: Array<Record<string, unknown>> | null
+  credits?: Record<string, unknown> | null
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
@@ -182,6 +183,7 @@ export type MediaUserState = {
   mediaItemId: string
   status: MediaUserStatus
   rating?: MediaRating | null
+  watchlist?: boolean
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
@@ -190,6 +192,8 @@ export type MediaFamilyState = {
   householdId: string
   mediaItemId: string
   status: MediaFamilyStatus
+  rating?: MediaRating | null
+  watchlist?: boolean
   addedByUserId?: string | null
   createdAt: string | number | Date
   updatedAt: string | number | Date

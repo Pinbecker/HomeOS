@@ -70,6 +70,25 @@ function optimisticMerge<T extends { id: string }>(rows: T[], row: T) {
   return rows.map(existing => existing.id === row.id ? { ...existing, ...row } : existing)
 }
 
+async function clearEpisodeProgress(item: MediaItem, scope: 'user' | 'family', scopeId: string) {
+  const related = getCurrentState().data.mediaEpisodeProgress
+    .filter(row => row.scopeType === scope && row.scopeId === scopeId && row.mediaItemId === item.id)
+  await Promise.all(related.map(row => enqueueMutation({
+    id: makeId('mutation'),
+    name: 'media.episode_progress.delete',
+    entityType: 'media_episode_progress',
+    entityId: row.id,
+    operation: 'delete',
+    payload: null,
+  }, prev => ({
+    ...prev,
+    data: {
+      ...prev.data,
+      mediaEpisodeProgress: prev.data.mediaEpisodeProgress.filter(progress => progress.id !== row.id),
+    },
+  }))))
+}
+
 export async function syncMediaItem(item: MediaItem) {
   await enqueueMutation({
     id: makeId('mutation'),
@@ -94,14 +113,19 @@ function optimisticMediaItem(item: MediaItem) {
 export async function setUserMediaState(item: MediaItem, status: MediaUserStatus, rating: MediaRating | null = null) {
   const userId = currentUserId()
   const now = new Date().toISOString()
+  const existing = getCurrentState().data.mediaUserStates.find(state => state.userId === userId && state.mediaItemId === item.id)
+  const nextStatus = status
+  const nextWatchlist = status === 'wishlist'
+  const nextRating = status === 'wishlist' ? null : rating
   const row: MediaUserState = {
     id: `media-user:${userId}:${item.id}`,
     householdId: householdId(),
     userId,
     mediaItemId: item.id,
-    status,
-    rating,
-    createdAt: now,
+    status: nextStatus,
+    rating: nextRating,
+    watchlist: nextWatchlist,
+    createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
   await syncMediaItem(item)
@@ -118,15 +142,113 @@ export async function setUserMediaState(item: MediaItem, status: MediaUserStatus
   }))
 }
 
-export async function setFamilyMediaState(item: MediaItem, status: MediaFamilyState['status']) {
+export async function setUserMediaWatchlist(item: MediaItem, watchlist: boolean) {
+  const userId = currentUserId()
+  const existing = getCurrentState().data.mediaUserStates.find(state => state.userId === userId && state.mediaItemId === item.id)
+  if (!watchlist && !existing) return
+  if (!watchlist && existing && existing.status === 'wishlist' && !existing.rating) {
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'media.user_state.delete',
+      entityType: 'media_user_state',
+      entityId: existing.id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: { ...prev.data, mediaUserStates: prev.data.mediaUserStates.filter(state => state.id !== existing.id) },
+    }))
+    return
+  }
+
   const now = new Date().toISOString()
+  const row: MediaUserState = {
+    id: `media-user:${userId}:${item.id}`,
+    householdId: householdId(),
+    userId,
+    mediaItemId: item.id,
+    status: watchlist ? 'wishlist' : existing?.status && existing.status !== 'wishlist' ? existing.status : 'wishlist',
+    rating: watchlist ? null : existing?.rating ?? null,
+    watchlist,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+  await syncMediaItem(item)
+  await enqueueMutation({
+    id: makeId('mutation'),
+    name: 'media.user_state.upsert',
+    entityType: 'media_user_state',
+    entityId: row.id,
+    operation: 'upsert',
+    payload: row as unknown as Record<string, unknown>,
+  }, prev => ({
+    ...prev,
+    data: { ...prev.data, mediaUserStates: optimisticMerge(prev.data.mediaUserStates, row) },
+  }))
+}
+
+export async function setUserMediaSeen(item: MediaItem, seen: boolean) {
+  const userId = currentUserId()
+  const existing = getCurrentState().data.mediaUserStates.find(state => state.userId === userId && state.mediaItemId === item.id)
+  if (!seen && !existing) return
+  if (!seen && existing && !existing.watchlist && existing.status !== 'wishlist') {
+    await clearEpisodeProgress(item, 'user', userId)
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'media.user_state.delete',
+      entityType: 'media_user_state',
+      entityId: existing.id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: { ...prev.data, mediaUserStates: prev.data.mediaUserStates.filter(state => state.id !== existing.id) },
+    }))
+    return
+  }
+
+  const now = new Date().toISOString()
+  const row: MediaUserState = {
+    id: `media-user:${userId}:${item.id}`,
+    householdId: householdId(),
+    userId,
+    mediaItemId: item.id,
+    status: seen ? 'watched' : 'wishlist',
+    rating: seen ? existing?.rating ?? 'neutral' : null,
+    watchlist: seen ? false : existing?.watchlist ?? false,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+  await syncMediaItem(item)
+  await enqueueMutation({
+    id: makeId('mutation'),
+    name: 'media.user_state.upsert',
+    entityType: 'media_user_state',
+    entityId: row.id,
+    operation: 'upsert',
+    payload: row as unknown as Record<string, unknown>,
+  }, prev => ({
+    ...prev,
+    data: { ...prev.data, mediaUserStates: optimisticMerge(prev.data.mediaUserStates, row) },
+  }))
+  if (!seen) await clearEpisodeProgress(item, 'user', userId)
+}
+
+export async function setFamilyMediaState(item: MediaItem, status: MediaFamilyState['status'], rating: MediaRating | null = null) {
+  const now = new Date().toISOString()
+  const existing = getCurrentState().data.mediaFamilyStates.find(state => state.mediaItemId === item.id)
+  const nextStatus = status
+  const nextWatchlist = status === 'wishlist'
+  const nextRating = status === 'wishlist' ? null : rating
   const row: MediaFamilyState = {
     id: `media-family:${householdId()}:${item.id}`,
     householdId: householdId(),
     mediaItemId: item.id,
-    status,
+    status: nextStatus,
+    rating: nextRating,
+    watchlist: nextWatchlist,
     addedByUserId: currentUserId(),
-    createdAt: now,
+    createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
   await syncMediaItem(item)
@@ -143,6 +265,97 @@ export async function setFamilyMediaState(item: MediaItem, status: MediaFamilySt
   }))
 }
 
+export async function setFamilyMediaWatchlist(item: MediaItem, watchlist: boolean) {
+  const existing = getCurrentState().data.mediaFamilyStates.find(state => state.mediaItemId === item.id)
+  if (!watchlist && !existing) return
+  if (!watchlist && existing && existing.status === 'wishlist' && !existing.rating) {
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'media.family_state.delete',
+      entityType: 'media_family_state',
+      entityId: existing.id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: { ...prev.data, mediaFamilyStates: prev.data.mediaFamilyStates.filter(state => state.id !== existing.id) },
+    }))
+    return
+  }
+
+  const now = new Date().toISOString()
+  const row: MediaFamilyState = {
+    id: `media-family:${householdId()}:${item.id}`,
+    householdId: householdId(),
+    mediaItemId: item.id,
+    status: watchlist ? 'wishlist' : existing?.status && existing.status !== 'wishlist' ? existing.status : 'wishlist',
+    rating: watchlist ? null : existing?.rating ?? null,
+    watchlist,
+    addedByUserId: existing?.addedByUserId ?? currentUserId(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+  await syncMediaItem(item)
+  await enqueueMutation({
+    id: makeId('mutation'),
+    name: 'media.family_state.upsert',
+    entityType: 'media_family_state',
+    entityId: row.id,
+    operation: 'upsert',
+    payload: row as unknown as Record<string, unknown>,
+  }, prev => ({
+    ...prev,
+    data: { ...prev.data, mediaFamilyStates: optimisticMerge(prev.data.mediaFamilyStates, row) },
+  }))
+}
+
+export async function setFamilyMediaSeen(item: MediaItem, seen: boolean) {
+  const existing = getCurrentState().data.mediaFamilyStates.find(state => state.mediaItemId === item.id)
+  const scopeId = householdId()
+  if (!seen && !existing) return
+  if (!seen && existing && !existing.watchlist && existing.status !== 'wishlist') {
+    await clearEpisodeProgress(item, 'family', scopeId)
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'media.family_state.delete',
+      entityType: 'media_family_state',
+      entityId: existing.id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: { ...prev.data, mediaFamilyStates: prev.data.mediaFamilyStates.filter(state => state.id !== existing.id) },
+    }))
+    return
+  }
+
+  const now = new Date().toISOString()
+  const row: MediaFamilyState = {
+    id: `media-family:${scopeId}:${item.id}`,
+    householdId: scopeId,
+    mediaItemId: item.id,
+    status: seen ? 'watched' : 'wishlist',
+    rating: seen ? existing?.rating ?? 'neutral' : null,
+    watchlist: seen ? false : existing?.watchlist ?? false,
+    addedByUserId: existing?.addedByUserId ?? currentUserId(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+  await syncMediaItem(item)
+  await enqueueMutation({
+    id: makeId('mutation'),
+    name: 'media.family_state.upsert',
+    entityType: 'media_family_state',
+    entityId: row.id,
+    operation: 'upsert',
+    payload: row as unknown as Record<string, unknown>,
+  }, prev => ({
+    ...prev,
+    data: { ...prev.data, mediaFamilyStates: optimisticMerge(prev.data.mediaFamilyStates, row) },
+  }))
+  if (!seen) await clearEpisodeProgress(item, 'family', scopeId)
+}
+
 export async function recordMediaInteraction(item: MediaItem, action: 'watched_liked' | 'watched_neutral' | 'watched_disliked' | 'wishlist' | 'not_interested' | 'skip', source = 'swipe') {
   const now = new Date().toISOString()
   const row = {
@@ -154,7 +367,6 @@ export async function recordMediaInteraction(item: MediaItem, action: 'watched_l
     source,
     createdAt: now,
   }
-  await syncMediaItem(item)
   await enqueueMutation({
     id: makeId('mutation'),
     name: 'media.interaction.create',

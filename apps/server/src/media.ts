@@ -21,7 +21,8 @@ export function registerMediaRoutes(app: FastifyInstance) {
     const session = await getSession(request)
     if (!session) return reply.status(401).send({ error: 'Unauthorized' })
 
-    const page = Math.max(1, Number((request.query as { page?: string }).page ?? 1))
+    const requestedPage = Number((request.query as { page?: string }).page ?? 1)
+    const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1
     const [userStates, familyStates, interactions] = await Promise.all([
       db.query.mediaUserStates.findMany({
         where: eq(mediaUserStates.userId, session.user.id),
@@ -32,13 +33,16 @@ export function registerMediaRoutes(app: FastifyInstance) {
       }),
       db.query.mediaInteractions.findMany({
         where: eq(mediaInteractions.userId, session.user.id),
-        columns: { mediaItemId: true },
+        columns: { mediaItemId: true, action: true, createdAt: true },
       }),
     ])
+    const skipCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
     const excluded = new Set([
       ...userStates.map(row => row.mediaItemId),
       ...familyStates.map(row => row.mediaItemId),
-      ...interactions.map(row => row.mediaItemId),
+      ...interactions
+        .filter(row => row.action !== 'skip' || Number(new Date(row.createdAt)) >= skipCutoff)
+        .map(row => row.mediaItemId),
     ])
     return reply.send({ items: await discoverFeed(excluded, page), page })
   })

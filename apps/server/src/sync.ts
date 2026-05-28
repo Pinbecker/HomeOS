@@ -102,6 +102,20 @@ export async function buildBootstrap() {
     db.select().from(mediaInteractions),
   ])
 
+  const mediaStateIds = new Set([
+    ...allMediaUserStates.map(row => row.mediaItemId),
+    ...allMediaFamilyStates.map(row => row.mediaItemId),
+    ...allMediaEpisodeProgress.map(row => row.mediaItemId),
+  ])
+  const syncedMediaItems = allMediaItems.filter(row => mediaStateIds.has(row.id))
+  const syncedMediaSeasons = allMediaSeasons.filter(row => mediaStateIds.has(row.mediaItemId))
+  const syncedSeasonIds = new Set(syncedMediaSeasons.map(row => row.id))
+  const syncedMediaEpisodes = allMediaEpisodes.filter(row => mediaStateIds.has(row.mediaItemId) && syncedSeasonIds.has(row.seasonId))
+  const syncedEpisodeIds = new Set(syncedMediaEpisodes.map(row => row.id))
+  const syncedMediaEpisodeProgress = allMediaEpisodeProgress.filter(row => mediaStateIds.has(row.mediaItemId) && syncedEpisodeIds.has(row.episodeId))
+  const skipCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const syncedMediaInteractions = allMediaInteractions.filter(row => row.action === 'skip' && Number(new Date(row.createdAt)) >= skipCutoff)
+
   return {
     checkpoint,
     data: {
@@ -118,13 +132,13 @@ export async function buildBootstrap() {
       calendarFeeds: allCalendarFeeds,
       cycleEntries: allCycleEntries,
       bins: allBins,
-      mediaItems: allMediaItems,
+      mediaItems: syncedMediaItems,
       mediaUserStates: allMediaUserStates,
       mediaFamilyStates: allMediaFamilyStates,
-      mediaSeasons: allMediaSeasons,
-      mediaEpisodes: allMediaEpisodes,
-      mediaEpisodeProgress: allMediaEpisodeProgress,
-      mediaInteractions: allMediaInteractions,
+      mediaSeasons: syncedMediaSeasons,
+      mediaEpisodes: syncedMediaEpisodes,
+      mediaEpisodeProgress: syncedMediaEpisodeProgress,
+      mediaInteractions: syncedMediaInteractions,
     },
   }
 }
@@ -455,6 +469,7 @@ async function upsertMediaItem(mutation: SyncMutation) {
     popularityX100: payload.popularityX100 === undefined ? existing?.popularityX100 ?? null : (payload.popularityX100 as number | null),
     providers: payload.providers === undefined ? existing?.providers ?? null : (payload.providers as Record<string, unknown> | null),
     seasons: payload.seasons === undefined ? existing?.seasons ?? null : (payload.seasons as Array<Record<string, unknown>> | null),
+    credits: payload.credits === undefined ? existing?.credits ?? null : (payload.credits as Record<string, unknown> | null),
     updatedAt: now,
   }
 
@@ -473,7 +488,7 @@ async function upsertMediaUserState(userId: string, mutation: SyncMutation) {
   const payload = mutation.payload ?? {}
   const now = new Date()
   const existing = await db.query.mediaUserStates.findFirst({ where: eq(mediaUserStates.id, mutation.entityId) })
-  const targetUserId = (payload.userId as string | undefined) ?? existing?.userId ?? userId
+  const targetUserId = existing?.userId ?? userId
   const mediaItemId = (payload.mediaItemId as string | undefined) ?? existing?.mediaItemId
   if (!mediaItemId) throw new Error('Media item is required')
 
@@ -483,6 +498,7 @@ async function upsertMediaUserState(userId: string, mutation: SyncMutation) {
     mediaItemId,
     status: (payload.status as typeof mediaUserStates.$inferInsert.status | undefined) ?? existing?.status ?? 'wishlist',
     rating: payload.rating === undefined ? existing?.rating ?? null : (payload.rating as typeof mediaUserStates.$inferInsert.rating | null),
+    watchlist: payload.watchlist === undefined ? existing?.watchlist ?? false : Boolean(payload.watchlist),
     updatedAt: now,
   }
 
@@ -508,7 +524,9 @@ async function upsertMediaFamilyState(userId: string, mutation: SyncMutation) {
     householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
     mediaItemId,
     status: (payload.status as typeof mediaFamilyStates.$inferInsert.status | undefined) ?? existing?.status ?? 'wishlist',
-    addedByUserId: payload.addedByUserId === undefined ? existing?.addedByUserId ?? userId : (payload.addedByUserId as string | null),
+    rating: payload.rating === undefined ? existing?.rating ?? null : (payload.rating as typeof mediaFamilyStates.$inferInsert.rating | null),
+    watchlist: payload.watchlist === undefined ? existing?.watchlist ?? false : Boolean(payload.watchlist),
+    addedByUserId: existing?.addedByUserId ?? userId,
     updatedAt: now,
   }
 

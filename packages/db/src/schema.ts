@@ -547,6 +547,7 @@ export const mediaItems = sqliteTable('media_items', {
   popularityX100: integer('popularity_x100'),
   providers: text('providers', { mode: 'json' }).$type<Record<string, unknown> | null>(),
   seasons: text('seasons', { mode: 'json' }).$type<Array<Record<string, unknown>> | null>(),
+  credits: text('credits', { mode: 'json' }).$type<Record<string, unknown> | null>(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 }, table => ({
@@ -561,6 +562,7 @@ export const mediaUserStates = sqliteTable('media_user_states', {
   mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
   status: text('status').$type<MediaUserStatus>().notNull(),
   rating: text('rating').$type<MediaRating>(),
+  watchlist: integer('watchlist', { mode: 'boolean' }).default(false).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 }, table => ({
@@ -573,6 +575,8 @@ export const mediaFamilyStates = sqliteTable('media_family_states', {
   householdId: text('household_id').notNull().references(() => household.id),
   mediaItemId: text('media_item_id').notNull().references(() => mediaItems.id, { onDelete: 'cascade' }),
   status: text('status').$type<MediaFamilyStatus>().notNull(),
+  rating: text('rating').$type<MediaRating>(),
+  watchlist: integer('watchlist', { mode: 'boolean' }).default(false).notNull(),
   addedByUserId: text('added_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),

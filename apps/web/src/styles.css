@@ -221,29 +221,16 @@ select {
 .weather-hour-detail { animation: weather-hour-detail 180ms ease-out; }
 
 .media-page {
-  --media-bg: #F6F6F1;
-  --media-panel: #FFFFFF;
-  --media-panel-2: #ECECE6;
-  --media-ink: #111111;
-  --media-muted: rgba(17,17,17,0.58);
-  --media-faint: rgba(17,17,17,0.34);
-  --media-line: rgba(17,17,17,0.12);
-  --media-yellow: #F5C518;
-  --media-yellow-soft: rgba(245,197,24,0.20);
-  --media-shadow: 0 12px 34px rgba(17,17,17,0.10);
-}
-
-.dark .media-page {
-  --media-bg: #050505;
-  --media-panel: #151515;
-  --media-panel-2: #242424;
-  --media-ink: #F7F7F2;
-  --media-muted: rgba(247,247,242,0.64);
-  --media-faint: rgba(247,247,242,0.36);
-  --media-line: rgba(247,247,242,0.13);
-  --media-yellow: #F5C518;
-  --media-yellow-soft: rgba(245,197,24,0.18);
-  --media-shadow: 0 16px 42px rgba(0,0,0,0.34);
+  --media-bg: var(--bg);
+  --media-panel: var(--surface);
+  --media-panel-2: var(--surface-2);
+  --media-ink: var(--text-1);
+  --media-muted: var(--text-2);
+  --media-faint: var(--text-3);
+  --media-line: color-mix(in srgb, var(--border) 72%, transparent);
+  --media-yellow: var(--accent);
+  --media-yellow-soft: var(--accent-bg);
+  --media-shadow: 0 14px 34px rgba(0,0,0,0.10);
 }
 
 .media-swipe-card {

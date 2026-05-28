@@ -6,6 +6,15 @@ export type MediaType = 'movie' | 'tv'
 
 type TmdbGenre = { id: number; name: string }
 type TmdbProvider = { provider_id: number; provider_name: string; logo_path?: string; display_priority?: number }
+type TmdbCreditPerson = {
+  id: number
+  name?: string
+  original_name?: string
+  character?: string
+  job?: string
+  department?: string
+  order?: number
+}
 type TmdbMedia = {
   id: number
   media_type?: string
@@ -36,6 +45,10 @@ type TmdbMedia = {
     poster_path?: string | null
     air_date?: string | null
   }>
+}
+type TmdbCredits = {
+  cast?: TmdbCreditPerson[]
+  crew?: TmdbCreditPerson[]
 }
 type TmdbSeason = {
   id: number
@@ -121,11 +134,35 @@ function providerGroups(raw: unknown) {
   }
 }
 
+function creditGroups(raw: TmdbCredits | null | undefined) {
+  if (!raw) return null
+  const cast = (raw.cast ?? [])
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .slice(0, 12)
+    .map(person => ({
+      id: person.id,
+      name: person.name ?? person.original_name ?? 'Unknown',
+      character: person.character ?? null,
+    }))
+    .filter(person => person.name !== 'Unknown')
+  const crew = (raw.crew ?? [])
+    .filter(person => ['Director', 'Creator', 'Screenplay', 'Writer'].includes(person.job ?? ''))
+    .slice(0, 8)
+    .map(person => ({
+      id: person.id,
+      name: person.name ?? person.original_name ?? 'Unknown',
+      job: person.job ?? null,
+    }))
+    .filter(person => person.name !== 'Unknown')
+  return cast.length || crew.length ? { cast, crew } : null
+}
+
 export function normalizeMedia(media: TmdbMedia, fallbackType?: MediaType) {
   const mediaType = ((media.media_type === 'movie' || media.media_type === 'tv') ? media.media_type : fallbackType) ?? 'movie'
   const title = mediaType === 'movie' ? media.title : media.name
   const originalTitle = mediaType === 'movie' ? media.original_title : media.original_name
   const date = mediaType === 'movie' ? media.release_date : media.first_air_date
+  const now = new Date()
 
   return {
     id: mediaId(mediaType, media.id),
@@ -157,6 +194,9 @@ export function normalizeMedia(media: TmdbMedia, fallbackType?: MediaType) {
       posterPath: season.poster_path ?? null,
       airDate: season.air_date ?? null,
     })) ?? null,
+    credits: null as ReturnType<typeof creditGroups>,
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -184,6 +224,7 @@ export async function cacheMedia(item: ReturnType<typeof normalizeMedia>) {
     popularityX100: item.popularityX100,
     providers: item.providers,
     seasons: item.seasons,
+    credits: item.credits,
     updatedAt: now,
   }
   if (existing) {
@@ -195,12 +236,14 @@ export async function cacheMedia(item: ReturnType<typeof normalizeMedia>) {
 }
 
 export async function getMediaDetails(mediaType: MediaType, tmdbId: number) {
-  const [details, providers] = await Promise.all([
+  const [details, providers, credits] = await Promise.all([
     tmdbFetch<TmdbMedia>(`/${mediaType}/${tmdbId}`, { language: 'en-GB' }),
     tmdbFetch<unknown>(`/${mediaType}/${tmdbId}/watch/providers`),
+    tmdbFetch<TmdbCredits>(`/${mediaType}/${tmdbId}/credits`, { language: 'en-GB' }),
   ])
   const normalized = normalizeMedia(details, mediaType)
   normalized.providers = providerGroups(providers)
+  normalized.credits = creditGroups(credits)
   return cacheMedia(normalized)
 }
 
@@ -215,7 +258,7 @@ export async function searchMedia(query: string) {
     .filter(item => item.poster_path || item.backdrop_path)
     .map(item => normalizeMedia(item))
     .slice(0, 30)
-  return Promise.all(normalized.map(item => cacheMedia(item)))
+  return normalized
 }
 
 export async function discoverFeed(excludedIds: Set<string>, page = 1) {
@@ -272,7 +315,7 @@ export async function discoverFeed(excludedIds: Set<string>, page = 1) {
     })
     .slice(0, 36)
 
-  return Promise.all(normalized.map(item => cacheMedia(item)))
+  return normalized
 }
 
 export async function getWatchProviders() {
