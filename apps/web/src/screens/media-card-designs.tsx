@@ -118,7 +118,7 @@ function LibraryRowCard() {
       <div className="flex min-w-0 flex-1 flex-col py-1 pr-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="line-clamp-2 text-[17px] font-bold leading-tight">{sample.title}</h3>
+            <h3 className="truncate text-[17px] font-bold leading-tight">{sample.title}</h3>
             <MetaLine thumbs />
             <div className="mt-1 flex items-center text-[11.5px] font-semibold text-[var(--media-muted)]">
               <span>{sample.runtime}</span>

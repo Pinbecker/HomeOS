@@ -1,4 +1,4 @@
-import { enqueueMutation, getCurrentState, makeId, type AppState, type MediaEpisode, type MediaEpisodeProgress, type MediaFamilyState, type MediaItem, type MediaRating, type MediaSeason, type MediaUserState, type MediaUserStatus } from './app-store'
+import { enqueueMutation, enqueueMutations, getCurrentState, makeId, type AppState, type MediaEpisode, type MediaEpisodeProgress, type MediaFamilyState, type MediaItem, type MediaRating, type MediaSeason, type MediaUserState, type MediaUserStatus } from './app-store'
 import { getSessionState } from './session-store'
 
 export type MediaProvider = {
@@ -387,9 +387,14 @@ export async function recordMediaInteraction(item: MediaItem, action: 'watched_l
 }
 
 export async function setEpisodeWatched(item: MediaItem, episode: MediaEpisode, watched: boolean, scope: 'user' | 'family' = 'user') {
+  await setEpisodesWatched(item, [episode], watched, scope)
+}
+
+export async function setEpisodesWatched(item: MediaItem, episodes: MediaEpisode[], watched: boolean, scope: 'user' | 'family' = 'user') {
+  if (!episodes.length) return
   const scopeId = scope === 'user' ? currentUserId() : householdId()
   const now = new Date().toISOString()
-  const row = {
+  const rows = episodes.map(episode => ({
     id: `media-progress:${scope}:${scopeId}:${episode.id}`,
     householdId: householdId(),
     scopeType: scope,
@@ -398,16 +403,19 @@ export async function setEpisodeWatched(item: MediaItem, episode: MediaEpisode, 
     episodeId: episode.id,
     watchedAt: watched ? now : null,
     updatedAt: now,
-  }
-  await enqueueMutation({
+  }) satisfies MediaEpisodeProgress)
+  await enqueueMutations(rows.map(row => ({
     id: makeId('mutation'),
     name: 'media.episode_progress.upsert',
     entityType: 'media_episode_progress',
     entityId: row.id,
     operation: 'upsert',
     payload: row,
-  }, prev => ({
+  })), prev => ({
     ...prev,
-    data: { ...prev.data, mediaEpisodeProgress: optimisticMerge(prev.data.mediaEpisodeProgress, row) },
+    data: {
+      ...prev.data,
+      mediaEpisodeProgress: rows.reduce((next, row) => optimisticMerge(next, row), prev.data.mediaEpisodeProgress),
+    },
   }))
 }

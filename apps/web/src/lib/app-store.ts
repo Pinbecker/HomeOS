@@ -920,11 +920,16 @@ function subscribe(listener: () => void) {
 }
 
 export async function enqueueMutation(mutation: SyncMutation, optimistic?: (prev: AppState) => AppState) {
+  return enqueueMutations([mutation], optimistic)
+}
+
+export async function enqueueMutations(mutations: SyncMutation[], optimistic?: (prev: AppState) => AppState) {
+  if (!mutations.length) return
   if (optimistic) {
     setState(optimistic)
   }
 
-  mutationQueue = [...mutationQueue, mutation]
+  mutationQueue = [...mutationQueue, ...mutations]
   persist()
 
   try {

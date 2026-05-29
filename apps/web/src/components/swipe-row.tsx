@@ -1,6 +1,6 @@
 import { useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 
-const ACTION_W = 84
+const ACTION_W = 104
 const OPEN_AT = 42
 const MAX_DRAG = 320
 
@@ -137,7 +137,7 @@ export function SwipeRow({
           <button
             key={action.key}
             onClick={() => fire(action)}
-            className={`${action.bg ? '' : action.className ?? 'bg-red'} flex items-center justify-center text-[14px] font-semibold text-white active:opacity-80`}
+            className={`${action.bg ? '' : action.className ?? 'bg-red'} flex items-center justify-center px-2 text-center text-[12px] font-semibold leading-tight text-white active:opacity-80`}
             style={{ width: ACTION_W, ...(action.bg ? { background: action.bg } : {}) }}
             aria-label={action.label}
             tabIndex={offset < -10 ? 0 : -1}

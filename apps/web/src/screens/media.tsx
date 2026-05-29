@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { Calendar, Check, ChevronDown, ChevronRight, Circle, Clapperboard, Clock, Eye, ListPlus, Search, SlidersHorizontal, Star, ThumbsDown, ThumbsUp, Tv, Users, X } from 'lucide-react'
 import { BottomNav } from './bottom-nav'
 import { SwipeRow } from '../components/swipe-row'
-import { enqueueMutation, getCurrentState, makeId, mergeMediaEpisodeProgress, useAppState, type AppState, type MediaEpisode, type MediaFamilyState, type MediaItem, type MediaUserState, type MediaUserStatus } from '../lib/app-store'
+import { enqueueMutation, getCurrentState, makeId, mergeMediaEpisodeProgress, useAppState, type AppState, type MediaEpisode, type MediaFamilyState, type MediaFamilyStatus, type MediaItem, type MediaUserState, type MediaUserStatus } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
-import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, type MediaSeasonPayload, yearLabel } from '../lib/media'
+import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setEpisodesWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, type MediaSeasonPayload, yearLabel } from '../lib/media'
 
 type Tab = 'swipe' | 'search' | 'mine' | 'family' | 'services'
 type MyListTab = 'watchlist' | 'seen' | 'liked'
@@ -209,6 +209,7 @@ export function MediaPage() {
   const next = visibleFeed[feedIndex + 1] ?? null
   const detailUserState = detailItem ? userStates.find(row => row.userId === userId && row.mediaItemId === detailItem.id) ?? null : null
   const detailFamilyState = detailItem ? familyStates.find(row => row.mediaItemId === detailItem.id && row.status !== 'not_interested') ?? null : null
+  const progressSheetUserState = progressSheetItem ? userStates.find(row => row.userId === userId && row.mediaItemId === progressSheetItem.id) ?? null : null
   const userProgress = useMemo(() => progress.filter(row => row.scopeType === 'user' && row.scopeId === userId), [progress, userId])
 
   useEffect(() => {
@@ -318,7 +319,7 @@ export function MediaPage() {
     const detailed = await refreshDetails(item)
     if (action === 'skip') {
       await recordMediaInteraction(detailed, 'skip')
-      notify('Hidden for 30 days')
+      notify('Skipped')
       if (shouldAdvance) advance()
       return 'applied'
     }
@@ -486,8 +487,53 @@ export function MediaPage() {
       notify('Episodes failed to load')
       return
     }
-    await Promise.all(targetEpisodes.map(episode => setEpisodeWatched(item, episode, watched)))
+    await setEpisodesWatched(item, targetEpisodes, watched)
     notify(watched ? 'Season marked watched' : 'Season marked unwatched')
+  }
+
+  async function setAllSeasonsWatched(item: MediaItem, watched: boolean) {
+    const seasons = (item.seasons ?? [])
+      .map(season => Number(season.seasonNumber))
+      .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0)
+    const episodes = (await Promise.all(seasons.map(seasonNumber => ensureSeason(item, seasonNumber)))).flat()
+    await setEpisodesWatched(item, episodes, watched)
+  }
+
+  function isShowFullyWatched(item: MediaItem) {
+    const expectedEpisodeCount = (item.seasons ?? [])
+      .filter(season => Number(season.seasonNumber) > 0)
+      .reduce((total, season) => total + Number(season.episodeCount ?? 0), 0)
+    if (!expectedEpisodeCount) return false
+    const watchedEpisodeIds = new Set(getCurrentState().data.mediaEpisodeProgress
+      .filter(row => row.scopeType === 'user' && row.scopeId === userId && row.mediaItemId === item.id && row.watchedAt)
+      .map(row => row.episodeId))
+    return watchedEpisodeIds.size >= expectedEpisodeCount
+  }
+
+  async function reconcileTvWatchStatus(item: MediaItem) {
+    if (item.mediaType !== 'tv') return
+    const state = getCurrentState().data.mediaUserStates.find(row => row.userId === userId && row.mediaItemId === item.id)
+    if (!state || state.status === 'watched' || !isShowFullyWatched(item)) return
+    await setUserMediaState(item, 'watched', state.rating ?? 'neutral')
+  }
+
+  async function prepareWatchedShowForPartialProgress(item: MediaItem) {
+    const state = getCurrentState().data.mediaUserStates.find(row => row.userId === userId && row.mediaItemId === item.id)
+    if (state?.status !== 'watched') return
+    await setAllSeasonsWatched(item, true)
+    await setUserMediaState(item, 'watching', state.rating ?? 'neutral')
+  }
+
+  async function setEpisodeProgressWatched(item: MediaItem, episode: MediaEpisode, watched: boolean) {
+    if (!watched) await prepareWatchedShowForPartialProgress(item)
+    await setEpisodeWatched(item, episode, watched)
+    if (watched) await reconcileTvWatchStatus(item)
+  }
+
+  async function setSeasonProgressWatched(item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) {
+    if (!watched) await prepareWatchedShowForPartialProgress(item)
+    await setSeasonWatched(item, seasonNumber, episodes, watched)
+    if (watched) await reconcileTvWatchStatus(item)
   }
 
   return (
@@ -576,6 +622,10 @@ export function MediaPage() {
                 await setUserMediaState(item, status, rating)
                 notify(rating === 'liked' ? 'Marked liked' : rating === 'disliked' ? 'Marked disliked' : 'Rating cleared')
               }}
+              onWatchlist={async (item, enabled) => {
+                await setUserMediaWatchlist(item, enabled)
+                notify(enabled ? 'Added to watchlist' : 'Removed from watchlist')
+              }}
               onDelete={deleteUserState}
               onOpen={openDetails}
               expandedShowId={expandedShowId}
@@ -585,8 +635,8 @@ export function MediaPage() {
               seasonErrors={seasonErrors}
               openSeasonKey={openSeasonKey}
               onLoadSeason={loadSeason}
-              onEpisode={(item, episode, watched) => setEpisodeWatched(item, episode, watched)}
-              onSeason={(item, seasonNumber, episodes, watched) => setSeasonWatched(item, seasonNumber, episodes, watched)}
+              onEpisode={setEpisodeProgressWatched}
+              onSeason={setSeasonProgressWatched}
             />
           ) : null}
           {tab === 'family' ? (
@@ -642,25 +692,41 @@ export function MediaPage() {
           setTvSheetAction(null)
           setTvSheetAdvanceOnChoose(true)
         }}
-        onChoose={async mode => {
+        onChoose={mode => {
           if (!tvSheetItem || !tvSheetAction) return
           const item = tvSheetItem
           const action = tvSheetAction
           const shouldAdvance = tvSheetAdvanceOnChoose
-          if (mode === 'all') {
-            await applyMediaAction(item, action, 'watched')
-            notify('Marked all episodes watched')
-          }
-          if (mode === 'track') {
-            await setUserMediaState(item, 'watching', actionMeta[action].rating)
-            await recordMediaInteraction(item, action)
-            setProgressSheetItem(item)
-            notify('Added to watching')
-          }
           setTvSheetItem(null)
           setTvSheetAction(null)
-          if (mode === 'all' && shouldAdvance) advance()
           setTvSheetAdvanceOnChoose(true)
+          if (mode === 'all') {
+            notify('Marked all episodes watched')
+            if (shouldAdvance) advance()
+            void (async () => {
+              try {
+                await applyMediaAction(item, action, 'watched')
+                await setAllSeasonsWatched(item, true)
+              } catch (error) {
+                setError(error instanceof Error ? error.message : 'Episode progress failed to save')
+                notify('Episode progress failed to save')
+              }
+            })()
+            return
+          }
+          if (mode === 'track') {
+            setProgressSheetItem(item)
+            notify('Added to watching')
+            void (async () => {
+              try {
+                await setUserMediaState(item, 'watching', actionMeta[action].rating)
+                await recordMediaInteraction(item, action)
+              } catch (error) {
+                setError(error instanceof Error ? error.message : 'TV progress failed to save')
+                notify('TV progress failed to save')
+              }
+            })()
+          }
         }}
       />
       <TvProgressSheet
@@ -671,8 +737,9 @@ export function MediaPage() {
         openSeasonKey={openSeasonKey}
         onClose={() => setProgressSheetItem(null)}
         onLoadSeason={loadSeason}
-        onEpisode={(item, episode, watched) => setEpisodeWatched(item, episode, watched)}
-        onSeason={(item, seasonNumber, episodes, watched) => setSeasonWatched(item, seasonNumber, episodes, watched)}
+        onEpisode={setEpisodeProgressWatched}
+        onSeason={setSeasonProgressWatched}
+        assumeAllWatched={progressSheetUserState?.status === 'watched'}
       />
       <MediaDetailSheet
         item={detailItem}
@@ -711,7 +778,7 @@ export function MediaPage() {
           notify(enabled ? 'Added to family watchlist' : 'Removed from family watchlist')
         }}
       />
-      {feedback ? <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-[90] mx-auto max-w-sm rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-4 py-3 text-center text-[13px] font-bold text-[var(--media-ink)] shadow-2xl">{feedback}</div> : null}
+      {feedback ? <div className="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+8px)] z-[90] mx-auto w-fit max-w-[min(320px,calc(100vw-32px))] rounded-full border border-[var(--media-line)] bg-[var(--media-panel)] px-3.5 py-2 text-center text-[12px] font-bold text-[var(--media-ink)] shadow-lg">{feedback}</div> : null}
     </div>
   )
 }
@@ -1006,7 +1073,7 @@ function MediaCard({ item, selectedProviderIds, intent, intentStrength = 0, isPr
         />
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/46 to-transparent px-4 pb-4 pt-16 text-white">
           <MediaInlineMeta item={item} light />
-          <h2 className="mt-2 line-clamp-2 text-[24px] font-bold leading-[1.06]">{item.title}</h2>
+          <h2 className="mt-2 truncate text-[24px] font-bold leading-[1.06]">{item.title}</h2>
         </div>
       </div>
       <div className="shrink-0 px-4 py-3">
@@ -1149,7 +1216,7 @@ function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, s
   const stop = (event: ReactMouseEvent) => event.stopPropagation()
   return (
     <article
-      className="group flex gap-3 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-2 transition active:scale-[0.995]"
+      className="group flex h-[102px] gap-2.5 overflow-hidden rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] transition active:scale-[0.995]"
       role={onOpen ? 'button' : undefined}
       tabIndex={onOpen ? 0 : undefined}
       onClick={() => onOpen?.(item)}
@@ -1159,30 +1226,50 @@ function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, s
         onOpen(item)
       }}
     >
-      <div className="relative h-[116px] w-[78px] shrink-0 overflow-hidden rounded-[8px] bg-[var(--media-panel-2)]">
+      <div className="relative w-[70px] shrink-0 overflow-hidden bg-[var(--media-panel-2)]">
         {item.posterPath ? <img src={posterUrl(item.posterPath, 'w185')} alt="" className="h-full w-full object-cover" loading="lazy" /> : (
           <div className="flex h-full w-full items-center justify-center text-[var(--media-faint)]"><Clapperboard className="h-9 w-9" strokeWidth={1.5} /></div>
         )}
-        <span className="absolute left-1.5 top-1.5 text-[9px] font-bold uppercase text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{item.mediaType === 'movie' ? 'Film' : 'TV'}</span>
+        <span className="absolute left-1.5 top-1.5 text-[8.5px] font-semibold uppercase text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">{item.mediaType === 'movie' ? 'Film' : 'TV'}</span>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden py-1.5 pr-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="line-clamp-2 text-[15px] font-bold leading-tight text-[var(--media-ink)]">{item.title}</h3>
+            <h3 className="truncate text-[14px] font-semibold leading-tight text-[var(--media-ink)]">{item.title}</h3>
             <CompactPrimaryMeta item={item} rating={rating} showRatingActions={statusLabel === 'Watched' || statusLabel === 'Watching' || statusLabel === 'Seen'} onRating={onRating} />
-            <CompactStatusMeta item={item} statusLabel={statusLabel} />
+            <CompactStatusMeta item={item} />
           </div>
           {trailing ? <div onClick={stop} className="shrink-0">{trailing}</div> : null}
         </div>
-        {people.length ? <p className="mt-1 truncate text-[11.5px] font-semibold text-[var(--media-muted)]">{people.join(', ')}</p> : null}
-        <div className="mt-2 min-h-[28px]" onClick={stop}>
-          <MediaProviderSection providers={providers} compact emptyText={providerEmptyText(item, selectedProviderIds)} trailing={providerTrailing} />
+        <div className="mt-auto grid min-w-0 grid-cols-[minmax(0,1fr)_96px] items-center gap-2 pt-0.5">
+          <p className="min-w-0 truncate text-[10.5px] font-medium leading-4 text-[var(--media-muted)]">
+            {people.length ? people.join(', ') : providerEmptyText(item, selectedProviderIds)}
+          </p>
+          <div className="min-w-0" onClick={stop}>
+            <ProviderIconStrip providers={providers} trailing={providerTrailing} />
+          </div>
         </div>
-        <div className="mt-auto flex items-center gap-1.5 pt-2" onClick={stop}>
+        <div className="flex items-center gap-1.5 pt-1" onClick={stop}>
           {onAction ? <IconAction label={watchlistActive ? 'In watchlist' : 'Add to watchlist'} onClick={() => onAction(item, 'wishlist')} active={watchlistActive}><ListPlus className="h-4 w-4" strokeWidth={2.3} /></IconAction> : null}
         </div>
       </div>
     </article>
+  )
+}
+
+function ProviderIconStrip({ providers, trailing }: { providers: MediaProvider[]; trailing?: ReactNode }) {
+  const visibleProviders = providers.slice(0, 3)
+  const overflow = providers.length - visibleProviders.length
+  if (!visibleProviders.length && !trailing) return null
+
+  return (
+    <div className="flex w-full items-center justify-end gap-1.5">
+      {visibleProviders.map(provider => (
+        provider.logo_path ? <img key={provider.provider_id} src={posterUrl(provider.logo_path, 'w92')} alt="" className="h-[17px] w-[17px] shrink-0 rounded-[4px] object-cover" /> : null
+      ))}
+      {overflow > 0 ? <span className="shrink-0 text-[10px] font-medium text-[var(--media-muted)]">+{overflow}</span> : null}
+      <span className="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center">{trailing}</span>
+    </div>
   )
 }
 
@@ -1203,7 +1290,7 @@ function InlineRatingActions({ rating, onRating }: { rating?: 'liked' | 'neutral
 function CompactPrimaryMeta({ item, rating, showRatingActions, onRating }: { item: MediaItem; rating?: 'liked' | 'neutral' | 'disliked' | null; showRatingActions: boolean; onRating?: (rating: 'liked' | 'disliked') => void }) {
   const score = item.voteAverageX10 ? (item.voteAverageX10 / 10).toFixed(1) : null
   return (
-    <div className="mt-1 flex flex-wrap items-center text-[12px] font-semibold text-[var(--media-muted)]">
+    <div className="mt-0.5 flex flex-wrap items-center text-[11px] font-medium text-[var(--media-muted)]">
       <span>{yearLabel(item)}</span>
       {score ? (
         <>
@@ -1224,29 +1311,18 @@ function CompactPrimaryMeta({ item, rating, showRatingActions, onRating }: { ite
   )
 }
 
-function CompactStatusMeta({ item, statusLabel }: { item: MediaItem; statusLabel?: string }) {
+function CompactStatusMeta({ item }: { item: MediaItem }) {
   const runtime = runtimeLabel(item)
-  if (!runtime && !statusLabel) return null
+  if (!runtime) return null
   return (
-    <div className="mt-1 flex flex-wrap items-center text-[11.5px] font-semibold text-[var(--media-muted)]">
-      {runtime ? <span>{runtime}</span> : null}
-      {runtime && statusLabel ? <MetaDivider /> : null}
-      {statusLabel ? <MediaStatusText label={statusLabel} /> : null}
+    <div className="mt-0.5 flex flex-wrap items-center text-[10.5px] font-medium text-[var(--media-muted)]">
+      <span>{runtime}</span>
     </div>
   )
 }
 
 function MetaDivider() {
-  return <span className="mx-2 h-3.5 w-px bg-[var(--media-line)]" />
-}
-
-function MediaStatusText({ label }: { label: string }) {
-  const tone = label === 'Watching'
-    ? 'text-[#32ADE6] dark:text-[#64D2FF]'
-    : label === 'Watched' || label === 'Seen'
-      ? 'text-sage'
-      : 'text-[var(--media-muted)]'
-  return <span className={`font-bold ${tone}`}>{label}</span>
+  return <span className="mx-1.5 h-3 w-px bg-[var(--media-line)]" />
 }
 
 function IconAction({ label, active = false, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
@@ -1263,7 +1339,27 @@ function IconAction({ label, active = false, onClick, children }: { label: strin
   )
 }
 
-function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onStatus, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function MediaStatusPill({ status, onClick }: { status: MediaUserStatus | MediaFamilyStatus; onClick?: () => void }) {
+  if (status === 'wishlist') {
+    return (
+      <button type="button" onClick={onClick} className="whitespace-nowrap rounded-full bg-[#AF52DE] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm active:opacity-85 dark:bg-[#BF5AF2]" aria-label="Mark as seen">
+        Mark as seen
+      </button>
+    )
+  }
+
+  if (status === 'watched') {
+    return <span className="whitespace-nowrap rounded-full bg-sage px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm">Watched</span>
+  }
+
+  if (status === 'watching') {
+    return <span className="whitespace-nowrap rounded-full bg-[#32ADE6] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm dark:bg-[#64D2FF] dark:text-black">Watching</span>
+  }
+
+  return null
+}
+
+function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onStatus, onRating, onWatchlist, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaUserState; item: MediaItem }>
   activeTab: MyListTab
   activeFilter: MediaFilter
@@ -1276,6 +1372,7 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
   selectedProviderIds: number[]
   onStatus: (item: MediaItem, status: MediaUserStatus, rating?: 'liked' | 'neutral' | 'disliked' | null) => void
   onRating: (item: MediaItem, rating: 'liked' | 'disliked' | null, status?: MediaUserStatus) => void
+  onWatchlist: (item: MediaItem, enabled: boolean) => void
   onDelete: (row: MediaUserState) => void
   onOpen: (item: MediaItem) => void
   expandedShowId: string | null
@@ -1357,7 +1454,25 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
           {filtered.map(row => (
-            <SwipeRow key={row.state.id} onDelete={() => onDelete(row.state)} wrapClassName="rounded-[16px]">
+            <SwipeRow
+              key={row.state.id}
+              wrapClassName="rounded-[16px]"
+              actions={[
+                ...(activeTab !== 'watchlist' && !row.state.watchlist ? [{
+                  key: 'watchlist',
+                  label: 'Add to Watchlist',
+                  bg: '#AF52DE',
+                  onClick: () => onWatchlist(row.item, true),
+                }] : []),
+                {
+                  key: 'remove',
+                  label: 'Remove from list',
+                  className: 'bg-red',
+                  closeOnClick: false,
+                  onClick: () => onDelete(row.state),
+                },
+              ]}
+            >
               <div className="rounded-[16px] bg-[var(--media-bg)]">
                 <CompactMediaRow
                   item={row.item}
@@ -1366,11 +1481,7 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                   rating={row.state.rating}
                   onRating={row.state.status === 'watched' || row.state.status === 'watching' ? nextRating => onRating(row.item, row.state.rating === nextRating ? null : nextRating, row.state.status) : undefined}
                   onOpen={onOpen}
-                  trailing={activeTab === 'watchlist' ? (
-                    <button type="button" onClick={() => onStatus(row.item, 'watched', 'neutral')} className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Add to seen">
-                      <Check className="h-4.5 w-4.5" strokeWidth={2.2} />
-                    </button>
-                  ) : null}
+                  trailing={<MediaStatusPill status={row.state.status} onClick={row.state.status === 'wishlist' ? () => onStatus(row.item, 'watched', 'neutral') : undefined} />}
                   providerTrailing={row.item.mediaType === 'tv' && (row.state.status === 'watched' || row.state.status === 'watching') ? (
                     <button type="button" onClick={() => onExpandShow(expandedShowId === row.item.id ? null : row.item.id)} className="flex h-6 w-6 items-center justify-center text-[var(--media-muted)]" aria-label={expandedShowId === row.item.id ? 'Hide seasons' : 'Show seasons'}>
                       <ChevronDown className={`h-4 w-4 transition-transform ${expandedShowId === row.item.id ? 'rotate-180' : ''}`} strokeWidth={2.3} />
@@ -1389,6 +1500,7 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                         onLoadSeason={onLoadSeason}
                         onEpisode={onEpisode}
                         onSeason={onSeason}
+                        assumeAllWatched={row.state.status === 'watched'}
                       />
                     ) : null}
                   </div>
@@ -1475,7 +1587,25 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
           {filtered.map(row => (
-            <SwipeRow key={row.state.id} onDelete={() => onDelete(row.state)} wrapClassName="rounded-[16px]">
+            <SwipeRow
+              key={row.state.id}
+              wrapClassName="rounded-[16px]"
+              actions={[
+                ...(activeTab !== 'watchlist' && !row.state.watchlist ? [{
+                  key: 'watchlist',
+                  label: 'Add to Watchlist',
+                  bg: '#AF52DE',
+                  onClick: () => onWatchlist(row.item, true),
+                }] : []),
+                {
+                  key: 'remove',
+                  label: 'Remove from list',
+                  className: 'bg-red',
+                  closeOnClick: false,
+                  onClick: () => onDelete(row.state),
+                },
+              ]}
+            >
               <CompactMediaRow
                 item={row.item}
                 selectedProviderIds={selectedProviderIds}
@@ -1483,13 +1613,7 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
                 rating={row.state.rating}
                 onOpen={onOpen}
                 onRating={row.state.status === 'watched' || row.state.status === 'watching' ? rating => onRating(row.item, rating) : undefined}
-                trailing={
-                  activeTab === 'watchlist' ? (
-                    <button type="button" onClick={() => onSeen(row.item, row.state.status !== 'watched')} className={`flex h-9 w-9 items-center justify-center rounded-[9px] border ${row.state.status === 'watched' ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] bg-[var(--media-panel-2)] text-[var(--media-muted)]'}`} aria-label={row.state.status === 'watched' ? 'Remove family seen' : 'Mark seen by family'}>
-                      <Eye className="h-4 w-4" strokeWidth={2} />
-                    </button>
-                  ) : null
-                }
+                trailing={<MediaStatusPill status={row.state.status} onClick={row.state.status === 'wishlist' ? () => onSeen(row.item, true) : undefined} />}
               />
             </SwipeRow>
           ))}
@@ -1499,7 +1623,7 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
   )
 }
 
-function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
   item: MediaItem
   progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
   seasonCache: Record<string, MediaSeasonPayload>
@@ -1508,6 +1632,7 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
   onLoadSeason: (item: MediaItem, seasonNumber: number) => void
   onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
+  assumeAllWatched?: boolean
 }) {
   const watched = new Set(progress.filter(row => row.watchedAt).map(row => row.episodeId))
   const seasons = (item.seasons ?? []).filter(season => Number(season.seasonNumber) > 0)
@@ -1522,8 +1647,10 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
             const episodes = cached?.episodes ?? []
             const expectedEpisodeCount = episodes.length || Number(raw.episodeCount ?? 0)
             const watchedCount = episodes.length
-              ? episodes.filter(episode => watched.has(episode.id)).length
-              : progress.filter(row => row.watchedAt && row.episodeId.startsWith(`${key}:e`)).length
+              ? episodes.filter(episode => assumeAllWatched || watched.has(episode.id)).length
+              : assumeAllWatched
+                ? expectedEpisodeCount
+                : progress.filter(row => row.watchedAt && row.episodeId.startsWith(`${key}:e`)).length
             const allWatched = expectedEpisodeCount > 0 && watchedCount >= expectedEpisodeCount
             const seasonSummary = watchedCount > 0 || cached
               ? `${watchedCount} of ${expectedEpisodeCount} watched`
@@ -1546,15 +1673,17 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
                 </div>
                 {openSeasonKey === key ? (
                   <div className="border-t border-[var(--media-line)] px-2 py-2">
-                    {error ? <p className="px-1 py-2 text-[13px] font-semibold text-red">{error}</p> : !cached ? <p className="px-1 py-2 text-[13px] font-semibold text-[var(--media-muted)]">Loading episodes...</p> : cached.episodes.map(episode => (
-                      <button key={episode.id} type="button" onClick={() => onEpisode(item, episode, !watched.has(episode.id))} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left active:bg-[var(--media-panel-2)]">
-                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${watched.has(episode.id) ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] text-transparent'}`}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
+                    {error ? <p className="px-1 py-2 text-[13px] font-semibold text-red">{error}</p> : !cached ? <p className="px-1 py-2 text-[13px] font-semibold text-[var(--media-muted)]">Loading episodes...</p> : cached.episodes.map(episode => {
+                      const episodeWatched = assumeAllWatched || watched.has(episode.id)
+                      return (
+                      <button key={episode.id} type="button" onClick={() => onEpisode(item, episode, !episodeWatched)} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left active:bg-[var(--media-panel-2)]">
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${episodeWatched ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] text-transparent'}`}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-bold text-[var(--media-ink)]">S{seasonNumber} E{episode.episodeNumber}: {episode.name}</span>
                           {episode.airDate ? <span className="block truncate text-[11px] font-semibold text-[var(--media-muted)]">{String(episode.airDate)}</span> : null}
                         </span>
                       </button>
-                    ))}
+                    )})}
                   </div>
                 ) : null}
               </div>
@@ -1712,9 +1841,12 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
   if (!item || !action) return null
   return (
     <div className="fixed inset-0 z-[70] flex items-end bg-black/45" onClick={onClose}>
-      <div className="media-page mx-auto w-full max-w-lg rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-4" onClick={event => event.stopPropagation()}>
+      <div className="media-page relative mx-auto w-full max-w-lg rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-4" onClick={event => event.stopPropagation()}>
+        <button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Cancel">
+          <X className="h-4.5 w-4.5" strokeWidth={2.2} />
+        </button>
         <div className="mx-auto h-1.5 w-10 rounded-full bg-[var(--media-faint)]" />
-        <h2 className="mt-5 text-[22px] font-bold text-[var(--media-ink)]">{item.title}</h2>
+        <h2 className="mt-5 pr-10 text-[22px] font-bold text-[var(--media-ink)]">{item.title}</h2>
         <p className="mt-1 text-[14px] text-[var(--media-muted)]">How much have you watched?</p>
         <div className="mt-5 grid gap-2">
           <button type="button" onClick={() => onChoose('all')} className="flex items-center gap-3 rounded-[16px] bg-accent px-4 py-4 text-left text-[15px] font-bold text-white"><Eye className="h-5 w-5" strokeWidth={2.2} />Watched all episodes</button>
@@ -1725,7 +1857,7 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
   )
 }
 
-function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeasonKey, onClose, onLoadSeason, onEpisode, onSeason }: {
+function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeasonKey, onClose, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
   item: MediaItem | null
   progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
   seasonCache: Record<string, MediaSeasonPayload>
@@ -1735,6 +1867,7 @@ function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeason
   onLoadSeason: (item: MediaItem, seasonNumber: number) => void
   onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
+  assumeAllWatched?: boolean
 }) {
   if (!item) return null
   return (
@@ -1759,6 +1892,7 @@ function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeason
             onLoadSeason={onLoadSeason}
             onEpisode={onEpisode}
             onSeason={onSeason}
+            assumeAllWatched={assumeAllWatched}
           />
         </div>
       </div>
