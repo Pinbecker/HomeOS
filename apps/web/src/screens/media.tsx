@@ -348,6 +348,7 @@ export function MediaPage() {
   async function handleAction(item: MediaItem, action: keyof typeof actionMeta | 'skip', options: { advance?: boolean } = {}): Promise<ActionResult> {
     const shouldAdvance = options.advance ?? true
     if (action === 'skip') {
+      await syncMediaItem(item)
       await recordMediaInteraction(item, 'skip')
       notify('Skipped')
       if (shouldAdvance) advance()

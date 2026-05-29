@@ -1081,6 +1081,7 @@ function HomePeriodCard({ entry, onEnd }: { entry: CycleEntry; onEnd: () => void
 
 export function DashboardPage() {
   const sessionUser = useSessionState(state => state.user)
+  const appReady = useAppState(state => state.ready)
   const snapshot = useAppState(state => {
     const now = new Date()
     const startToday = startOfLocalDay(now)
@@ -1309,6 +1310,16 @@ export function DashboardPage() {
         cycleEntries: prev.data.cycleEntries.map(row => row.id === entry.id ? payload : row),
       },
     }))
+  }
+
+  if (!appReady) {
+    return (
+      <ScreenShell title="Home" showHeader={false}>
+        <div className="flex min-h-[55dvh] items-center justify-center px-6 text-center">
+          <p className="text-[14px] font-semibold text-text-2">Loading Home...</p>
+        </div>
+      </ScreenShell>
+    )
   }
 
   return (

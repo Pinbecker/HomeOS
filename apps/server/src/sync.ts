@@ -573,6 +573,7 @@ async function createMediaInteraction(userId: string, mutation: SyncMutation) {
   const payload = mutation.payload ?? {}
   const mediaItemId = payload.mediaItemId as string | undefined
   if (!mediaItemId) throw new Error('Media item is required')
+  await ensureMediaItemExistsForInteraction(mediaItemId)
 
   await db.insert(mediaInteractions).values({
     id: mutation.entityId,
@@ -582,6 +583,45 @@ async function createMediaInteraction(userId: string, mutation: SyncMutation) {
     action: (payload.action as typeof mediaInteractions.$inferInsert.action | undefined) ?? 'skip',
     source: (payload.source as string | null | undefined) ?? null,
     createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : new Date(),
+  })
+}
+
+async function ensureMediaItemExistsForInteraction(mediaItemId: string) {
+  const existing = await db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mediaItemId) })
+  if (existing) return
+
+  const [mediaType, tmdbIdText] = mediaItemId.split(':')
+  const tmdbId = Number(tmdbIdText)
+  if ((mediaType !== 'movie' && mediaType !== 'tv') || !Number.isFinite(tmdbId)) {
+    throw new Error('Media item is required')
+  }
+
+  const now = new Date()
+  await db.insert(mediaItems).values({
+    id: mediaItemId,
+    tmdbId,
+    mediaType,
+    title: 'Unknown media',
+    originalTitle: null,
+    overview: null,
+    posterPath: null,
+    backdropPath: null,
+    releaseDate: null,
+    firstAirDate: null,
+    year: null,
+    runtimeMinutes: null,
+    episodeRunTime: null,
+    genres: null,
+    originCountry: null,
+    originalLanguage: null,
+    voteAverageX10: null,
+    voteCount: null,
+    popularityX100: null,
+    providers: null,
+    seasons: null,
+    credits: null,
+    createdAt: now,
+    updatedAt: now,
   })
 }
 
