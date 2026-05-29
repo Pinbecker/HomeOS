@@ -26,6 +26,7 @@ type StoredCategorySettings = {
   custom?: Array<CategoryMeta & Record<string, unknown>>
   overrides?: Record<string, Partial<CategoryMeta>>
   deleted?: string[]
+  order?: string[]
 }
 
 export type AiPlanningContext = {
@@ -61,7 +62,14 @@ function categoriesFromSettings(settings: unknown) {
       label: category.label,
       defaultFields: category.defaultFields?.length ? category.defaultFields : ['Provider', 'Account / reference', 'Phone'],
     }))
-  return [...builtins, ...custom]
+  const categories = [...builtins, ...custom]
+  if (!recordCategories?.order?.length) return categories
+  const order = new Map(recordCategories.order.map((key, index) => [key, index]))
+  return [...categories].sort((a, b) => {
+    const aIndex = order.get(a.key) ?? Number.MAX_SAFE_INTEGER
+    const bIndex = order.get(b.key) ?? Number.MAX_SAFE_INTEGER
+    return aIndex === bIndex ? categories.indexOf(a) - categories.indexOf(b) : aIndex - bIndex
+  })
 }
 
 export async function loadAiPlanningContext(currentUser: AiPlanningContext['currentUser']): Promise<AiPlanningContext> {
