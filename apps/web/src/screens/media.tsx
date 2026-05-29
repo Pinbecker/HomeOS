@@ -9,7 +9,6 @@ import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLa
 type Tab = 'swipe' | 'search' | 'mine' | 'family' | 'services'
 type MyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
 type FamilyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
-type MediaFilter = 'all' | 'movie' | 'tv'
 type MediaWatchStatus = MediaUserStatus | MediaFamilyStatus
 type ProgressLike = { mediaItemId?: string; episodeId: string; watchedAt?: string | number | Date | null }
 type MediaCredits = {
@@ -164,13 +163,9 @@ export function MediaPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [myListTab, setMyListTab] = useState<MyListTab>('watchlist')
-  const [myListFilter, setMyListFilter] = useState<MediaFilter>('all')
   const [myListSearch, setMyListSearch] = useState('')
-  const [myListGenre, setMyListGenre] = useState('all')
   const [familyListTab, setFamilyListTab] = useState<FamilyListTab>('watchlist')
-  const [familyListFilter, setFamilyListFilter] = useState<MediaFilter>('all')
   const [familyListSearch, setFamilyListSearch] = useState('')
-  const [familyListGenre, setFamilyListGenre] = useState('all')
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null)
   const [dismissedDiscoverIds, setDismissedDiscoverIds] = useState<Set<string>>(() => new Set())
   const [seasonCache, setSeasonCache] = useState<Record<string, MediaSeasonPayload>>({})
@@ -713,21 +708,21 @@ export function MediaPage() {
   return (
     <div className="media-page min-h-dvh bg-[var(--media-bg)] text-[var(--media-ink)]">
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col">
-        <header className="safe-top sticky top-0 z-20 border-b border-[var(--media-line)] bg-[color-mix(in_srgb,var(--media-bg)_90%,transparent)] px-4 pb-3 pt-3 backdrop-blur-xl">
+        <header className="safe-top sticky top-0 z-20 border-b border-[var(--media-line)] bg-[color-mix(in_srgb,var(--media-bg)_90%,transparent)] px-4 pb-2 pt-2 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--media-faint)]">HomeOS</p>
-              <h1 className="mt-0.5 text-[24px] font-bold text-[var(--media-ink)]">Media</h1>
+              <h1 className="text-[22px] font-bold text-[var(--media-ink)]">Media</h1>
             </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-[13px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1 no-scrollbar">
             {tabs.map(option => (
               <button
                 key={option.id}
                 type="button"
                 onClick={() => setTab(option.id)}
-                className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-bold transition ${
+                className={`shrink-0 rounded-[10px] px-3 py-1.5 text-[12px] font-bold transition ${
                   tab === option.id ? 'bg-[var(--media-yellow-soft)] text-[var(--media-ink)]' : 'text-[var(--media-muted)]'
                 }`}
               >
@@ -738,7 +733,7 @@ export function MediaPage() {
           </div>
         </header>
 
-        <main className={`flex-1 px-4 pt-3 ${tab === 'swipe' ? 'overflow-hidden pb-20' : 'pb-28'}`}>
+        <main className={`flex-1 px-4 pt-2 ${tab === 'swipe' ? 'overflow-hidden pb-20' : 'pb-28'}`}>
           {error ? <div className="mb-3 rounded-[16px] border border-red/20 bg-red/10 px-4 py-3 text-[13px] font-semibold text-red">{error}</div> : null}
           {tab === 'swipe' ? (
             <SwipeView
@@ -774,13 +769,9 @@ export function MediaPage() {
             <MyListsView
               rows={myRows}
               activeTab={myListTab}
-              activeFilter={myListFilter}
               search={myListSearch}
-              activeGenre={myListGenre}
               setActiveTab={setMyListTab}
-              setActiveFilter={setMyListFilter}
               setSearch={setMyListSearch}
-              setActiveGenre={setMyListGenre}
               selectedProviderIds={selectedProviderIds}
               onStatus={async (item, status, rating) => {
                 if (item.mediaType === 'tv' && status === 'watched') {
@@ -818,13 +809,9 @@ export function MediaPage() {
             <FamilyView
               rows={familyRows}
               activeTab={familyListTab}
-              activeFilter={familyListFilter}
               search={familyListSearch}
-              activeGenre={familyListGenre}
               setActiveTab={setFamilyListTab}
-              setActiveFilter={setFamilyListFilter}
               setSearch={setFamilyListSearch}
-              setActiveGenre={setFamilyListGenre}
               selectedProviderIds={selectedProviderIds}
               onWatchlist={async (item, enabled) => {
                 await setFamilyMediaWatchlist(item, enabled)
@@ -1556,16 +1543,12 @@ function MediaStatusPill({ status, onClick }: { status: MediaUserStatus | MediaF
   return null
 }
 
-function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onStatus, onRating, onWatchlist, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onStatus, onRating, onWatchlist, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaUserState; item: MediaItem }>
   activeTab: MyListTab
-  activeFilter: MediaFilter
   search: string
-  activeGenre: string
   setActiveTab: (tab: MyListTab) => void
-  setActiveFilter: (filter: MediaFilter) => void
   setSearch: (value: string) => void
-  setActiveGenre: (value: string) => void
   selectedProviderIds: number[]
   onStatus: (item: MediaItem, status: MediaUserStatus, rating?: 'liked' | 'neutral' | 'disliked' | null) => void
   onRating: (item: MediaItem, rating: 'liked' | 'disliked' | null, status?: MediaUserStatus) => void
@@ -1597,16 +1580,13 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
     if (activeTab === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   })
-  const genres = Array.from(new Set(baseRows.flatMap(row => row.item.genres ?? []))).sort((a, b) => a.localeCompare(b)).slice(0, 16)
   const filtered = baseRows.filter(row => {
-    if (activeFilter !== 'all' && row.item.mediaType !== activeFilter) return false
-    if (activeGenre !== 'all' && !(row.item.genres ?? []).includes(activeGenre)) return false
     return matchesMediaSearch(row.item, search)
   })
 
   return (
-    <section className="space-y-3">
-      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
+    <section className="space-y-2">
+      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-0.5">
         {([
           ['watchlist', 'Watchlist', countFor('watchlist')],
           ['tracking', 'Tracking', countFor('tracking')],
@@ -1616,18 +1596,15 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
           <button
             key={id}
             type="button"
-            onClick={() => {
-              setActiveTab(id)
-              setActiveGenre('all')
-            }}
-            className={`rounded-[9px] px-1.5 py-2 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}
+            onClick={() => setActiveTab(id)}
+            className={`rounded-[9px] px-1.5 py-1.5 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}
           >
             <span className="block text-[12px] font-bold leading-none">{label}</span>
-            <span className="mt-1 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
+            <span className="mt-0.5 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
           </button>
         ))}
       </div>
-      <label className="flex items-center gap-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-panel)] px-3 py-2.5 shadow-sm">
+      <label className="flex items-center gap-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-panel)] px-3 py-2 shadow-sm">
         <Search className="h-4.5 w-4.5 text-[var(--media-faint)]" strokeWidth={2} />
         <input
           value={search}
@@ -1637,23 +1614,6 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
         />
         {search ? <button type="button" onClick={() => setSearch('')} className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Clear list search"><X className="h-4 w-4" /></button> : null}
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
-          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
-            <option value="all">All</option>
-            <option value="movie">Films</option>
-            <option value="tv">TV</option>
-          </select>
-        </label>
-        <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
-          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
-            <option value="all">All categories</option>
-            {genres.map(genre => <option key={genre} value={genre}>{genre}</option>)}
-          </select>
-        </label>
-      </div>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
           {filtered.map(row => {
@@ -1719,16 +1679,12 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
   )
 }
 
-function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaFamilyState; item: MediaItem }>
   activeTab: FamilyListTab
-  activeFilter: MediaFilter
   search: string
-  activeGenre: string
   setActiveTab: (tab: FamilyListTab) => void
-  setActiveFilter: (filter: MediaFilter) => void
   setSearch: (value: string) => void
-  setActiveGenre: (value: string) => void
   selectedProviderIds: number[]
   onWatchlist: (item: MediaItem, enabled: boolean) => void
   onSeen: (item: MediaItem, enabled: boolean) => void
@@ -1760,50 +1716,30 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
     if (activeTab === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   })
-  const genres = Array.from(new Set(baseRows.flatMap(row => row.item.genres ?? []))).sort((a, b) => a.localeCompare(b)).slice(0, 16)
   const filtered = baseRows.filter(row => {
-    if (activeFilter !== 'all' && row.item.mediaType !== activeFilter) return false
-    if (activeGenre !== 'all' && !(row.item.genres ?? []).includes(activeGenre)) return false
     return matchesMediaSearch(row.item, search)
   })
 
   return (
-    <section className="space-y-3">
-      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
+    <section className="space-y-2">
+      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-0.5">
         {([
           ['watchlist', 'Watchlist', countFor('watchlist')],
           ['tracking', 'Tracking', countFor('tracking')],
           ['seen', 'Seen', countFor('seen')],
           ['liked', 'Liked', countFor('liked')],
         ] as Array<[FamilyListTab, string, number]>).map(([id, label, count]) => (
-          <button key={id} type="button" onClick={() => { setActiveTab(id); setActiveGenre('all') }} className={`rounded-[9px] px-1.5 py-2 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}>
+          <button key={id} type="button" onClick={() => setActiveTab(id)} className={`rounded-[9px] px-1.5 py-1.5 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}>
             <span className="block text-[12px] font-bold leading-none">{label}</span>
-            <span className="mt-1 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
+            <span className="mt-0.5 block text-[10px] font-bold leading-none text-[var(--media-faint)]">{count}</span>
           </button>
         ))}
       </div>
-      <label className="flex items-center gap-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-panel)] px-3 py-2.5 shadow-sm">
+      <label className="flex items-center gap-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-panel)] px-3 py-2 shadow-sm">
         <Search className="h-4.5 w-4.5 text-[var(--media-faint)]" strokeWidth={2} />
         <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search family list" className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-[var(--media-ink)] outline-none placeholder:text-[var(--media-faint)]" />
         {search ? <button type="button" onClick={() => setSearch('')} className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Clear family search"><X className="h-4 w-4" /></button> : null}
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Type</span>
-          <select value={activeFilter} onChange={event => setActiveFilter(event.target.value as MediaFilter)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
-            <option value="all">All</option>
-            <option value="movie">Films</option>
-            <option value="tv">TV</option>
-          </select>
-        </label>
-        <label className="rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] px-2.5 py-2">
-          <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--media-faint)]">Category</span>
-          <select value={activeGenre} onChange={event => setActiveGenre(event.target.value)} className="mt-1 w-full bg-transparent text-[13px] font-bold text-[var(--media-ink)] outline-none">
-            <option value="all">All categories</option>
-            {genres.map(genre => <option key={genre} value={genre}>{genre}</option>)}
-          </select>
-        </label>
-      </div>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
           {filtered.map(row => {
