@@ -7,9 +7,11 @@ import { useSessionState } from '../lib/session-store'
 import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setEpisodesWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, type MediaSeasonPayload, yearLabel } from '../lib/media'
 
 type Tab = 'swipe' | 'search' | 'mine' | 'family' | 'services'
-type MyListTab = 'watchlist' | 'seen' | 'liked'
-type FamilyListTab = 'watchlist' | 'seen' | 'liked'
+type MyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
+type FamilyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
 type MediaFilter = 'all' | 'movie' | 'tv'
+type MediaWatchStatus = MediaUserStatus | MediaFamilyStatus
+type ProgressLike = { mediaItemId?: string; episodeId: string; watchedAt?: string | number | Date | null }
 type MediaCredits = {
   cast?: Array<{ id?: number; name?: string; character?: string | null }>
   crew?: Array<{ id?: number; name?: string; job?: string | null }>
@@ -156,6 +158,7 @@ export function MediaPage() {
   const [tvSheetItem, setTvSheetItem] = useState<MediaItem | null>(null)
   const [tvSheetAction, setTvSheetAction] = useState<TvSheetAction>(null)
   const [tvSheetAdvanceOnChoose, setTvSheetAdvanceOnChoose] = useState(true)
+  const [tvSheetClearWatchlistOnChoose, setTvSheetClearWatchlistOnChoose] = useState(false)
   const [progressSheetItem, setProgressSheetItem] = useState<MediaItem | null>(null)
   const [detailItem, setDetailItem] = useState<MediaItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -214,10 +217,34 @@ export function MediaPage() {
   const visibleFeed = useMemo(() => feed.filter(item => !excludedDiscoverIds.has(item.id) && !dismissedDiscoverIds.has(item.id)), [dismissedDiscoverIds, excludedDiscoverIds, feed])
   const current = visibleFeed[feedIndex] ?? null
   const next = visibleFeed[feedIndex + 1] ?? null
+  const detailOpen = Boolean(detailItem)
   const detailUserState = detailItem ? userStates.find(row => row.userId === userId && row.mediaItemId === detailItem.id) ?? null : null
   const detailFamilyState = detailItem ? familyStates.find(row => row.mediaItemId === detailItem.id && row.status !== 'not_interested') ?? null : null
   const progressSheetUserState = progressSheetItem ? userStates.find(row => row.userId === userId && row.mediaItemId === progressSheetItem.id) ?? null : null
   const userProgress = useMemo(() => progress.filter(row => row.scopeType === 'user' && row.scopeId === userId), [progress, userId])
+  const familyProgress = useMemo(() => progress.filter(row => row.scopeType === 'family' && row.scopeId === (household?.id ?? 'default')), [household?.id, progress])
+
+  useEffect(() => {
+    let cancelled = false
+    async function reconcileProgressState() {
+      for (const row of myRows) {
+        const progressStatus = progressDrivenTvStatus(row.item, userProgress)
+        if (!progressStatus || (row.state.status === progressStatus && !row.state.watchlist)) continue
+        if (cancelled) return
+        await setUserMediaState(row.item, progressStatus, row.state.rating ?? 'neutral', { watchlist: false })
+      }
+      for (const row of familyRows) {
+        const progressStatus = progressDrivenTvStatus(row.item, familyProgress)
+        if (!progressStatus || (row.state.status === progressStatus && !row.state.watchlist)) continue
+        if (cancelled) return
+        await setFamilyMediaState(row.item, progressStatus, row.state.rating ?? 'neutral', { watchlist: false })
+      }
+    }
+    void reconcileProgressState()
+    return () => {
+      cancelled = true
+    }
+  }, [familyProgress, familyRows, myRows, userProgress])
 
   useEffect(() => {
     loadFeed(1, true, { ensureVisible: true }).catch(() => undefined)
@@ -277,6 +304,37 @@ export function MediaPage() {
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll
     }
   }, [tab])
+
+  useEffect(() => {
+    if (!detailOpen) return undefined
+    const scrollY = window.scrollY
+    const previousBodyPosition = document.body.style.position
+    const previousBodyTop = document.body.style.top
+    const previousBodyWidth = document.body.style.width
+    const previousBodyOverflow = document.body.style.overflow
+    const previousBodyOverscroll = document.body.style.overscrollBehavior
+    const previousHtmlOverflow = document.documentElement.style.overflow
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior
+
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollY}px`
+    document.body.style.width = '100%'
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'none'
+    document.documentElement.style.overflow = 'hidden'
+    document.documentElement.style.overscrollBehavior = 'none'
+
+    return () => {
+      document.body.style.position = previousBodyPosition
+      document.body.style.top = previousBodyTop
+      document.body.style.width = previousBodyWidth
+      document.body.style.overflow = previousBodyOverflow
+      document.body.style.overscrollBehavior = previousBodyOverscroll
+      document.documentElement.style.overflow = previousHtmlOverflow
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll
+      window.scrollTo(0, scrollY)
+    }
+  }, [detailOpen])
 
   function visibleDiscoverItems(source: MediaItem[], dismissedIds = dismissedDiscoverIds) {
     return source.filter(item => !excludedDiscoverIds.has(item.id) && !dismissedIds.has(item.id))
@@ -359,6 +417,7 @@ export function MediaPage() {
       setTvSheetItem(detailed)
       setTvSheetAction(action)
       setTvSheetAdvanceOnChoose(shouldAdvance)
+      setTvSheetClearWatchlistOnChoose(false)
       return 'pending_tv'
     }
     await applyMediaAction(detailed, action)
@@ -373,9 +432,9 @@ export function MediaPage() {
     feedbackTimerRef.current = window.setTimeout(() => setFeedback(null), 1800)
   }
 
-  async function applyMediaAction(item: MediaItem, action: keyof typeof actionMeta, extraStatus?: MediaUserStatus) {
+  async function applyMediaAction(item: MediaItem, action: keyof typeof actionMeta, extraStatus?: MediaUserStatus, options: { watchlist?: boolean } = {}) {
     const meta = actionMeta[action]
-    await setUserMediaState(item, extraStatus ?? meta.status, meta.rating)
+    await setUserMediaState(item, extraStatus ?? meta.status, meta.rating, options)
     await recordMediaInteraction(item, action)
   }
 
@@ -480,6 +539,26 @@ export function MediaPage() {
     }))))
   }
 
+  async function removeUserListMembership(row: MediaUserState, item: MediaItem, list: MyListTab) {
+    if (list === 'watchlist') {
+      await setUserMediaWatchlist(item, false)
+      notify('Removed from watchlist')
+      return
+    }
+    if (list === 'liked') {
+      await setUserMediaState(item, row.status === 'wishlist' ? 'watched' : row.status, null)
+      notify('Removed from liked')
+      return
+    }
+    if (row.watchlist) {
+      await setUserMediaSeen(item, false)
+      notify(list === 'tracking' ? 'Removed from tracking' : 'Removed from seen')
+      return
+    }
+    await deleteUserState(row)
+    notify(list === 'tracking' ? 'Removed from tracking' : 'Removed from seen')
+  }
+
   async function deleteFamilyState(row: MediaFamilyState) {
     const relatedProgress = getCurrentState().data.mediaEpisodeProgress
       .filter(progressRow => progressRow.scopeType === 'family' && progressRow.scopeId === row.householdId && progressRow.mediaItemId === row.mediaItemId)
@@ -513,31 +592,52 @@ export function MediaPage() {
     }))))
   }
 
-  async function setSeasonWatched(item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) {
+  async function removeFamilyListMembership(row: MediaFamilyState, item: MediaItem, list: FamilyListTab) {
+    if (list === 'watchlist') {
+      await setFamilyMediaWatchlist(item, false)
+      notify('Removed from family watchlist')
+      return
+    }
+    if (list === 'liked') {
+      await setFamilyMediaState(item, row.status === 'wishlist' ? 'watched' : row.status, null)
+      notify('Removed from family liked')
+      return
+    }
+    if (row.watchlist) {
+      await setFamilyMediaSeen(item, false)
+      notify(list === 'tracking' ? 'Removed from family tracking' : 'Removed from family seen')
+      return
+    }
+    await deleteFamilyState(row)
+    notify(list === 'tracking' ? 'Removed from family tracking' : 'Removed from family seen')
+  }
+
+  async function setSeasonWatched(item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean, scope: 'user' | 'family' = 'user') {
     const targetEpisodes = episodes.length ? episodes : await ensureSeason(item, seasonNumber)
     if (!targetEpisodes.length) {
       notify('Episodes failed to load')
       return
     }
-    await setEpisodesWatched(item, targetEpisodes, watched)
+    await setEpisodesWatched(item, targetEpisodes, watched, scope)
     notify(watched ? 'Season marked watched' : 'Season marked unwatched')
   }
 
-  async function setAllSeasonsWatched(item: MediaItem, watched: boolean) {
+  async function setAllSeasonsWatched(item: MediaItem, watched: boolean, scope: 'user' | 'family' = 'user') {
     const seasons = (item.seasons ?? [])
       .map(season => Number(season.seasonNumber))
       .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0)
     const episodes = (await Promise.all(seasons.map(seasonNumber => ensureSeason(item, seasonNumber)))).flat()
-    await setEpisodesWatched(item, episodes, watched)
+    await setEpisodesWatched(item, episodes, watched, scope)
   }
 
-  function isShowFullyWatched(item: MediaItem) {
+  function isShowFullyWatched(item: MediaItem, scope: 'user' | 'family' = 'user') {
     const expectedEpisodeCount = (item.seasons ?? [])
       .filter(season => Number(season.seasonNumber) > 0)
       .reduce((total, season) => total + Number(season.episodeCount ?? 0), 0)
     if (!expectedEpisodeCount) return false
+    const scopeId = scope === 'user' ? userId : household?.id ?? 'default'
     const watchedEpisodeIds = new Set(getCurrentState().data.mediaEpisodeProgress
-      .filter(row => row.scopeType === 'user' && row.scopeId === userId && row.mediaItemId === item.id && row.watchedAt)
+      .filter(row => row.scopeType === scope && row.scopeId === scopeId && row.mediaItemId === item.id && row.watchedAt)
       .map(row => row.episodeId))
     return watchedEpisodeIds.size >= expectedEpisodeCount
   }
@@ -549,23 +649,65 @@ export function MediaPage() {
     await setUserMediaState(item, 'watched', state.rating ?? 'neutral')
   }
 
+  async function reconcileFamilyTvWatchStatus(item: MediaItem) {
+    if (item.mediaType !== 'tv') return
+    const state = getCurrentState().data.mediaFamilyStates.find(row => row.mediaItemId === item.id)
+    if (!state || state.status === 'watched' || !isShowFullyWatched(item, 'family')) return
+    await setFamilyMediaState(item, 'watched', state.rating ?? 'neutral')
+  }
+
   async function prepareWatchedShowForPartialProgress(item: MediaItem) {
     const state = getCurrentState().data.mediaUserStates.find(row => row.userId === userId && row.mediaItemId === item.id)
     if (state?.status !== 'watched') return
     await setAllSeasonsWatched(item, true)
-    await setUserMediaState(item, 'watching', state.rating ?? 'neutral')
+    await setUserMediaState(item, 'watching', state.rating ?? 'neutral', { watchlist: false })
+  }
+
+  async function prepareFamilyWatchedShowForPartialProgress(item: MediaItem) {
+    const state = getCurrentState().data.mediaFamilyStates.find(row => row.mediaItemId === item.id)
+    if (state?.status !== 'watched') return
+    await setAllSeasonsWatched(item, true, 'family')
+    await setFamilyMediaState(item, 'watching', state.rating ?? 'neutral', { watchlist: false })
+  }
+
+  async function promoteShowToTracking(item: MediaItem) {
+    const state = getCurrentState().data.mediaUserStates.find(row => row.userId === userId && row.mediaItemId === item.id)
+    if (state?.status === 'watching' || state?.status === 'watched') return
+    await setUserMediaState(item, 'watching', state?.rating ?? 'neutral', { watchlist: false })
+  }
+
+  async function promoteFamilyShowToTracking(item: MediaItem) {
+    const state = getCurrentState().data.mediaFamilyStates.find(row => row.mediaItemId === item.id)
+    if (state?.status === 'watching' || state?.status === 'watched') return
+    await setFamilyMediaState(item, 'watching', state?.rating ?? 'neutral', { watchlist: false })
   }
 
   async function setEpisodeProgressWatched(item: MediaItem, episode: MediaEpisode, watched: boolean) {
     if (!watched) await prepareWatchedShowForPartialProgress(item)
+    if (watched) await promoteShowToTracking(item)
     await setEpisodeWatched(item, episode, watched)
     if (watched) await reconcileTvWatchStatus(item)
   }
 
   async function setSeasonProgressWatched(item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) {
     if (!watched) await prepareWatchedShowForPartialProgress(item)
+    if (watched) await promoteShowToTracking(item)
     await setSeasonWatched(item, seasonNumber, episodes, watched)
     if (watched) await reconcileTvWatchStatus(item)
+  }
+
+  async function setFamilyEpisodeProgressWatched(item: MediaItem, episode: MediaEpisode, watched: boolean) {
+    if (!watched) await prepareFamilyWatchedShowForPartialProgress(item)
+    if (watched) await promoteFamilyShowToTracking(item)
+    await setEpisodeWatched(item, episode, watched, 'family')
+    if (watched) await reconcileFamilyTvWatchStatus(item)
+  }
+
+  async function setFamilySeasonProgressWatched(item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) {
+    if (!watched) await prepareFamilyWatchedShowForPartialProgress(item)
+    if (watched) await promoteFamilyShowToTracking(item)
+    await setSeasonWatched(item, seasonNumber, episodes, watched, 'family')
+    if (watched) await reconcileFamilyTvWatchStatus(item)
   }
 
   return (
@@ -645,9 +787,10 @@ export function MediaPage() {
                   setTvSheetItem(item)
                   setTvSheetAction(rating === 'liked' ? 'watched_liked' : rating === 'disliked' ? 'watched_disliked' : 'watched_neutral')
                   setTvSheetAdvanceOnChoose(false)
+                  setTvSheetClearWatchlistOnChoose(myListTab === 'watchlist')
                   return
                 }
-                await setUserMediaState(item, status, rating)
+                await setUserMediaState(item, status, rating, { watchlist: myListTab === 'watchlist' && status === 'watched' ? false : undefined })
                 notify(status === 'wishlist' ? 'Added to watchlist' : rating === 'liked' ? 'Marked liked' : rating === 'disliked' ? 'Marked disliked' : 'Updated')
               }}
               onRating={async (item, rating, status = 'watched') => {
@@ -658,7 +801,7 @@ export function MediaPage() {
                 await setUserMediaWatchlist(item, enabled)
                 notify(enabled ? 'Added to watchlist' : 'Removed from watchlist')
               }}
-              onDelete={deleteUserState}
+              onDelete={removeUserListMembership}
               onOpen={openDetails}
               expandedShowId={expandedShowId}
               onExpandShow={setExpandedShowId}
@@ -696,8 +839,17 @@ export function MediaPage() {
                 await setFamilyMediaState(item, 'watched', existing?.rating === rating ? null : rating)
                 notify(existing?.rating === rating ? 'Family rating cleared' : rating === 'liked' ? 'Family liked' : 'Family disliked')
               }}
-              onDelete={deleteFamilyState}
+              onDelete={removeFamilyListMembership}
               onOpen={openDetails}
+              expandedShowId={expandedShowId}
+              onExpandShow={setExpandedShowId}
+              progress={familyProgress}
+              seasonCache={seasonCache}
+              seasonErrors={seasonErrors}
+              openSeasonKey={openSeasonKey}
+              onLoadSeason={loadSeason}
+              onEpisode={setFamilyEpisodeProgressWatched}
+              onSeason={setFamilySeasonProgressWatched}
             />
           ) : null}
           {tab === 'services' ? (
@@ -723,21 +875,24 @@ export function MediaPage() {
           setTvSheetItem(null)
           setTvSheetAction(null)
           setTvSheetAdvanceOnChoose(true)
+          setTvSheetClearWatchlistOnChoose(false)
         }}
         onChoose={mode => {
           if (!tvSheetItem || !tvSheetAction) return
           const item = tvSheetItem
           const action = tvSheetAction
           const shouldAdvance = tvSheetAdvanceOnChoose
+          const clearWatchlist = tvSheetClearWatchlistOnChoose
           setTvSheetItem(null)
           setTvSheetAction(null)
           setTvSheetAdvanceOnChoose(true)
+          setTvSheetClearWatchlistOnChoose(false)
           if (mode === 'all') {
             notify('Marked all episodes watched')
             if (shouldAdvance) advance()
             void (async () => {
               try {
-                await applyMediaAction(item, action, 'watched')
+                await applyMediaAction(item, action, 'watched', { watchlist: clearWatchlist ? false : undefined })
                 await setAllSeasonsWatched(item, true)
               } catch (error) {
                 setError(error instanceof Error ? error.message : 'Episode progress failed to save')
@@ -751,7 +906,7 @@ export function MediaPage() {
             notify('Added to watching')
             void (async () => {
               try {
-                await setUserMediaState(item, 'watching', actionMeta[action].rating)
+                await setUserMediaState(item, 'watching', actionMeta[action].rating, { watchlist: clearWatchlist ? false : undefined })
                 await recordMediaInteraction(item, action)
               } catch (error) {
                 setError(error instanceof Error ? error.message : 'TV progress failed to save')
@@ -789,6 +944,7 @@ export function MediaPage() {
             setTvSheetItem(item)
             setTvSheetAction('watched_neutral')
             setTvSheetAdvanceOnChoose(false)
+            setTvSheetClearWatchlistOnChoose(true)
             return
           }
           await setUserMediaSeen(item, enabled)
@@ -800,6 +956,7 @@ export function MediaPage() {
             setTvSheetItem(item)
             setTvSheetAction(rating === 'liked' ? 'watched_liked' : 'watched_disliked')
             setTvSheetAdvanceOnChoose(false)
+            setTvSheetClearWatchlistOnChoose(false)
             return
           }
           await setUserMediaState(item, item.mediaType === 'tv' ? detailUserState?.status ?? 'watching' : 'watched', nextRating)
@@ -1232,7 +1389,7 @@ function SearchView({ query, setQuery, searching, results, userStates, userId, s
       </label>
       <div className="mt-4 space-y-3">
         {searching ? <p className="px-1 text-[13px] font-semibold text-[var(--media-muted)]">Searching...</p> : null}
-        {results.map(item => <CompactMediaRow key={item.id} item={item} watchlistActive={userStates.some(row => row.userId === userId && row.mediaItemId === item.id && row.status === 'wishlist' && Boolean(row.watchlist))} selectedProviderIds={selectedProviderIds} onAction={onAction} onOpen={onOpen} />)}
+        {results.map(item => <CompactMediaRow key={item.id} item={item} watchlistActive={userStates.some(row => row.userId === userId && row.mediaItemId === item.id && Boolean(row.watchlist))} selectedProviderIds={selectedProviderIds} onAction={onAction} onOpen={onOpen} />)}
         {!searching && query.trim().length >= 2 && !results.length ? <EmptyCard text="No matches found." /> : null}
       </div>
     </section>
@@ -1413,11 +1570,11 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
   onStatus: (item: MediaItem, status: MediaUserStatus, rating?: 'liked' | 'neutral' | 'disliked' | null) => void
   onRating: (item: MediaItem, rating: 'liked' | 'disliked' | null, status?: MediaUserStatus) => void
   onWatchlist: (item: MediaItem, enabled: boolean) => void
-  onDelete: (row: MediaUserState) => void
+  onDelete: (row: MediaUserState, item: MediaItem, list: MyListTab) => void
   onOpen: (item: MediaItem) => void
   expandedShowId: string | null
   onExpandShow: (id: string | null) => void
-  progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
+  progress: ProgressLike[]
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -1425,14 +1582,19 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
   onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
 }) {
+  const effectiveStatusFor = (row: { state: MediaUserState; item: MediaItem }) => effectiveTvProgressStatus(row.item, row.state.status, progress)
   const countFor = (target: MyListTab) => rows.filter(row => {
-    if (target === 'watchlist') return Boolean(row.state.watchlist) && row.state.status === 'wishlist'
-    if (target === 'seen') return row.state.status === 'watched' || row.state.status === 'watching'
+    const effectiveStatus = effectiveStatusFor(row)
+    if (target === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
+    if (target === 'tracking') return effectiveStatus === 'watching'
+    if (target === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   }).length
   const baseRows = rows.filter(row => {
-    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && row.state.status === 'wishlist'
-    if (activeTab === 'seen') return row.state.status === 'watched' || row.state.status === 'watching'
+    const effectiveStatus = effectiveStatusFor(row)
+    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
+    if (activeTab === 'tracking') return effectiveStatus === 'watching'
+    if (activeTab === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   })
   const genres = Array.from(new Set(baseRows.flatMap(row => row.item.genres ?? []))).sort((a, b) => a.localeCompare(b)).slice(0, 16)
@@ -1444,9 +1606,10 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
 
   return (
     <section className="space-y-3">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
+      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
         {([
           ['watchlist', 'Watchlist', countFor('watchlist')],
+          ['tracking', 'Tracking', countFor('tracking')],
           ['seen', 'Seen', countFor('seen')],
           ['liked', 'Liked', countFor('liked')],
         ] as Array<[MyListTab, string, number]>).map(([id, label, count]) => (
@@ -1493,7 +1656,9 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
       </div>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
-          {filtered.map(row => (
+          {filtered.map(row => {
+            const effectiveStatus = effectiveStatusFor(row)
+            return (
             <SwipeRow
               key={row.state.id}
               wrapClassName="rounded-[16px]"
@@ -1509,7 +1674,7 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                   label: 'Remove from list',
                   className: 'bg-red',
                   closeOnClick: false,
-                  onClick: () => onDelete(row.state),
+                  onClick: () => onDelete(row.state, row.item, activeTab),
                 },
               ]}
             >
@@ -1517,12 +1682,12 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                 <CompactMediaRow
                   item={row.item}
                   selectedProviderIds={selectedProviderIds}
-                  statusLabel={labelStatus(row.state.status)}
+                  statusLabel={labelStatus(effectiveStatus)}
                   rating={row.state.rating}
-                  onRating={row.state.status === 'watched' || row.state.status === 'watching' ? nextRating => onRating(row.item, row.state.rating === nextRating ? null : nextRating, row.state.status) : undefined}
+                  onRating={effectiveStatus === 'watched' || effectiveStatus === 'watching' ? nextRating => onRating(row.item, row.state.rating === nextRating ? null : nextRating, effectiveStatus as MediaUserStatus) : undefined}
                   onOpen={onOpen}
-                  trailing={<MediaStatusPill status={row.state.status} onClick={row.state.status === 'wishlist' ? () => onStatus(row.item, 'watched', 'neutral') : undefined} />}
-                  providerTrailing={row.item.mediaType === 'tv' && (row.state.status === 'watched' || row.state.status === 'watching') ? (
+                  trailing={<MediaStatusPill status={effectiveStatus} onClick={effectiveStatus === 'wishlist' ? () => onStatus(row.item, 'watched', 'neutral') : undefined} />}
+                  providerTrailing={row.item.mediaType === 'tv' && (activeTab === 'watchlist' || effectiveStatus === 'watched' || effectiveStatus === 'watching') ? (
                     <button type="button" onClick={() => onExpandShow(expandedShowId === row.item.id ? null : row.item.id)} className="flex h-6 w-6 items-center justify-center text-[var(--media-muted)]" aria-label={expandedShowId === row.item.id ? 'Hide seasons' : 'Show seasons'}>
                       <ChevronDown className={`h-4 w-4 transition-transform ${expandedShowId === row.item.id ? 'rotate-180' : ''}`} strokeWidth={2.3} />
                     </button>
@@ -1540,21 +1705,21 @@ function MyListsView({ rows, activeTab, activeFilter, search, activeGenre, setAc
                         onLoadSeason={onLoadSeason}
                         onEpisode={onEpisode}
                         onSeason={onSeason}
-                        assumeAllWatched={row.state.status === 'watched'}
+                        assumeAllWatched={effectiveStatus === 'watched'}
                       />
                     ) : null}
                   </div>
                 </div>
               </div>
             </SwipeRow>
-          ))}
+          )})}
         </div>
       )}
     </section>
   )
 }
 
-function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen }: {
+function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setActiveTab, setActiveFilter, setSearch, setActiveGenre, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaFamilyState; item: MediaItem }>
   activeTab: FamilyListTab
   activeFilter: MediaFilter
@@ -1568,17 +1733,31 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
   onWatchlist: (item: MediaItem, enabled: boolean) => void
   onSeen: (item: MediaItem, enabled: boolean) => void
   onRating: (item: MediaItem, rating: 'liked' | 'disliked') => void
-  onDelete: (row: MediaFamilyState) => void
+  onDelete: (row: MediaFamilyState, item: MediaItem, list: FamilyListTab) => void
   onOpen: (item: MediaItem) => void
+  expandedShowId: string | null
+  onExpandShow: (id: string | null) => void
+  progress: ProgressLike[]
+  seasonCache: Record<string, MediaSeasonPayload>
+  seasonErrors: Record<string, string>
+  openSeasonKey: string | null
+  onLoadSeason: (item: MediaItem, seasonNumber: number) => void
+  onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
+  onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
 }) {
+  const effectiveStatusFor = (row: { state: MediaFamilyState; item: MediaItem }) => effectiveTvProgressStatus(row.item, row.state.status, progress)
   const countFor = (target: FamilyListTab) => rows.filter(row => {
-    if (target === 'watchlist') return Boolean(row.state.watchlist) && row.state.status === 'wishlist'
-    if (target === 'seen') return row.state.status === 'watched' || row.state.status === 'watching'
+    const effectiveStatus = effectiveStatusFor(row)
+    if (target === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
+    if (target === 'tracking') return effectiveStatus === 'watching'
+    if (target === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   }).length
   const baseRows = rows.filter(row => {
-    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && row.state.status === 'wishlist'
-    if (activeTab === 'seen') return row.state.status === 'watched' || row.state.status === 'watching'
+    const effectiveStatus = effectiveStatusFor(row)
+    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
+    if (activeTab === 'tracking') return effectiveStatus === 'watching'
+    if (activeTab === 'seen') return effectiveStatus === 'watched'
     return row.state.rating === 'liked'
   })
   const genres = Array.from(new Set(baseRows.flatMap(row => row.item.genres ?? []))).sort((a, b) => a.localeCompare(b)).slice(0, 16)
@@ -1590,9 +1769,10 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
 
   return (
     <section className="space-y-3">
-      <div className="grid grid-cols-3 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
+      <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-1">
         {([
           ['watchlist', 'Watchlist', countFor('watchlist')],
+          ['tracking', 'Tracking', countFor('tracking')],
           ['seen', 'Seen', countFor('seen')],
           ['liked', 'Liked', countFor('liked')],
         ] as Array<[FamilyListTab, string, number]>).map(([id, label, count]) => (
@@ -1626,7 +1806,9 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
       </div>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
         <div className="space-y-3">
-          {filtered.map(row => (
+          {filtered.map(row => {
+            const effectiveStatus = effectiveStatusFor(row)
+            return (
             <SwipeRow
               key={row.state.id}
               wrapClassName="rounded-[16px]"
@@ -1642,30 +1824,77 @@ function FamilyView({ rows, activeTab, activeFilter, search, activeGenre, setAct
                   label: 'Remove from list',
                   className: 'bg-red',
                   closeOnClick: false,
-                  onClick: () => onDelete(row.state),
+                  onClick: () => onDelete(row.state, row.item, activeTab),
                 },
               ]}
             >
-              <CompactMediaRow
-                item={row.item}
-                selectedProviderIds={selectedProviderIds}
-                statusLabel={labelStatus(row.state.status)}
-                rating={row.state.rating}
-                onOpen={onOpen}
-                onRating={row.state.status === 'watched' || row.state.status === 'watching' ? rating => onRating(row.item, rating) : undefined}
-                trailing={<MediaStatusPill status={row.state.status} onClick={row.state.status === 'wishlist' ? () => onSeen(row.item, true) : undefined} />}
-              />
+              <div className="rounded-[16px] bg-[var(--media-bg)]">
+                <CompactMediaRow
+                  item={row.item}
+                  selectedProviderIds={selectedProviderIds}
+                  statusLabel={labelStatus(effectiveStatus)}
+                  rating={row.state.rating}
+                  onOpen={onOpen}
+                  onRating={effectiveStatus === 'watched' || effectiveStatus === 'watching' ? rating => onRating(row.item, rating) : undefined}
+                  trailing={<MediaStatusPill status={effectiveStatus} onClick={effectiveStatus === 'wishlist' ? () => onSeen(row.item, true) : undefined} />}
+                  providerTrailing={row.item.mediaType === 'tv' && (activeTab === 'watchlist' || effectiveStatus === 'watched' || effectiveStatus === 'watching') ? (
+                    <button type="button" onClick={() => onExpandShow(expandedShowId === row.item.id ? null : row.item.id)} className="flex h-6 w-6 items-center justify-center text-[var(--media-muted)]" aria-label={expandedShowId === row.item.id ? 'Hide seasons' : 'Show seasons'}>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${expandedShowId === row.item.id ? 'rotate-180' : ''}`} strokeWidth={2.3} />
+                    </button>
+                  ) : null}
+                />
+                <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${expandedShowId === row.item.id ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                  <div className="overflow-hidden">
+                    {row.item.mediaType === 'tv' ? (
+                      <SeasonPanel
+                        item={row.item}
+                        progress={progress}
+                        seasonCache={seasonCache}
+                        seasonErrors={seasonErrors}
+                        openSeasonKey={openSeasonKey}
+                        onLoadSeason={onLoadSeason}
+                        onEpisode={onEpisode}
+                        onSeason={onSeason}
+                        assumeAllWatched={effectiveStatus === 'watched'}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </SwipeRow>
-          ))}
+          )})}
         </div>
       )}
     </section>
   )
 }
 
+function watchedEpisodeCount(item: MediaItem, progress: ProgressLike[]) {
+  const episodeIdPrefix = `${item.id}:s`
+  return progress.filter(row => row.watchedAt && (row.mediaItemId ? row.mediaItemId === item.id : row.episodeId.startsWith(episodeIdPrefix))).length
+}
+
+function expectedEpisodeCount(item: MediaItem) {
+  return (item.seasons ?? [])
+    .filter(season => Number(season.seasonNumber) > 0)
+    .reduce((total, season) => total + Number(season.episodeCount ?? 0), 0)
+}
+
+function progressDrivenTvStatus(item: MediaItem, progress: ProgressLike[]): 'watching' | 'watched' | null {
+  if (item.mediaType !== 'tv') return null
+  const watchedCount = watchedEpisodeCount(item, progress)
+  if (!watchedCount) return null
+  const expectedCount = expectedEpisodeCount(item)
+  return expectedCount > 0 && watchedCount >= expectedCount ? 'watched' : 'watching'
+}
+
+function effectiveTvProgressStatus(item: MediaItem, status: MediaWatchStatus, progress: ProgressLike[]): MediaWatchStatus {
+  return progressDrivenTvStatus(item, progress) ?? status
+}
+
 function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
   item: MediaItem
-  progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
+  progress: ProgressLike[]
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -1804,50 +2033,61 @@ function MediaDetailSheet({ item, loading, userState, familyState, selectedProvi
   const cast = castNames(item, 6)
   const crew = crewNames(item, 3)
   const runtime = runtimeLabel(item)
-  const inWatchlist = userState?.status === 'wishlist'
+  const dateLabel = item.releaseDate || item.firstAirDate || 'No date'
+  const inWatchlist = Boolean(userState?.watchlist)
   const seen = userState?.status === 'watched' || userState?.status === 'watching'
-  const family = familyState?.status === 'wishlist' && Boolean(familyState?.watchlist)
+  const family = Boolean(familyState?.watchlist)
   return (
-    <div className="fixed inset-0 z-[65] flex items-end bg-black/55" onClick={onClose}>
-      <div className="media-page max-h-[88dvh] w-full overflow-hidden rounded-t-[22px] border-t border-[var(--media-line)] bg-[var(--media-panel)] shadow-2xl" onClick={event => event.stopPropagation()}>
-        <div className="relative h-[178px] bg-black">
+    <div className="fixed inset-0 z-[65] flex items-end bg-black/60 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="media-page mx-auto max-h-[90dvh] w-full max-w-lg overflow-hidden rounded-t-[20px] bg-[var(--media-panel)] shadow-2xl" onClick={event => event.stopPropagation()}>
+        <div className="relative h-[242px] bg-black">
           {item.backdropPath || item.posterPath ? (
-            <img src={posterUrl(item.backdropPath || item.posterPath, item.backdropPath ? 'w780' : 'w500')} alt="" className="h-full w-full object-cover opacity-80" />
+            <img src={posterUrl(item.backdropPath || item.posterPath, item.backdropPath ? 'w780' : 'w500')} alt="" className="h-full w-full object-cover opacity-82" />
           ) : (
             <div className="flex h-full items-center justify-center text-white/35"><Clapperboard className="h-14 w-14" strokeWidth={1.4} /></div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/88 via-black/28 to-black/10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-black/8" />
           <button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/58 text-white backdrop-blur" aria-label="Close details">
             <X className="h-5 w-5" />
           </button>
-          <div className="absolute inset-x-0 bottom-0 px-4 pb-4 text-white">
-            <MediaInlineMeta item={item} light showType={false} />
-            <h2 className="mt-2 line-clamp-2 text-[25px] font-bold leading-[1.04]">{item.title}</h2>
+          <div className="absolute inset-x-0 bottom-0 flex items-end gap-3 px-4 pb-4 text-white">
+            <div className="h-[132px] w-[88px] shrink-0 overflow-hidden rounded-[10px] bg-white/8 shadow-[0_12px_26px_rgba(0,0,0,0.34)] ring-1 ring-white/14">
+              {item.posterPath ? (
+                <img src={posterUrl(item.posterPath)} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-white/36"><Clapperboard className="h-9 w-9" strokeWidth={1.4} /></div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1 pb-0.5">
+              <MediaInlineMeta item={item} light />
+              <h2 className="mt-2 line-clamp-3 text-[25px] font-bold leading-[1.03]">{item.title}</h2>
+              {(item.genres ?? []).length ? <p className="mt-2 line-clamp-1 text-[11px] font-bold uppercase text-white/62">{(item.genres ?? []).slice(0, 4).join(' / ')}</p> : null}
+            </div>
           </div>
         </div>
-        <div className="max-h-[calc(88dvh-178px)] overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-4">
-          {loading ? <p className="mb-3 rounded-[12px] bg-[var(--media-panel-2)] px-3 py-2 text-[12px] font-bold text-[var(--media-muted)]">Refreshing details...</p> : null}
-          <div className="grid grid-cols-2 gap-2">
-            {runtime ? <DetailStat icon={<Clock className="h-4 w-4" />} label={runtime} /> : null}
-            <DetailStat icon={<Calendar className="h-4 w-4" />} label={item.releaseDate || item.firstAirDate || 'No date'} />
+        <div className="grid grid-cols-5 gap-1.5 border-b border-[var(--media-line)] bg-[var(--media-panel)] px-4 py-3">
+          <DetailAction label="Watchlist" active={inWatchlist} onClick={() => void onWatchlist(item, !inWatchlist)}><ListPlus className="h-4.5 w-4.5" /></DetailAction>
+          <DetailAction label={item.mediaType === 'tv' ? 'Progress' : 'Seen'} active={seen} onClick={() => void onSeen(item, !seen)}><Eye className="h-4.5 w-4.5" /></DetailAction>
+          <DetailAction label="Like" active={userState?.rating === 'liked'} onClick={() => void onRating(item, 'liked')}><ThumbsUp className="h-4.5 w-4.5" /></DetailAction>
+          <DetailAction label="Dislike" active={userState?.rating === 'disliked'} onClick={() => void onRating(item, 'disliked')}><ThumbsDown className="h-4.5 w-4.5" /></DetailAction>
+          <DetailAction label="Family" active={family} onClick={() => void onFamily(item, !family)}><Users className="h-4.5 w-4.5" /></DetailAction>
+        </div>
+        <div className="max-h-[calc(90dvh-242px-71px)] overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-4">
+          {loading ? <p className="mb-3 text-[12px] font-bold text-[var(--media-muted)]">Refreshing details...</p> : null}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--media-line)] pb-3">
+            {runtime ? <DetailFact icon={<Clock className="h-3.5 w-3.5" />} label={runtime} /> : null}
+            <DetailFact icon={<Calendar className="h-3.5 w-3.5" />} label={dateLabel} />
+            <DetailFact icon={<Clapperboard className="h-3.5 w-3.5" />} label={mediaLabel(item)} />
           </div>
-          {(item.genres ?? []).length ? <p className="mt-4 truncate text-[11px] font-semibold uppercase text-[var(--media-faint)]">{(item.genres ?? []).slice(0, 6).join(' / ')}</p> : null}
           <p className="mt-4 text-[14px] font-medium leading-6 text-[var(--media-ink)]">{item.overview || 'No synopsis available.'}</p>
           {cast.length || crew.length ? (
-            <div className="mt-4 space-y-2 rounded-[14px] border border-[var(--media-line)] bg-[var(--media-bg)] p-3">
-              {cast.length ? <p className="text-[12px] font-bold leading-5 text-[var(--media-muted)]"><span className="text-[var(--media-ink)]">Cast:</span> {cast.join(', ')}</p> : null}
-              {crew.length ? <p className="text-[12px] font-bold leading-5 text-[var(--media-muted)]"><span className="text-[var(--media-ink)]">Crew:</span> {crew.join(', ')}</p> : null}
+            <div className="mt-4 space-y-2 border-t border-[var(--media-line)] pt-3">
+              {cast.length ? <DetailPeople label="Cast" names={cast} /> : null}
+              {crew.length ? <DetailPeople label="Crew" names={crew} /> : null}
             </div>
           ) : null}
-          <div className="mt-4">
-            <MediaProviderSection providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
-          </div>
-          <div className="mt-5 grid grid-cols-5 gap-2">
-            <DetailAction label="Watchlist" active={inWatchlist} onClick={() => void onWatchlist(item, !inWatchlist)}><ListPlus className="h-4.5 w-4.5" /></DetailAction>
-            <DetailAction label={item.mediaType === 'tv' ? 'Progress' : 'Seen'} active={seen} onClick={() => void onSeen(item, !seen)}><Eye className="h-4.5 w-4.5" /></DetailAction>
-            <DetailAction label="Like" active={userState?.rating === 'liked'} onClick={() => void onRating(item, 'liked')}><ThumbsUp className="h-4.5 w-4.5" /></DetailAction>
-            <DetailAction label="Dislike" active={userState?.rating === 'disliked'} onClick={() => void onRating(item, 'disliked')}><ThumbsDown className="h-4.5 w-4.5" /></DetailAction>
-            <DetailAction label="Family" active={family} onClick={() => void onFamily(item, !family)}><Users className="h-4.5 w-4.5" /></DetailAction>
+          <div className="mt-4 border-t border-[var(--media-line)] pt-3">
+            <DetailProviderStrip providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
           </div>
         </div>
       </div>
@@ -1860,19 +2100,49 @@ function DetailAction({ label, active = false, onClick, children }: { label: str
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border text-[11px] font-bold transition ${active ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] bg-[var(--media-bg)] text-[var(--media-ink)]'}`}
+      className={`flex h-[46px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-[10px] px-1 text-[10px] font-bold leading-none transition ${active ? 'bg-accent text-white shadow-sm' : 'bg-[var(--media-panel-2)] text-[var(--media-ink)] active:bg-[var(--media-bg)]'}`}
     >
       {children}
-      <span>{label}</span>
+      <span className="max-w-full truncate">{label}</span>
     </button>
   )
 }
 
-function DetailStat({ icon, label }: { icon: ReactNode; label: string }) {
+function DetailFact({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <div className="flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-bg)] px-2 text-center text-[var(--media-muted)]">
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] font-bold text-[var(--media-muted)]">
       {icon}
-      <span className="line-clamp-2 text-[11px] font-bold leading-tight">{label}</span>
+      <span className="truncate">{label}</span>
+    </span>
+  )
+}
+
+function DetailPeople({ label, names }: { label: string; names: string[] }) {
+  return (
+    <p className="grid grid-cols-[48px_minmax(0,1fr)] gap-2 text-[12px] font-bold leading-5">
+      <span className="uppercase text-[var(--media-faint)]">{label}</span>
+      <span className="min-w-0 text-[var(--media-muted)]">{names.join(', ')}</span>
+    </p>
+  )
+}
+
+function DetailProviderStrip({ providers, emptyText }: { providers: MediaProvider[]; emptyText?: string }) {
+  if (!providers.length) {
+    return <p className="text-[12px] font-bold text-[var(--media-faint)]">{emptyText}</p>
+  }
+  const visibleProviders = providers.slice(0, 6)
+  const overflow = providers.length - visibleProviders.length
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="shrink-0 text-[9.5px] font-bold uppercase text-[var(--media-faint)]">Streaming</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        {visibleProviders.map(provider => (
+          <span key={provider.provider_id} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-[var(--media-panel-2)]">
+            {provider.logo_path ? <img src={posterUrl(provider.logo_path, 'w92')} alt="" className="h-full w-full object-cover" /> : null}
+          </span>
+        ))}
+        {overflow > 0 ? <span className="shrink-0 text-[11px] font-bold text-[var(--media-muted)]">+{overflow}</span> : null}
+      </div>
     </div>
   )
 }

@@ -123,13 +123,14 @@ function optimisticMediaItem(item: MediaItem) {
   })
 }
 
-export async function setUserMediaState(item: MediaItem, status: MediaUserStatus, rating: MediaRating | null = null) {
+export async function setUserMediaState(item: MediaItem, status: MediaUserStatus, rating: MediaRating | null = null, options: { watchlist?: boolean } = {}) {
   const userId = currentUserId()
   const now = new Date().toISOString()
   const existing = getCurrentState().data.mediaUserStates.find(state => state.userId === userId && state.mediaItemId === item.id)
-  const nextStatus = status
-  const nextWatchlist = status === 'wishlist'
-  const nextRating = status === 'wishlist' ? null : rating
+  const existingStatus = existing?.status && existing.status !== 'wishlist' ? existing.status : null
+  const nextStatus = status === 'wishlist' ? existingStatus ?? 'wishlist' : status
+  const nextWatchlist = options.watchlist ?? (status === 'wishlist' ? true : status === 'not_interested' ? false : existing?.watchlist ?? false)
+  const nextRating = status === 'wishlist' ? existingStatus ? existing?.rating ?? null : null : rating
   const row: MediaUserState = {
     id: `media-user:${userId}:${item.id}`,
     householdId: householdId(),
@@ -159,7 +160,7 @@ export async function setUserMediaWatchlist(item: MediaItem, watchlist: boolean)
   const userId = currentUserId()
   const existing = getCurrentState().data.mediaUserStates.find(state => state.userId === userId && state.mediaItemId === item.id)
   if (!watchlist && !existing) return
-  if (!watchlist && existing && existing.status === 'wishlist' && !existing.rating) {
+  if (!watchlist && existing && existing.status === 'wishlist') {
     await enqueueMutation({
       id: makeId('mutation'),
       name: 'media.user_state.delete',
@@ -181,11 +182,12 @@ export async function setUserMediaWatchlist(item: MediaItem, watchlist: boolean)
     userId,
     mediaItemId: item.id,
     status: watchlist ? 'wishlist' : existing?.status && existing.status !== 'wishlist' ? existing.status : 'wishlist',
-    rating: watchlist ? null : existing?.rating ?? null,
+    rating: existing?.rating ?? null,
     watchlist,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
+  if (watchlist && existing?.status && existing.status !== 'wishlist') row.status = existing.status
   await syncMediaItem(item)
   await enqueueMutation({
     id: makeId('mutation'),
@@ -247,12 +249,13 @@ export async function setUserMediaSeen(item: MediaItem, seen: boolean) {
   if (!seen) await clearEpisodeProgress(item, 'user', userId)
 }
 
-export async function setFamilyMediaState(item: MediaItem, status: MediaFamilyState['status'], rating: MediaRating | null = null) {
+export async function setFamilyMediaState(item: MediaItem, status: MediaFamilyState['status'], rating: MediaRating | null = null, options: { watchlist?: boolean } = {}) {
   const now = new Date().toISOString()
   const existing = getCurrentState().data.mediaFamilyStates.find(state => state.mediaItemId === item.id)
-  const nextStatus = status
-  const nextWatchlist = status === 'wishlist'
-  const nextRating = status === 'wishlist' ? null : rating
+  const existingStatus = existing?.status && existing.status !== 'wishlist' ? existing.status : null
+  const nextStatus = status === 'wishlist' ? existingStatus ?? 'wishlist' : status
+  const nextWatchlist = options.watchlist ?? (status === 'wishlist' ? true : status === 'not_interested' ? false : existing?.watchlist ?? false)
+  const nextRating = status === 'wishlist' ? existingStatus ? existing?.rating ?? null : null : rating
   const row: MediaFamilyState = {
     id: `media-family:${householdId()}:${item.id}`,
     householdId: householdId(),
@@ -281,7 +284,7 @@ export async function setFamilyMediaState(item: MediaItem, status: MediaFamilySt
 export async function setFamilyMediaWatchlist(item: MediaItem, watchlist: boolean) {
   const existing = getCurrentState().data.mediaFamilyStates.find(state => state.mediaItemId === item.id)
   if (!watchlist && !existing) return
-  if (!watchlist && existing && existing.status === 'wishlist' && !existing.rating) {
+  if (!watchlist && existing && existing.status === 'wishlist') {
     await enqueueMutation({
       id: makeId('mutation'),
       name: 'media.family_state.delete',
@@ -302,12 +305,13 @@ export async function setFamilyMediaWatchlist(item: MediaItem, watchlist: boolea
     householdId: householdId(),
     mediaItemId: item.id,
     status: watchlist ? 'wishlist' : existing?.status && existing.status !== 'wishlist' ? existing.status : 'wishlist',
-    rating: watchlist ? null : existing?.rating ?? null,
+    rating: existing?.rating ?? null,
     watchlist,
     addedByUserId: existing?.addedByUserId ?? currentUserId(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
+  if (watchlist && existing?.status && existing.status !== 'wishlist') row.status = existing.status
   await syncMediaItem(item)
   await enqueueMutation({
     id: makeId('mutation'),
