@@ -283,10 +283,22 @@ type SyncChange = {
   payload: Record<string, unknown> | null
 }
 
+type StoredSnapshot = {
+  key: string
+  savedAt: number
+  state: AppState
+}
+
 const STORAGE_KEY = 'homeos:app-state'
+const OFFLINE_SNAPSHOT_KEY = 'homeos:app-state-lite'
 const MUTATION_QUEUE_KEY = 'homeos:mutation-queue'
+const SESSION_KEY = 'homeos:session-state'
+const SESSION_BACKUP_KEY = 'homeos:session-state:last-authenticated'
+const OFFLINE_DB_NAME = 'homeos-offline-store'
+const OFFLINE_DB_VERSION = 1
+const SNAPSHOT_STORE = 'snapshots'
 const listeners = new Set<() => void>()
-let activeUserId: string | null = null
+let activeUserId: string | null = initialUserId()
 
 const emptyData: AppData = {
   users: [],
@@ -311,10 +323,10 @@ const emptyData: AppData = {
   mediaInteractions: [],
 }
 
+let mutationQueue: SyncMutation[] = loadMutationQueue()
 let state: AppState = loadState()
 let stream: EventSource | null = null
 let bootstrapped = false
-let mutationQueue: SyncMutation[] = loadMutationQueue()
 let flushPromise: Promise<void> | null = null
 let refreshPromise: Promise<void> | null = null
 let postPushRefreshTimer: number | null = null
@@ -322,53 +334,152 @@ let onlineListenerRegistered = false
 let fallbackSyncRegistered = false
 let persistenceFlushRegistered = false
 let persistTimer: number | null = null
+let indexedDbHydrationId = 0
 
 const MEDIA_SKIP_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const MEDIA_INTERACTION_STORAGE_LIMIT = 300
-const MAX_STORED_STATE_CHARS = 2_500_000
+
+setSyncUserContext(activeUserId)
+void hydrateStateFromIndexedDb()
 
 function isUnauthorizedError(error: unknown) {
   return error instanceof Error && /\b401\b/.test(error.message)
+}
+
+function initialUserId() {
+  if (typeof window === 'undefined') return null
+
+  const sessionUserId = userIdFromSessionKey(SESSION_KEY) ?? userIdFromSessionKey(SESSION_BACKUP_KEY)
+  if (sessionUserId) return sessionUserId
+
+  const legacyUserId = userIdFromStoredAppState(STORAGE_KEY) ?? userIdFromStoredAppState(OFFLINE_SNAPSHOT_KEY)
+  if (legacyUserId) return legacyUserId
+
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      const userId = key ? userIdFromAppStateKey(key) : null
+      if (userId) return userId
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+function userIdFromSessionKey(key: string) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { status?: string; user?: { id?: string } | null }
+    return parsed.status === 'authenticated' && parsed.user?.id ? parsed.user.id : null
+  } catch {
+    return null
+  }
+}
+
+function userIdFromAppStateKey(key: string) {
+  const prefix = key.startsWith(`${STORAGE_KEY}:`)
+    ? `${STORAGE_KEY}:`
+    : key.startsWith(`${OFFLINE_SNAPSHOT_KEY}:`)
+      ? `${OFFLINE_SNAPSHOT_KEY}:`
+      : null
+  if (!prefix) return null
+  const userId = key.slice(prefix.length)
+  return userId || null
+}
+
+function userIdFromStoredAppState(key: string) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { data?: { users?: User[] } }
+    return parsed.data?.users?.[0]?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+function hasLocalData(data: AppData) {
+  return Object.values(data).some(value => Array.isArray(value) && value.length > 0)
+}
+
+function dataWeight(data: AppData) {
+  return Object.values(data).reduce((total, value) => total + (Array.isArray(value) ? value.length : 0), 0)
 }
 
 function loadState(): AppState {
   if (typeof window === 'undefined') {
     return { ready: false, syncing: false, error: null, data: emptyData }
   }
-  if (!activeUserId) return { ready: false, syncing: false, error: null, data: emptyData }
+  return loadStateFromKeys(stateStorageKeys())
+    ?? { ready: false, syncing: false, error: null, data: emptyData }
+}
 
+function stateStorageKeys() {
+  const keys = activeUserId
+    ? [storageKey(), offlineSnapshotKey(), STORAGE_KEY, OFFLINE_SNAPSHOT_KEY]
+    : [STORAGE_KEY, OFFLINE_SNAPSHOT_KEY]
+  return [...new Set(keys)]
+}
+
+function loadStateFromKeys(keys: string[]) {
+  for (const key of keys) {
+    const loaded = loadStateFromKey(key)
+    if (loaded) return loaded
+  }
+  return null
+}
+
+function loadStateFromKey(key: string): AppState | null {
   try {
-    const raw = localStorage.getItem(storageKey())
-    if (!raw) return { ready: false, syncing: false, error: null, data: emptyData }
-    if (raw.length > MAX_STORED_STATE_CHARS) {
-      localStorage.removeItem(storageKey())
-      return { ready: false, syncing: false, error: null, data: emptyData }
-    }
-    const parsed = JSON.parse(raw) as AppState
-    return {
-      ...parsed,
-      data: {
-        ...emptyData,
-        ...parsed.data,
-      },
-    }
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    return normalizeStoredState(JSON.parse(raw) as AppState)
   } catch {
-    return { ready: false, syncing: false, error: null, data: emptyData }
+    return null
+  }
+}
+
+function normalizeStoredState(parsed: AppState): AppState {
+  const data = replayQueuedMutations({
+    ...emptyData,
+    ...parsed.data,
+  })
+  return {
+    ...parsed,
+    ready: parsed.ready || hasLocalData(data),
+    syncing: false,
+    error: null,
+    data,
   }
 }
 
 function loadMutationQueue(): SyncMutation[] {
   if (typeof window === 'undefined') return []
-  if (!activeUserId) return []
 
-  try {
-    const raw = localStorage.getItem(mutationQueueKey())
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed as SyncMutation[] : []
-  } catch {
-    return []
-  }
+  const queues = mutationQueueKeys().flatMap(key => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed as SyncMutation[] : []
+    } catch {
+      return []
+    }
+  })
+  const seen = new Set<string>()
+  return queues.filter(mutation => {
+    if (!mutation.id || seen.has(mutation.id)) return false
+    seen.add(mutation.id)
+    return true
+  })
+}
+
+function mutationQueueKeys() {
+  const keys = activeUserId ? [mutationQueueKey(), MUTATION_QUEUE_KEY] : [MUTATION_QUEUE_KEY]
+  return [...new Set(keys)]
 }
 
 function compactMediaItemForStorage(item: MediaItem): MediaItem {
@@ -438,6 +549,106 @@ function compactStateForStorage(value: AppState): AppState {
   }
 }
 
+function compactStateForOfflineSnapshot(value: AppState): AppState {
+  const compacted = compactStateForStorage(value)
+  return {
+    ...compacted,
+    data: {
+      ...compacted.data,
+      mediaInteractions: [],
+      mediaSeasons: [],
+      mediaEpisodes: [],
+      calendarEvents: compacted.data.calendarEvents.map(event => ({
+        ...event,
+        description: null,
+        rawIcal: null,
+      })),
+    },
+  }
+}
+
+function openOfflineDb() {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null)
+
+  return new Promise<IDBDatabase | null>(resolve => {
+    const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+        db.createObjectStore(SNAPSHOT_STORE, { keyPath: 'key' })
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => resolve(null)
+    request.onblocked = () => resolve(null)
+  })
+}
+
+function readIdbRequest<T>(request: IDBRequest<T>) {
+  return new Promise<T | null>(resolve => {
+    request.onsuccess = () => resolve(request.result ?? null)
+    request.onerror = () => resolve(null)
+  })
+}
+
+async function readStateFromIndexedDb(key: string) {
+  const db = await openOfflineDb()
+  if (!db) return null
+
+  try {
+    const tx = db.transaction(SNAPSHOT_STORE, 'readonly')
+    const stored = await readIdbRequest<StoredSnapshot | undefined>(tx.objectStore(SNAPSHOT_STORE).get(key))
+    db.close()
+    return stored?.state ? normalizeStoredState(stored.state) : null
+  } catch {
+    db.close()
+    return null
+  }
+}
+
+async function writeStateToIndexedDb(key: string, nextState: AppState) {
+  const db = await openOfflineDb()
+  if (!db) return
+
+  try {
+    const tx = db.transaction(SNAPSHOT_STORE, 'readwrite')
+    tx.objectStore(SNAPSHOT_STORE).put({
+      key,
+      savedAt: Date.now(),
+      state: nextState,
+    } satisfies StoredSnapshot)
+    await new Promise<void>(resolve => {
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+      tx.onabort = () => resolve()
+    })
+  } catch {
+    // localStorage fallback may still have a smaller snapshot.
+  } finally {
+    db.close()
+  }
+}
+
+async function hydrateStateFromIndexedDb() {
+  if (typeof window === 'undefined') return
+  const hydrationId = ++indexedDbHydrationId
+  const userId = activeUserId
+
+  for (const key of stateStorageKeys()) {
+    const loaded = await readStateFromIndexedDb(key)
+    if (!loaded) continue
+    if (hydrationId !== indexedDbHydrationId || userId !== activeUserId) return
+
+    if (!state.ready || dataWeight(loaded.data) > dataWeight(state.data)) {
+      state = loaded
+      emit()
+    }
+    return
+  }
+}
+
 function persistNow() {
   if (typeof window === 'undefined') return
   if (!activeUserId) return
@@ -445,15 +656,20 @@ function persistNow() {
     window.clearTimeout(persistTimer)
     persistTimer = null
   }
+  const compacted = compactStateForStorage(state)
+  const offlineSnapshot = compactStateForOfflineSnapshot(state)
   try {
-    localStorage.setItem(storageKey(), JSON.stringify(compactStateForStorage(state)))
+    localStorage.setItem(storageKey(), JSON.stringify(compacted))
   } catch {
-    try {
-      localStorage.removeItem(storageKey())
-    } catch {
-      // Ignore storage cleanup failures; in-memory state should continue to update.
-    }
+    // Keep the last successfully persisted snapshot. Removing it would break offline cold starts.
   }
+  try {
+    localStorage.setItem(offlineSnapshotKey(), JSON.stringify(offlineSnapshot))
+  } catch {
+    // The primary snapshot may still exist. Never clear offline data because a write failed.
+  }
+  void writeStateToIndexedDb(storageKey(), compacted)
+  void writeStateToIndexedDb(offlineSnapshotKey(), offlineSnapshot)
   persistMutationQueueNow()
 }
 
@@ -463,11 +679,7 @@ function persistMutationQueueNow() {
   try {
     localStorage.setItem(mutationQueueKey(), JSON.stringify(mutationQueue))
   } catch {
-    try {
-      localStorage.removeItem(mutationQueueKey())
-    } catch {
-      // Ignore storage cleanup failures; queued mutations still flush from memory.
-    }
+    // Keep the previous queue snapshot so offline changes are not discarded on quota errors.
   }
 }
 
@@ -515,6 +727,10 @@ function storageKey() {
   return activeUserId ? `${STORAGE_KEY}:${activeUserId}` : STORAGE_KEY
 }
 
+function offlineSnapshotKey() {
+  return activeUserId ? `${OFFLINE_SNAPSHOT_KEY}:${activeUserId}` : OFFLINE_SNAPSHOT_KEY
+}
+
 function mutationQueueKey() {
   return activeUserId ? `${MUTATION_QUEUE_KEY}:${activeUserId}` : MUTATION_QUEUE_KEY
 }
@@ -537,6 +753,7 @@ export function setAppUserContext(userId: string | null) {
   mutationQueue = loadMutationQueue()
   state = loadState()
   emit()
+  void hydrateStateFromIndexedDb()
 }
 
 function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entityType' | 'entityId' | 'operation' | 'payload'>) {
@@ -923,7 +1140,7 @@ export async function ensureBootstrap() {
 
     setState(prev => ({
       ...prev,
-      ready: prev.ready,
+      ready: prev.ready || hasLocalData(prev.data),
       syncing: false,
       error: error instanceof Error ? error.message : 'Bootstrap failed',
     }))
