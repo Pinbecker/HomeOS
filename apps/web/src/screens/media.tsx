@@ -37,6 +37,7 @@ type ActionResult = 'applied' | 'pending_tv'
 
 const SWIPE_PREVIEW_THRESHOLD = 34
 const SWIPE_COMMIT_THRESHOLD = 185
+const DISCOVER_VISIBLE_SEARCH_PAGES = 8
 
 const swipeIntents: Record<SwipeIntent, {
   label: string
@@ -145,7 +146,8 @@ export function MediaPage() {
   const [feed, setFeed] = useState<MediaItem[]>([])
   const [page, setPage] = useState(1)
   const [feedIndex, setFeedIndex] = useState(0)
-  const [loadingFeed, setLoadingFeed] = useState(false)
+  const [loadingFeed, setLoadingFeed] = useState(true)
+  const [discoverEmptyReady, setDiscoverEmptyReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MediaItem[]>([])
@@ -181,6 +183,11 @@ export function MediaPage() {
   const selectedProviderIds = readProviderIds(household?.settings)
   const feedbackTimerRef = useRef<number | null>(null)
   const searchSeqRef = useRef(0)
+  const feedLoadRef = useRef<{ loading: boolean; pages: Set<number>; initialLoaded: boolean }>({
+    loading: false,
+    pages: new Set(),
+    initialLoaded: false,
+  })
 
   const itemById = useMemo(() => new Map(items.map(item => [item.id, item])), [items])
   const myRows = useMemo(() => userStates
@@ -213,14 +220,14 @@ export function MediaPage() {
   const userProgress = useMemo(() => progress.filter(row => row.scopeType === 'user' && row.scopeId === userId), [progress, userId])
 
   useEffect(() => {
-    loadFeed(1, true).catch(() => undefined)
+    loadFeed(1, true, { ensureVisible: true }).catch(() => undefined)
     fetchProviders().then(payload => setProviders(payload.providers)).catch(() => undefined)
     return undefined
   }, [])
 
   useEffect(() => {
-    if (visibleFeed.length - feedIndex > 8 || loadingFeed) return
-    loadFeed(page + 1, false).catch(() => undefined)
+    if (!feedLoadRef.current.initialLoaded || visibleFeed.length - feedIndex > 8 || loadingFeed) return
+    loadFeed(page + 1, false, { ensureVisible: visibleFeed.length <= feedIndex }).catch(() => undefined)
   }, [feedIndex, loadingFeed, page, visibleFeed.length])
 
   useEffect(() => {
@@ -257,38 +264,62 @@ export function MediaPage() {
     if (tab !== 'swipe') return undefined
     const previousOverflow = document.body.style.overflow
     const previousOverscroll = document.body.style.overscrollBehavior
-    const previousTouchAction = document.body.style.touchAction
     const previousHtmlOverflow = document.documentElement.style.overflow
     const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior
-    const previousHtmlTouchAction = document.documentElement.style.touchAction
     document.body.style.overflow = 'hidden'
     document.body.style.overscrollBehavior = 'none'
-    document.body.style.touchAction = 'none'
     document.documentElement.style.overflow = 'hidden'
     document.documentElement.style.overscrollBehavior = 'none'
-    document.documentElement.style.touchAction = 'none'
     return () => {
       document.body.style.overflow = previousOverflow
       document.body.style.overscrollBehavior = previousOverscroll
-      document.body.style.touchAction = previousTouchAction
       document.documentElement.style.overflow = previousHtmlOverflow
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll
-      document.documentElement.style.touchAction = previousHtmlTouchAction
     }
   }, [tab])
 
-  async function loadFeed(targetPage: number, replace: boolean) {
+  function visibleDiscoverItems(source: MediaItem[], dismissedIds = dismissedDiscoverIds) {
+    return source.filter(item => !excludedDiscoverIds.has(item.id) && !dismissedIds.has(item.id))
+  }
+
+  async function loadFeed(targetPage: number, replace: boolean, options: { ensureVisible?: boolean } = {}) {
+    if (feedLoadRef.current.loading) return
+    if (!replace && feedLoadRef.current.pages.has(targetPage)) return
+    feedLoadRef.current.loading = true
     setLoadingFeed(true)
+    setDiscoverEmptyReady(false)
     setError(null)
     try {
-      const payload = await fetchMediaFeed(targetPage)
-      setFeed(prev => replace ? payload.items : mergeMediaItems(prev, payload.items))
-      setPage(payload.page)
+      const dismissedIds = replace ? new Set<string>() : dismissedDiscoverIds
+      let nextFeed = replace ? [] : feed
+      let nextPage = targetPage
+      let loadedPage = page
+      let fetchedPages = 0
+      const targetVisibleIndex = replace ? 0 : feedIndex
+
+      while (fetchedPages < (options.ensureVisible ? DISCOVER_VISIBLE_SEARCH_PAGES : 1)) {
+        if (!replace && feedLoadRef.current.pages.has(nextPage)) break
+        const payload = await fetchMediaFeed(nextPage)
+        nextFeed = replace && fetchedPages === 0 ? payload.items : mergeMediaItems(nextFeed, payload.items)
+        loadedPage = payload.page
+        feedLoadRef.current.pages.add(payload.page)
+        fetchedPages += 1
+        if (!options.ensureVisible || visibleDiscoverItems(nextFeed, dismissedIds).length > targetVisibleIndex) break
+        nextPage = payload.page + 1
+      }
+
+      const visibleItems = visibleDiscoverItems(nextFeed, dismissedIds)
+      setFeed(nextFeed)
+      setPage(loadedPage)
+      feedLoadRef.current.initialLoaded = true
       if (replace) setFeedIndex(0)
       if (replace) setDismissedDiscoverIds(new Set())
+      setDiscoverEmptyReady(Boolean(options.ensureVisible) && visibleItems.length <= targetVisibleIndex)
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Media feed failed')
+      setDiscoverEmptyReady(true)
     } finally {
+      feedLoadRef.current.loading = false
       setLoadingFeed(false)
     }
   }
@@ -316,13 +347,13 @@ export function MediaPage() {
 
   async function handleAction(item: MediaItem, action: keyof typeof actionMeta | 'skip', options: { advance?: boolean } = {}): Promise<ActionResult> {
     const shouldAdvance = options.advance ?? true
-    const detailed = await refreshDetails(item)
     if (action === 'skip') {
-      await recordMediaInteraction(detailed, 'skip')
+      await recordMediaInteraction(item, 'skip')
       notify('Skipped')
       if (shouldAdvance) advance()
       return 'applied'
     }
+    const detailed = await refreshDetails(item)
     if (detailed.mediaType === 'tv' && action.startsWith('watched')) {
       setTvSheetItem(detailed)
       setTvSheetAction(action)
@@ -570,14 +601,14 @@ export function MediaPage() {
             <SwipeView
               item={current}
               nextItem={next}
-              loading={loadingFeed && !current}
+              loading={!current && (loadingFeed || !discoverEmptyReady)}
               selectedProviderIds={selectedProviderIds}
               onOpen={openDetails}
               onAction={(item, action) => {
                 setDismissedDiscoverIds(prev => new Set(prev).add(item.id))
                 void handleAction(item, action, { advance: false })
               }}
-              onRefresh={() => loadFeed(1, true)}
+              onRefresh={() => loadFeed(1, true, { ensureVisible: true })}
             />
           ) : null}
           {tab === 'search' ? (
@@ -845,14 +876,9 @@ function SwipeView({ item, nextItem, loading, selectedProviderIds, onOpen, onAct
     })
   }
 
-  if (loading) return <div className="rounded-[18px] border border-[var(--media-line)] bg-[var(--media-panel)] px-5 py-10 text-center text-[var(--media-muted)]">Loading media...</div>
+  if (loading) return <DiscoverLoadingCard />
   if (!item) {
-    return (
-      <div className="rounded-[18px] border border-[var(--media-line)] bg-[var(--media-panel)] px-5 py-8 text-center">
-        <p className="text-[16px] font-bold text-[var(--media-ink)]">No more cards loaded</p>
-        <button type="button" onClick={onRefresh} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-[14px] font-bold text-white">Refresh feed</button>
-      </div>
-    )
+    return <DiscoverLoadingCard onClick={onRefresh} />
   }
   const activeItem = item
 
@@ -1032,6 +1058,19 @@ function SwipeView({ item, nextItem, loading, selectedProviderIds, onOpen, onAct
         />
       </div>
     </section>
+  )
+}
+
+function DiscoverLoadingCard({ onClick }: { onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-[18px] border border-[var(--media-line)] bg-[var(--media-panel)] px-5 py-10 text-center text-[var(--media-muted)]"
+      aria-label="Refresh media feed"
+    >
+      <p className="text-[14px] font-semibold">Loading media...</p>
+    </button>
   )
 }
 

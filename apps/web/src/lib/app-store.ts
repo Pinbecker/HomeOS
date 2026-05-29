@@ -320,6 +320,12 @@ let refreshPromise: Promise<void> | null = null
 let postPushRefreshTimer: number | null = null
 let onlineListenerRegistered = false
 let fallbackSyncRegistered = false
+let persistenceFlushRegistered = false
+let persistTimer: number | null = null
+
+const MEDIA_SKIP_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+const MEDIA_INTERACTION_STORAGE_LIMIT = 300
+const MAX_STORED_STATE_CHARS = 2_500_000
 
 function isUnauthorizedError(error: unknown) {
   return error instanceof Error && /\b401\b/.test(error.message)
@@ -334,6 +340,10 @@ function loadState(): AppState {
   try {
     const raw = localStorage.getItem(storageKey())
     if (!raw) return { ready: false, syncing: false, error: null, data: emptyData }
+    if (raw.length > MAX_STORED_STATE_CHARS) {
+      localStorage.removeItem(storageKey())
+      return { ready: false, syncing: false, error: null, data: emptyData }
+    }
     const parsed = JSON.parse(raw) as AppState
     return {
       ...parsed,
@@ -398,18 +408,43 @@ function compactMediaItemForStorage(item: MediaItem): MediaItem {
 }
 
 function compactStateForStorage(value: AppState): AppState {
+  const retainedMediaItemIds = new Set([
+    ...value.data.mediaUserStates.map(row => row.mediaItemId),
+    ...value.data.mediaFamilyStates.map(row => row.mediaItemId),
+    ...value.data.mediaEpisodeProgress.map(row => row.mediaItemId),
+  ])
+  const retainedSeasonIds = new Set(
+    value.data.mediaSeasons
+      .filter(row => retainedMediaItemIds.has(row.mediaItemId))
+      .map(row => row.id),
+  )
+  const skipCutoff = Date.now() - MEDIA_SKIP_RETENTION_MS
+  const mediaInteractions = value.data.mediaInteractions
+    .filter(row => row.action !== 'skip' || Number(new Date(row.createdAt)) >= skipCutoff)
+    .slice(-MEDIA_INTERACTION_STORAGE_LIMIT)
+
   return {
     ...value,
     data: {
       ...value.data,
-      mediaItems: value.data.mediaItems.map(compactMediaItemForStorage),
+      mediaItems: value.data.mediaItems
+        .filter(item => retainedMediaItemIds.has(item.id))
+        .map(compactMediaItemForStorage),
+      mediaSeasons: value.data.mediaSeasons.filter(row => retainedMediaItemIds.has(row.mediaItemId)),
+      mediaEpisodes: value.data.mediaEpisodes.filter(row => retainedMediaItemIds.has(row.mediaItemId) && retainedSeasonIds.has(row.seasonId)),
+      mediaEpisodeProgress: value.data.mediaEpisodeProgress.filter(row => retainedMediaItemIds.has(row.mediaItemId)),
+      mediaInteractions,
     },
   }
 }
 
-function persist() {
+function persistNow() {
   if (typeof window === 'undefined') return
   if (!activeUserId) return
+  if (persistTimer !== null) {
+    window.clearTimeout(persistTimer)
+    persistTimer = null
+  }
   try {
     localStorage.setItem(storageKey(), JSON.stringify(compactStateForStorage(state)))
   } catch {
@@ -419,6 +454,12 @@ function persist() {
       // Ignore storage cleanup failures; in-memory state should continue to update.
     }
   }
+  persistMutationQueueNow()
+}
+
+function persistMutationQueueNow() {
+  if (typeof window === 'undefined') return
+  if (!activeUserId) return
   try {
     localStorage.setItem(mutationQueueKey(), JSON.stringify(mutationQueue))
   } catch {
@@ -428,6 +469,26 @@ function persist() {
       // Ignore storage cleanup failures; queued mutations still flush from memory.
     }
   }
+}
+
+function persist() {
+  if (typeof window === 'undefined') return
+  if (!activeUserId) return
+  if (persistTimer !== null) return
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null
+    persistNow()
+  }, 150)
+}
+
+function registerPersistenceFlush() {
+  if (typeof window === 'undefined' || persistenceFlushRegistered) return
+
+  window.addEventListener('pagehide', persistNow)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) persistNow()
+  })
+  persistenceFlushRegistered = true
 }
 
 function emit() {
@@ -460,6 +521,8 @@ function mutationQueueKey() {
 
 export function setAppUserContext(userId: string | null) {
   if (activeUserId === userId) return
+  registerPersistenceFlush()
+  if (activeUserId) persistNow()
 
   if (stream) {
     stream.close()
@@ -930,7 +993,7 @@ export async function enqueueMutations(mutations: SyncMutation[], optimistic?: (
   }
 
   mutationQueue = [...mutationQueue, ...mutations]
-  persist()
+  persistMutationQueueNow()
 
   try {
     await flushMutationQueue()

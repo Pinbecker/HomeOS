@@ -1,4 +1,4 @@
-const CACHE_NAME = 'homeos-web-shell-v29'
+const CACHE_NAME = 'homeos-web-shell-v31'
 const APP_SHELL = [
   '/',
   '/login',
@@ -27,12 +27,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => Promise.all(
       keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-    )).then(() => self.clients.claim())
-      .then(() => clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(windows => Promise.all(windows.map(client => {
-        if ('navigate' in client) return client.navigate(client.url)
-        return undefined
-      }))),
+    )).then(() => self.clients.claim()),
   )
 })
 

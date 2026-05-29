@@ -76,6 +76,13 @@ function optimisticMerge<T extends { id: string }>(rows: T[], row: T) {
   return rows.map(existing => existing.id === row.id ? { ...existing, ...row } : existing)
 }
 
+function pruneLocalMediaInteractions(rows: AppState['data']['mediaInteractions']) {
+  const skipCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+  return rows
+    .filter(interaction => interaction.action !== 'skip' || Number(new Date(interaction.createdAt)) >= skipCutoff)
+    .slice(-300)
+}
+
 async function clearEpisodeProgress(item: MediaItem, scope: 'user' | 'family', scopeId: string) {
   const related = getCurrentState().data.mediaEpisodeProgress
     .filter(row => row.scopeType === scope && row.scopeId === scopeId && row.mediaItemId === item.id)
@@ -382,7 +389,7 @@ export async function recordMediaInteraction(item: MediaItem, action: 'watched_l
     payload: row,
   }, prev => ({
     ...prev,
-    data: { ...prev.data, mediaInteractions: [...prev.data.mediaInteractions, row] },
+    data: { ...prev.data, mediaInteractions: pruneLocalMediaInteractions([...prev.data.mediaInteractions, row]) },
   }))
 }
 
