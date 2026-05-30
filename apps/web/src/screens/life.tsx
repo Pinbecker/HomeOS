@@ -220,7 +220,6 @@ async function createRecord(category: CategoryMeta, title: string) {
     fields: category.defaultFields.map(label => ({ label, value: '' })),
     renewalDate: null,
     renewalLabel: category.renewalLabel ?? null,
-    notes: null,
     sortOrder: Date.now(),
     createdAt: now,
     updatedAt: now,
@@ -401,7 +400,6 @@ export function LifeCategoryPage() {
                         ))}
                       </div>
                     ) : null}
-                    {record.notes ? <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-[13px] text-text-2">{record.notes}</p> : null}
                   </div>
                 </a>
               )
@@ -427,7 +425,7 @@ export function LifeEntityPage() {
     return { category, record, linkedReminders }
   })
   const [headerEditing, setHeaderEditing] = useState(false)
-  const [headerDraft, setHeaderDraft] = useState({ title: '', subtitle: '', icon: '', notes: '' })
+  const [headerDraft, setHeaderDraft] = useState({ title: '', subtitle: '' })
   const [fieldEditor, setFieldEditor] = useState<{ index: number; label: string; value: string } | null>(null)
   const [renewalEditing, setRenewalEditing] = useState(false)
   const [renewalDraft, setRenewalDraft] = useState({ label: '', date: '' })
@@ -455,8 +453,9 @@ export function LifeEntityPage() {
   const household = householdId()
 
   function startHeaderEdit() {
-    setHeaderDraft({ title: record.title, subtitle: record.subtitle ?? '', icon: record.icon ?? '', notes: record.notes ?? '' })
+    setHeaderDraft({ title: record.title, subtitle: record.subtitle ?? '' })
     setHeaderEditing(true)
+    setDeleteConfirm(false)
   }
 
   async function saveHeader() {
@@ -465,10 +464,9 @@ export function LifeEntityPage() {
     await upsertRecord(record, {
       title: headerDraft.title.trim(),
       subtitle: headerDraft.subtitle.trim() || null,
-      icon: headerDraft.icon.trim() || null,
-      notes: headerDraft.notes.trim() || null,
     })
     setSaving(false)
+    setDeleteConfirm(false)
     setHeaderEditing(false)
   }
 
@@ -587,7 +585,7 @@ export function LifeEntityPage() {
             <p className="max-w-[44%] truncate text-center text-[15px] font-semibold text-text-1">{record.title}</p>
             {headerEditing ? (
               <div className="flex items-center gap-3">
-                <button type="button" onClick={() => setHeaderEditing(false)} className="px-1 text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>
+                <button type="button" onClick={() => { setDeleteConfirm(false); setHeaderEditing(false) }} className="px-1 text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>
                 <button type="button" onClick={() => { void saveHeader() }} disabled={!headerDraft.title.trim() || saving} className="px-1 text-[15px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{saving ? 'Saving...' : 'Save'}</button>
               </div>
             ) : (
@@ -597,25 +595,29 @@ export function LifeEntityPage() {
         </div>
 
         <header className="px-5 pb-5 pt-4">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[20px] text-[32px] shadow-[0_10px_24px_rgba(0,0,0,0.05)]" style={{ background: `${snapshot.category.color}1F` }}>
-            {headerEditing ? (
-              <input value={headerDraft.icon} onChange={event => setHeaderDraft(prev => ({ ...prev, icon: event.target.value }))} placeholder={snapshot.category.icon} className="h-12 w-12 bg-transparent text-center text-[30px] outline-none" />
-            ) : (
-              record.icon || snapshot.category.icon
-            )}
-          </div>
           {headerEditing ? (
-            <div className="space-y-3">
-              <div className="overflow-hidden rounded-2xl bg-surface">
-                <input value={headerDraft.title} onChange={event => setHeaderDraft(prev => ({ ...prev, title: event.target.value }))} placeholder="Title" className="w-full bg-transparent px-4 py-3 text-[22px] font-extrabold text-text-1 outline-none placeholder:text-text-3" />
-                <input value={headerDraft.subtitle} onChange={event => setHeaderDraft(prev => ({ ...prev, subtitle: event.target.value }))} placeholder="Subtitle" className="w-full border-t border-border bg-transparent px-4 py-3 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
+            <div>
+              <input value={headerDraft.title} onChange={event => setHeaderDraft(prev => ({ ...prev, title: event.target.value }))} placeholder="Title" className="w-full bg-transparent text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1 outline-none placeholder:text-text-3" />
+              <input value={headerDraft.subtitle} onChange={event => setHeaderDraft(prev => ({ ...prev, subtitle: event.target.value }))} placeholder="Description" className="mt-2 w-full bg-transparent text-[16px] text-text-2 outline-none placeholder:text-text-3" />
+              <div className="mt-4">
+                {deleteConfirm ? (
+                  <div className="rounded-2xl bg-surface p-4">
+                    <p className="text-[14px] font-semibold text-text-1">Delete this record?</p>
+                    <p className="mt-1 text-[12.5px] text-text-2">This removes it from Vault. This cannot be undone from this screen.</p>
+                    <div className="mt-3 flex gap-2">
+                      <button type="button" onClick={() => { void deleteRecord() }} disabled={saving} className="h-10 flex-1 rounded-xl bg-red text-[15px] font-semibold text-white disabled:opacity-50">Delete</button>
+                      <button type="button" onClick={() => setDeleteConfirm(false)} className="h-10 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setDeleteConfirm(true)} className="text-[13px] font-semibold text-red active:opacity-70">Delete record</button>
+                )}
               </div>
-              <textarea value={headerDraft.notes} onChange={event => setHeaderDraft(prev => ({ ...prev, notes: event.target.value }))} placeholder="Notes" rows={4} className="w-full resize-none rounded-2xl bg-surface px-4 py-3 text-[14.5px] leading-relaxed text-text-1 outline-none placeholder:text-text-3" />
             </div>
           ) : (
             <>
               <h1 className="text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1">{record.title}</h1>
-              <p className="mt-2 text-[16px] text-text-2">{record.subtitle ? `${record.subtitle} · ${snapshot.category.label}` : snapshot.category.label}</p>
+              {record.subtitle ? <p className="mt-2 text-[16px] text-text-2">{record.subtitle}</p> : null}
             </>
           )}
         </header>
@@ -651,14 +653,6 @@ export function LifeEntityPage() {
             ) : null}
           </div>
         </Section>
-
-        {record.notes && !headerEditing ? (
-          <Section title="Notes">
-            <button type="button" onClick={startHeaderEdit} className="w-full rounded-2xl bg-surface px-4 py-3 text-left active:bg-surface-2">
-              <p className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-text-1">{record.notes}</p>
-            </button>
-          </Section>
-        ) : null}
 
         <Section title="Renewal" action={<button type="button" onClick={startRenewalEdit} className="text-[12px] font-semibold text-accent">{record.renewalDate ? 'Edit' : 'Add renewal'}</button>}>
           <div className="overflow-hidden rounded-2xl bg-surface">
@@ -713,20 +707,6 @@ export function LifeEntityPage() {
           </div>
         </Section>
 
-        <Section title="Danger zone">
-          {deleteConfirm ? (
-            <div className="rounded-2xl bg-surface p-4">
-              <p className="text-[14px] font-semibold text-text-1">Delete this record?</p>
-              <p className="mt-1 text-[12.5px] text-text-2">This removes it from Vault. This cannot be undone from this screen.</p>
-              <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => { void deleteRecord() }} disabled={saving} className="h-10 flex-1 rounded-xl bg-red text-[15px] font-semibold text-white disabled:opacity-50">Delete</button>
-                <button type="button" onClick={() => setDeleteConfirm(false)} className="h-10 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button type="button" onClick={() => setDeleteConfirm(true)} className="h-11 w-full rounded-xl bg-red text-[15px] font-semibold text-white active:opacity-80">Delete record</button>
-          )}
-        </Section>
       </div>
     </ScreenShell>
   )
