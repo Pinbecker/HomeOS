@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react'
 import { AiCapture } from '../components/ai-capture'
 import { enqueueMutation, refreshAppState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
+import { NotesPanel } from './notes'
 import { ScreenShell } from './shell'
+
+type CaptureTab = 'inbox' | 'notes'
 
 function formatRelativeTime(value: string | number | Date) {
   const date = new Date(value)
@@ -21,7 +24,7 @@ function formatRelativeTime(value: string | number | Date) {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
-export function InboxPage() {
+function InboxPanel() {
   const items = useAppState(state => state.data.items
     .filter(item => item.type === 'inbox' && item.status === 'active' && !item.deletedAt)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
@@ -124,7 +127,7 @@ export function InboxPage() {
   }
 
   return (
-    <ScreenShell title="Inbox">
+    <>
       <div className="mx-auto flex max-w-lg flex-col">
         <div className="px-5 pb-3">
           <p className="mt-0.5 text-[13px] text-text-2">Brain dump, memory layer, and things to sort later</p>
@@ -230,6 +233,31 @@ export function InboxPage() {
 
         <div className="h-6" />
       </div>
+    </>
+  )
+}
+
+export function InboxPage({ initialTab = 'inbox' }: { initialTab?: CaptureTab } = {}) {
+  const [tab, setTab] = useState<CaptureTab>(initialTab)
+
+  return (
+    <ScreenShell title="Capture">
+      <div className="mx-4 mb-4 grid grid-cols-2 rounded-xl bg-surface-2 p-1">
+        {([
+          ['inbox', 'Inbox'],
+          ['notes', 'Notes'],
+        ] as Array<[CaptureTab, string]>).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`h-9 rounded-[9px] text-[14px] font-bold transition ${tab === id ? 'bg-surface text-text-1 shadow-sm' : 'text-text-2'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'inbox' ? <InboxPanel /> : <NotesPanel />}
     </ScreenShell>
   )
 }

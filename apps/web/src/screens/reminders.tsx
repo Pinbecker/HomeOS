@@ -27,7 +27,7 @@ function DueBadge({ timestamp }: { timestamp: number }) {
   )
 }
 
-export function RemindersPage() {
+export function VaultDueContent({ inset = true }: { inset?: boolean } = {}) {
   const snapshot = useAppState(state => {
     const entityById = new Map(state.data.records.map(record => [record.id, record]))
 
@@ -89,10 +89,11 @@ export function RemindersPage() {
   })
 
   const upcoming = useMemo(() => snapshot.reminders, [snapshot.reminders])
+  const sectionClassName = inset ? 'mx-4 mb-5' : 'mb-5'
 
   return (
-    <ScreenShell title="Reminders">
-      <section className="mx-4 mb-5">
+    <>
+      <section className={sectionClassName}>
         <p className="mb-2 text-[12px] font-bold uppercase tracking-wide text-text-3">Coming up</p>
         <div className="overflow-hidden rounded-2xl bg-surface">
           {upcoming.length > 0 ? (
@@ -119,7 +120,7 @@ export function RemindersPage() {
         </div>
       </section>
 
-      <section className="mx-4 mb-5">
+      <section className={sectionClassName}>
         <p className="mb-2 text-[12px] font-bold uppercase tracking-wide text-text-3">Renewals & due dates</p>
         <div className="overflow-hidden rounded-2xl bg-surface">
           {snapshot.renewals.length > 0 ? (
@@ -147,6 +148,14 @@ export function RemindersPage() {
           )}
         </div>
       </section>
+    </>
+  )
+}
+
+export function RemindersPage() {
+  return (
+    <ScreenShell title="Reminders">
+      <VaultDueContent />
     </ScreenShell>
   )
 }

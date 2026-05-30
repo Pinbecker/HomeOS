@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { CloudSun } from 'lucide-react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
@@ -98,6 +99,13 @@ function formatLongDate(date: Date) {
 
 export function HouseholdPage() {
   const sections = [
+    {
+      href: '/weather',
+      label: 'Weather',
+      desc: 'Forecasts and saved places',
+      color: '#32ADE6',
+      icon: <CloudSun className="h-[17px] w-[17px] text-white" strokeWidth={2.1} />,
+    },
     {
       href: '/household/bins',
       label: 'Bins',

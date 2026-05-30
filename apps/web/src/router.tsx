@@ -14,7 +14,6 @@ import { InboxCapturePage, InboxPage } from './screens/inbox'
 import { LifeCategoryPage, LifeEntityPage, LifeOverviewPage } from './screens/life'
 import { MediaCardDesignsPage } from './screens/media-card-designs'
 import { MediaPage } from './screens/media'
-import { NotesPage } from './screens/notes'
 import { RemindersPage } from './screens/reminders'
 import { ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
 import { LoginPage } from './screens/shared'
@@ -315,7 +314,7 @@ const homeRoute = createRoute({
 const notesListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/notes',
-  component: NotesPage,
+  component: () => <InboxPage initialTab="notes" />,
 })
 
 const routeTree = rootRoute.addChildren([

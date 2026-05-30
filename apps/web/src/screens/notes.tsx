@@ -107,7 +107,7 @@ function NoteModal({
   )
 }
 
-export function NotesPage() {
+export function NotesPanel() {
   const notes = useAppState(state => state.data.items
     .filter(item => item.type === 'note' && item.status === 'active' && !item.deletedAt)
     .sort((a, b) => {
@@ -233,7 +233,7 @@ export function NotesPage() {
   }
 
   return (
-    <ScreenShell title="Notes">
+    <>
       <div className="mx-auto flex max-w-lg flex-col">
         <div className="flex items-center justify-end px-5 pb-3">
           <button
@@ -299,6 +299,14 @@ export function NotesPage() {
           onSave={saveNote}
         />
       ) : null}
+    </>
+  )
+}
+
+export function NotesPage() {
+  return (
+    <ScreenShell title="Notes">
+      <NotesPanel />
     </ScreenShell>
   )
 }

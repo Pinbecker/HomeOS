@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Bell,
   CalendarDays,
-  CloudSun,
   Clapperboard,
   Droplet,
-  FileText,
   Grid3X3,
   House,
   Inbox,
@@ -79,12 +76,6 @@ const menuItems: MenuItem[] = [
     icon: Clapperboard,
   },
   {
-    href: '/weather',
-    label: 'Weather',
-    color: '#32ADE6',
-    icon: CloudSun,
-  },
-  {
     href: '/household',
     label: 'Household',
     color: 'var(--sage)',
@@ -92,27 +83,15 @@ const menuItems: MenuItem[] = [
   },
   {
     href: '/inbox',
-    label: 'Inbox',
+    label: 'Capture',
     color: 'var(--accent)',
     icon: Inbox,
-  },
-  {
-    href: '/reminders',
-    label: 'Reminders',
-    color: 'var(--amber)',
-    icon: Bell,
   },
   {
     href: '/cycle-tracker',
     label: 'Cycle',
     color: '#C04A7A',
     icon: Droplet,
-  },
-  {
-    href: '/notes',
-    label: 'Notes',
-    color: '#5856D6',
-    icon: FileText,
   },
 ]
 
@@ -277,7 +256,7 @@ export function BottomNav() {
               <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}>
                 <div style={{ width: 38, height: 5, borderRadius: 3, background: 'var(--text-3)', opacity: 0.4, margin: '0 auto' }} />
               </div>
-              <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 16px', letterSpacing: '0.01em' }}>Jump to</p>
+              <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 14px', letterSpacing: '0.01em' }}>Jump to</p>
               <div className="grid grid-cols-3 gap-y-5 px-5" style={{ justifyItems: 'center' }}>
                 {menuLinks.map((item, idx) => {
                   const Icon = item.icon

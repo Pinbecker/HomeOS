@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import { SwipeRow } from '../components/swipe-row'
+import { VaultDueContent } from './reminders'
 import { ScreenShell } from './shell'
 
 type CategoryMeta = {
@@ -265,6 +266,7 @@ export function LifeOverviewPage() {
     return { household: household ?? null, categories, records }
   })
   const [adminOpen, setAdminOpen] = useState(false)
+  const [tab, setTab] = useState<'records' | 'due'>('records')
 
   return (
     <ScreenShell title="Vault">
@@ -279,22 +281,40 @@ export function LifeOverviewPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-surface">
-          {snapshot.categories.map((category, index) => {
-            const count = snapshot.records.filter(record => record.category === category.key).length
-            return (
-              <a key={category.key} href={`/life/${category.key}`} className={`flex items-center gap-3.5 px-4 py-3.5 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-[22px]" style={{ background: `${category.color}1F` }}>{category.icon}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-semibold text-text-1">{category.label}</p>
-                  <p className="truncate text-[12.5px] text-text-2">{category.desc}</p>
-                </div>
-                <span className="flex h-[26px] min-w-[26px] shrink-0 items-center justify-center rounded-full px-2 text-[13px] font-bold" style={{ background: `${category.color}1F`, color: category.color }}>{count}</span>
-                <Chevron />
-              </a>
-            )
-          })}
+        <div className="mb-4 grid grid-cols-2 rounded-xl bg-surface-2 p-1">
+          {([
+            ['records', 'Records'],
+            ['due', 'Due'],
+          ] as Array<['records' | 'due', string]>).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`h-9 rounded-[9px] text-[14px] font-bold transition ${tab === id ? 'bg-surface text-text-1 shadow-sm' : 'text-text-2'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+
+        {tab === 'records' ? (
+          <div className="overflow-hidden rounded-2xl bg-surface">
+            {snapshot.categories.map((category, index) => {
+              const count = snapshot.records.filter(record => record.category === category.key).length
+              return (
+                <a key={category.key} href={`/life/${category.key}`} className={`flex items-center gap-3.5 px-4 py-3.5 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-[22px]" style={{ background: `${category.color}1F` }}>{category.icon}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[16px] font-semibold text-text-1">{category.label}</p>
+                    <p className="truncate text-[12.5px] text-text-2">{category.desc}</p>
+                  </div>
+                  <span className="flex h-[26px] min-w-[26px] shrink-0 items-center justify-center rounded-full px-2 text-[13px] font-bold" style={{ background: `${category.color}1F`, color: category.color }}>{count}</span>
+                  <Chevron />
+                </a>
+              )
+            })}
+          </div>
+        ) : <VaultDueContent inset={false} />}
       </div>
 
       {adminOpen && snapshot.household ? (
