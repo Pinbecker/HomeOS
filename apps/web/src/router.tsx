@@ -316,6 +316,11 @@ const notesListRoute = createRoute({
   path: '/notes',
   component: () => <InboxPage initialTab="notes" />,
 })
+const dropRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/drop',
+  component: () => <InboxPage initialTab="drop" />,
+})
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -334,6 +339,7 @@ const routeTree = rootRoute.addChildren([
   inboxRoute,
   inboxCaptureRoute,
   notesListRoute,
+  dropRoute,
   lifeRoute,
   lifeCategoryRoute,
   lifeAdminRoute,

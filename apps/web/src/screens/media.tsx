@@ -11,6 +11,11 @@ type MyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
 type FamilyListTab = 'watchlist' | 'tracking' | 'seen' | 'liked'
 type MediaWatchStatus = MediaUserStatus | MediaFamilyStatus
 type ProgressLike = { mediaItemId?: string; episodeId: string; watchedAt?: string | number | Date | null }
+type ProgressStats = {
+  watchedByItemId: Map<string, number>
+  watchedBySeasonKey: Map<string, number>
+  watchedEpisodeIds: Set<string>
+}
 type MediaCredits = {
   cast?: Array<{ id?: number; name?: string; character?: string | null }>
   crew?: Array<{ id?: number; name?: string; job?: string | null }>
@@ -39,6 +44,11 @@ type ActionResult = 'applied' | 'pending_tv'
 const SWIPE_PREVIEW_THRESHOLD = 34
 const SWIPE_COMMIT_THRESHOLD = 185
 const DISCOVER_VISIBLE_SEARCH_PAGES = 8
+const DISCOVER_INITIAL_LOOKAHEAD_PAGES = 2
+const MEDIA_LIST_VIRTUALIZE_AFTER = 80
+const MEDIA_LIST_ROW_ESTIMATE = 118
+const MEDIA_LIST_OVERSCAN = 8
+const mediaHaystackCache = new WeakMap<MediaItem, string>()
 
 const swipeIntents: Record<SwipeIntent, {
   label: string
@@ -121,7 +131,9 @@ function providerSearchText(item: MediaItem) {
 }
 
 function mediaHaystack(item: MediaItem) {
-  return [
+  const cached = mediaHaystackCache.get(item)
+  if (cached) return cached
+  const haystack = [
     item.title,
     item.originalTitle,
     item.overview,
@@ -133,10 +145,15 @@ function mediaHaystack(item: MediaItem) {
     ...castNames(item, 20),
     ...crewNames(item, 12),
   ].filter(Boolean).join(' ').toLowerCase()
+  mediaHaystackCache.set(item, haystack)
+  return haystack
 }
 
-function matchesMediaSearch(item: MediaItem, query: string) {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+function searchTerms(query: string) {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+}
+
+function matchesMediaSearchTerms(item: MediaItem, terms: string[]) {
   if (!terms.length) return true
   const haystack = mediaHaystack(item)
   return terms.every(term => haystack.includes(term))
@@ -218,18 +235,20 @@ export function MediaPage() {
   const progressSheetUserState = progressSheetItem ? userStates.find(row => row.userId === userId && row.mediaItemId === progressSheetItem.id) ?? null : null
   const userProgress = useMemo(() => progress.filter(row => row.scopeType === 'user' && row.scopeId === userId), [progress, userId])
   const familyProgress = useMemo(() => progress.filter(row => row.scopeType === 'family' && row.scopeId === (household?.id ?? 'default')), [household?.id, progress])
+  const userProgressStats = useMemo(() => buildProgressStats(userProgress), [userProgress])
+  const familyProgressStats = useMemo(() => buildProgressStats(familyProgress), [familyProgress])
 
   useEffect(() => {
     let cancelled = false
     async function reconcileProgressState() {
       for (const row of myRows) {
-        const progressStatus = progressDrivenTvStatus(row.item, userProgress)
+        const progressStatus = progressDrivenTvStatus(row.item, userProgressStats)
         if (!progressStatus || (row.state.status === progressStatus && !row.state.watchlist)) continue
         if (cancelled) return
         await setUserMediaState(row.item, progressStatus, row.state.rating ?? 'neutral', { watchlist: false })
       }
       for (const row of familyRows) {
-        const progressStatus = progressDrivenTvStatus(row.item, familyProgress)
+        const progressStatus = progressDrivenTvStatus(row.item, familyProgressStats)
         if (!progressStatus || (row.state.status === progressStatus && !row.state.watchlist)) continue
         if (cancelled) return
         await setFamilyMediaState(row.item, progressStatus, row.state.rating ?? 'neutral', { watchlist: false })
@@ -239,7 +258,7 @@ export function MediaPage() {
     return () => {
       cancelled = true
     }
-  }, [familyProgress, familyRows, myRows, userProgress])
+  }, [familyProgressStats, familyRows, myRows, userProgressStats])
 
   useEffect(() => {
     loadFeed(1, true, { ensureVisible: true }).catch(() => undefined)
@@ -345,25 +364,18 @@ export function MediaPage() {
     try {
       const dismissedIds = replace ? new Set<string>() : dismissedDiscoverIds
       let nextFeed = replace ? [] : feed
-      let nextPage = targetPage
-      let loadedPage = page
-      let fetchedPages = 0
       const targetVisibleIndex = replace ? 0 : feedIndex
+      const lookahead = options.ensureVisible ? DISCOVER_INITIAL_LOOKAHEAD_PAGES : 1
 
-      while (fetchedPages < (options.ensureVisible ? DISCOVER_VISIBLE_SEARCH_PAGES : 1)) {
-        if (!replace && feedLoadRef.current.pages.has(nextPage)) break
-        const payload = await fetchMediaFeed(nextPage)
-        nextFeed = replace && fetchedPages === 0 ? payload.items : mergeMediaItems(nextFeed, payload.items)
-        loadedPage = payload.page
-        feedLoadRef.current.pages.add(payload.page)
-        fetchedPages += 1
-        if (!options.ensureVisible || visibleDiscoverItems(nextFeed, dismissedIds).length > targetVisibleIndex) break
-        nextPage = payload.page + 1
+      const payload = await fetchMediaFeed(targetPage, lookahead)
+      nextFeed = replace ? payload.items : mergeMediaItems(nextFeed, payload.items)
+      for (let loadedPage = targetPage; loadedPage <= payload.page; loadedPage += 1) {
+        feedLoadRef.current.pages.add(loadedPage)
       }
 
       const visibleItems = visibleDiscoverItems(nextFeed, dismissedIds)
       setFeed(nextFeed)
-      setPage(loadedPage)
+      setPage(payload.page)
       feedLoadRef.current.initialLoaded = true
       if (replace) setFeedIndex(0)
       if (replace) setDismissedDiscoverIds(new Set())
@@ -796,7 +808,7 @@ export function MediaPage() {
               onOpen={openDetails}
               expandedShowId={expandedShowId}
               onExpandShow={setExpandedShowId}
-              progress={userProgress}
+              progressStats={userProgressStats}
               seasonCache={seasonCache}
               seasonErrors={seasonErrors}
               openSeasonKey={openSeasonKey}
@@ -830,7 +842,7 @@ export function MediaPage() {
               onOpen={openDetails}
               expandedShowId={expandedShowId}
               onExpandShow={setExpandedShowId}
-              progress={familyProgress}
+              progressStats={familyProgressStats}
               seasonCache={seasonCache}
               seasonErrors={seasonErrors}
               openSeasonKey={openSeasonKey}
@@ -905,7 +917,7 @@ export function MediaPage() {
       />
       <TvProgressSheet
         item={progressSheetItem}
-        progress={userProgress}
+        progressStats={userProgressStats}
         seasonCache={seasonCache}
         seasonErrors={seasonErrors}
         openSeasonKey={openSeasonKey}
@@ -1368,6 +1380,10 @@ function SearchView({ query, setQuery, searching, results, userStates, userId, s
   onAction: (item: MediaItem, action: keyof typeof actionMeta | 'skip') => void
   onOpen: (item: MediaItem) => void
 }) {
+  const watchlistIds = useMemo(() => new Set(userStates
+    .filter(row => row.userId === userId && Boolean(row.watchlist))
+    .map(row => row.mediaItemId)), [userId, userStates])
+
   return (
     <section>
       <label className="flex items-center gap-2 rounded-full border border-[var(--media-line)] bg-[var(--media-panel)] px-4 py-3 shadow-sm">
@@ -1376,7 +1392,7 @@ function SearchView({ query, setQuery, searching, results, userStates, userId, s
       </label>
       <div className="mt-4 space-y-3">
         {searching ? <p className="px-1 text-[13px] font-semibold text-[var(--media-muted)]">Searching...</p> : null}
-        {results.map(item => <CompactMediaRow key={item.id} item={item} watchlistActive={userStates.some(row => row.userId === userId && row.mediaItemId === item.id && Boolean(row.watchlist))} selectedProviderIds={selectedProviderIds} onAction={onAction} onOpen={onOpen} />)}
+        {results.map(item => <CompactMediaRow key={item.id} item={item} watchlistActive={watchlistIds.has(item.id)} selectedProviderIds={selectedProviderIds} onAction={onAction} onOpen={onOpen} />)}
         {!searching && query.trim().length >= 2 && !results.length ? <EmptyCard text="No matches found." /> : null}
       </div>
     </section>
@@ -1543,7 +1559,56 @@ function MediaStatusPill({ status, onClick }: { status: MediaUserStatus | MediaF
   return null
 }
 
-function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onStatus, onRating, onWatchlist, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function useVirtualMediaRows<T>(rows: T[]) {
+  const anchorRef = useRef<HTMLDivElement | null>(null)
+  const [range, setRange] = useState({ start: 0, end: Math.min(rows.length, MEDIA_LIST_VIRTUALIZE_AFTER) })
+  const shouldVirtualize = rows.length > MEDIA_LIST_VIRTUALIZE_AFTER
+
+  useLayoutEffect(() => {
+    if (!shouldVirtualize) {
+      setRange({ start: 0, end: rows.length })
+      return undefined
+    }
+
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const anchor = anchorRef.current
+      if (!anchor) return
+      const anchorTop = anchor.getBoundingClientRect().top + window.scrollY
+      const visibleTop = window.scrollY - anchorTop
+      const visibleBottom = visibleTop + window.innerHeight
+      const nextStart = Math.max(0, Math.floor(visibleTop / MEDIA_LIST_ROW_ESTIMATE) - MEDIA_LIST_OVERSCAN)
+      const nextEnd = Math.min(rows.length, Math.ceil(visibleBottom / MEDIA_LIST_ROW_ESTIMATE) + MEDIA_LIST_OVERSCAN)
+      setRange(previous => previous.start === nextStart && previous.end === nextEnd ? previous : { start: nextStart, end: nextEnd })
+    }
+    const schedule = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(update)
+    }
+
+    update()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+    }
+  }, [rows.length, shouldVirtualize])
+
+  const start = shouldVirtualize ? Math.min(range.start, rows.length) : 0
+  const end = shouldVirtualize ? Math.min(Math.max(range.end, start), rows.length) : rows.length
+  return {
+    anchorRef,
+    rows: rows.slice(start, end),
+    start,
+    topSpacer: shouldVirtualize ? start * MEDIA_LIST_ROW_ESTIMATE : 0,
+    bottomSpacer: shouldVirtualize ? Math.max(0, rows.length - end) * MEDIA_LIST_ROW_ESTIMATE : 0,
+  }
+}
+
+function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onStatus, onRating, onWatchlist, onDelete, onOpen, expandedShowId, onExpandShow, progressStats, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaUserState; item: MediaItem }>
   activeTab: MyListTab
   search: string
@@ -1557,7 +1622,7 @@ function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selecte
   onOpen: (item: MediaItem) => void
   expandedShowId: string | null
   onExpandShow: (id: string | null) => void
-  progress: ProgressLike[]
+  progressStats: ProgressStats
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -1565,33 +1630,35 @@ function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selecte
   onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
 }) {
-  const effectiveStatusFor = (row: { state: MediaUserState; item: MediaItem }) => effectiveTvProgressStatus(row.item, row.state.status, progress)
-  const countFor = (target: MyListTab) => rows.filter(row => {
-    const effectiveStatus = effectiveStatusFor(row)
-    if (target === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
-    if (target === 'tracking') return effectiveStatus === 'watching'
-    if (target === 'seen') return effectiveStatus === 'watched'
-    return row.state.rating === 'liked'
-  }).length
-  const baseRows = rows.filter(row => {
-    const effectiveStatus = effectiveStatusFor(row)
-    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
-    if (activeTab === 'tracking') return effectiveStatus === 'watching'
-    if (activeTab === 'seen') return effectiveStatus === 'watched'
-    return row.state.rating === 'liked'
-  })
-  const filtered = baseRows.filter(row => {
-    return matchesMediaSearch(row.item, search)
-  })
+  const preparedRows = useMemo(() => rows.map(row => ({
+    ...row,
+    effectiveStatus: effectiveTvProgressStatus(row.item, row.state.status, progressStats),
+  })), [progressStats, rows])
+  const counts = useMemo(() => preparedRows.reduce<Record<MyListTab, number>>((next, row) => {
+    if (Boolean(row.state.watchlist) && row.effectiveStatus !== 'watching' && row.effectiveStatus !== 'watched') next.watchlist += 1
+    if (row.effectiveStatus === 'watching') next.tracking += 1
+    if (row.effectiveStatus === 'watched') next.seen += 1
+    if (row.state.rating === 'liked') next.liked += 1
+    return next
+  }, { watchlist: 0, tracking: 0, seen: 0, liked: 0 }), [preparedRows])
+  const terms = useMemo(() => searchTerms(search), [search])
+  const filtered = useMemo(() => preparedRows.filter(row => {
+    if (activeTab === 'watchlist' && (!row.state.watchlist || row.effectiveStatus === 'watching' || row.effectiveStatus === 'watched')) return false
+    if (activeTab === 'tracking' && row.effectiveStatus !== 'watching') return false
+    if (activeTab === 'seen' && row.effectiveStatus !== 'watched') return false
+    if (activeTab === 'liked' && row.state.rating !== 'liked') return false
+    return matchesMediaSearchTerms(row.item, terms)
+  }), [activeTab, preparedRows, terms])
+  const virtual = useVirtualMediaRows(filtered)
 
   return (
     <section className="space-y-2">
       <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-0.5">
         {([
-          ['watchlist', 'Watchlist', countFor('watchlist')],
-          ['tracking', 'Tracking', countFor('tracking')],
-          ['seen', 'Seen', countFor('seen')],
-          ['liked', 'Liked', countFor('liked')],
+          ['watchlist', 'Watchlist', counts.watchlist],
+          ['tracking', 'Tracking', counts.tracking],
+          ['seen', 'Seen', counts.seen],
+          ['liked', 'Liked', counts.liked],
         ] as Array<[MyListTab, string, number]>).map(([id, label, count]) => (
           <button
             key={id}
@@ -1615,9 +1682,10 @@ function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selecte
         {search ? <button type="button" onClick={() => setSearch('')} className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Clear list search"><X className="h-4 w-4" /></button> : null}
       </label>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
-        <div className="space-y-3">
-          {filtered.map(row => {
-            const effectiveStatus = effectiveStatusFor(row)
+        <div ref={virtual.anchorRef} className="space-y-3">
+          {virtual.topSpacer ? <div style={{ height: virtual.topSpacer }} /> : null}
+          {virtual.rows.map(row => {
+            const effectiveStatus = row.effectiveStatus
             return (
             <SwipeRow
               key={row.state.id}
@@ -1658,7 +1726,7 @@ function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selecte
                     {row.item.mediaType === 'tv' ? (
                       <SeasonPanel
                         item={row.item}
-                        progress={progress}
+                        progressStats={progressStats}
                         seasonCache={seasonCache}
                         seasonErrors={seasonErrors}
                         openSeasonKey={openSeasonKey}
@@ -1673,13 +1741,14 @@ function MyListsView({ rows, activeTab, search, setActiveTab, setSearch, selecte
               </div>
             </SwipeRow>
           )})}
+          {virtual.bottomSpacer ? <div style={{ height: virtual.bottomSpacer }} /> : null}
         </div>
       )}
     </section>
   )
 }
 
-function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
+function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selectedProviderIds, onWatchlist, onSeen, onRating, onDelete, onOpen, expandedShowId, onExpandShow, progressStats, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason }: {
   rows: Array<{ state: MediaFamilyState; item: MediaItem }>
   activeTab: FamilyListTab
   search: string
@@ -1693,7 +1762,7 @@ function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selected
   onOpen: (item: MediaItem) => void
   expandedShowId: string | null
   onExpandShow: (id: string | null) => void
-  progress: ProgressLike[]
+  progressStats: ProgressStats
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -1701,33 +1770,35 @@ function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selected
   onEpisode: (item: MediaItem, episode: MediaEpisode, watched: boolean) => void
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
 }) {
-  const effectiveStatusFor = (row: { state: MediaFamilyState; item: MediaItem }) => effectiveTvProgressStatus(row.item, row.state.status, progress)
-  const countFor = (target: FamilyListTab) => rows.filter(row => {
-    const effectiveStatus = effectiveStatusFor(row)
-    if (target === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
-    if (target === 'tracking') return effectiveStatus === 'watching'
-    if (target === 'seen') return effectiveStatus === 'watched'
-    return row.state.rating === 'liked'
-  }).length
-  const baseRows = rows.filter(row => {
-    const effectiveStatus = effectiveStatusFor(row)
-    if (activeTab === 'watchlist') return Boolean(row.state.watchlist) && effectiveStatus !== 'watching' && effectiveStatus !== 'watched'
-    if (activeTab === 'tracking') return effectiveStatus === 'watching'
-    if (activeTab === 'seen') return effectiveStatus === 'watched'
-    return row.state.rating === 'liked'
-  })
-  const filtered = baseRows.filter(row => {
-    return matchesMediaSearch(row.item, search)
-  })
+  const preparedRows = useMemo(() => rows.map(row => ({
+    ...row,
+    effectiveStatus: effectiveTvProgressStatus(row.item, row.state.status, progressStats),
+  })), [progressStats, rows])
+  const counts = useMemo(() => preparedRows.reduce<Record<FamilyListTab, number>>((next, row) => {
+    if (Boolean(row.state.watchlist) && row.effectiveStatus !== 'watching' && row.effectiveStatus !== 'watched') next.watchlist += 1
+    if (row.effectiveStatus === 'watching') next.tracking += 1
+    if (row.effectiveStatus === 'watched') next.seen += 1
+    if (row.state.rating === 'liked') next.liked += 1
+    return next
+  }, { watchlist: 0, tracking: 0, seen: 0, liked: 0 }), [preparedRows])
+  const terms = useMemo(() => searchTerms(search), [search])
+  const filtered = useMemo(() => preparedRows.filter(row => {
+    if (activeTab === 'watchlist' && (!row.state.watchlist || row.effectiveStatus === 'watching' || row.effectiveStatus === 'watched')) return false
+    if (activeTab === 'tracking' && row.effectiveStatus !== 'watching') return false
+    if (activeTab === 'seen' && row.effectiveStatus !== 'watched') return false
+    if (activeTab === 'liked' && row.state.rating !== 'liked') return false
+    return matchesMediaSearchTerms(row.item, terms)
+  }), [activeTab, preparedRows, terms])
+  const virtual = useVirtualMediaRows(filtered)
 
   return (
     <section className="space-y-2">
       <div className="grid grid-cols-4 gap-1 rounded-[12px] border border-[var(--media-line)] bg-[var(--media-panel)] p-0.5">
         {([
-          ['watchlist', 'Watchlist', countFor('watchlist')],
-          ['tracking', 'Tracking', countFor('tracking')],
-          ['seen', 'Seen', countFor('seen')],
-          ['liked', 'Liked', countFor('liked')],
+          ['watchlist', 'Watchlist', counts.watchlist],
+          ['tracking', 'Tracking', counts.tracking],
+          ['seen', 'Seen', counts.seen],
+          ['liked', 'Liked', counts.liked],
         ] as Array<[FamilyListTab, string, number]>).map(([id, label, count]) => (
           <button key={id} type="button" onClick={() => setActiveTab(id)} className={`rounded-[9px] px-1.5 py-1.5 text-center transition ${activeTab === id ? 'bg-accent-bg text-[var(--media-ink)]' : 'text-[var(--media-muted)]'}`}>
             <span className="block text-[12px] font-bold leading-none">{label}</span>
@@ -1741,9 +1812,10 @@ function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selected
         {search ? <button type="button" onClick={() => setSearch('')} className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Clear family search"><X className="h-4 w-4" /></button> : null}
       </label>
       {!filtered.length ? <EmptyCard text="Nothing here yet." /> : (
-        <div className="space-y-3">
-          {filtered.map(row => {
-            const effectiveStatus = effectiveStatusFor(row)
+        <div ref={virtual.anchorRef} className="space-y-3">
+          {virtual.topSpacer ? <div style={{ height: virtual.topSpacer }} /> : null}
+          {virtual.rows.map(row => {
+            const effectiveStatus = row.effectiveStatus
             return (
             <SwipeRow
               key={row.state.id}
@@ -1784,7 +1856,7 @@ function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selected
                     {row.item.mediaType === 'tv' ? (
                       <SeasonPanel
                         item={row.item}
-                        progress={progress}
+                        progressStats={progressStats}
                         seasonCache={seasonCache}
                         seasonErrors={seasonErrors}
                         openSeasonKey={openSeasonKey}
@@ -1799,15 +1871,30 @@ function FamilyView({ rows, activeTab, search, setActiveTab, setSearch, selected
               </div>
             </SwipeRow>
           )})}
+          {virtual.bottomSpacer ? <div style={{ height: virtual.bottomSpacer }} /> : null}
         </div>
       )}
     </section>
   )
 }
 
-function watchedEpisodeCount(item: MediaItem, progress: ProgressLike[]) {
-  const episodeIdPrefix = `${item.id}:s`
-  return progress.filter(row => row.watchedAt && (row.mediaItemId ? row.mediaItemId === item.id : row.episodeId.startsWith(episodeIdPrefix))).length
+function buildProgressStats(progress: ProgressLike[]): ProgressStats {
+  const watchedByItemId = new Map<string, number>()
+  const watchedBySeasonKey = new Map<string, number>()
+  const watchedEpisodeIds = new Set<string>()
+  for (const row of progress) {
+    if (!row.watchedAt) continue
+    watchedEpisodeIds.add(row.episodeId)
+    const itemId = row.mediaItemId ?? row.episodeId.match(/^(.*):s\d+:e/)?.[1]
+    if (itemId) watchedByItemId.set(itemId, (watchedByItemId.get(itemId) ?? 0) + 1)
+    const seasonKey = row.episodeId.match(/^(.*:s\d+):e/)?.[1]
+    if (seasonKey) watchedBySeasonKey.set(seasonKey, (watchedBySeasonKey.get(seasonKey) ?? 0) + 1)
+  }
+  return { watchedByItemId, watchedBySeasonKey, watchedEpisodeIds }
+}
+
+function watchedEpisodeCount(item: MediaItem, stats: ProgressStats) {
+  return stats.watchedByItemId.get(item.id) ?? 0
 }
 
 function expectedEpisodeCount(item: MediaItem) {
@@ -1816,21 +1903,21 @@ function expectedEpisodeCount(item: MediaItem) {
     .reduce((total, season) => total + Number(season.episodeCount ?? 0), 0)
 }
 
-function progressDrivenTvStatus(item: MediaItem, progress: ProgressLike[]): 'watching' | 'watched' | null {
+function progressDrivenTvStatus(item: MediaItem, stats: ProgressStats): 'watching' | 'watched' | null {
   if (item.mediaType !== 'tv') return null
-  const watchedCount = watchedEpisodeCount(item, progress)
+  const watchedCount = watchedEpisodeCount(item, stats)
   if (!watchedCount) return null
   const expectedCount = expectedEpisodeCount(item)
   return expectedCount > 0 && watchedCount >= expectedCount ? 'watched' : 'watching'
 }
 
-function effectiveTvProgressStatus(item: MediaItem, status: MediaWatchStatus, progress: ProgressLike[]): MediaWatchStatus {
-  return progressDrivenTvStatus(item, progress) ?? status
+function effectiveTvProgressStatus(item: MediaItem, status: MediaWatchStatus, stats: ProgressStats): MediaWatchStatus {
+  return progressDrivenTvStatus(item, stats) ?? status
 }
 
-function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
+function SeasonPanel({ item, progressStats, seasonCache, seasonErrors, openSeasonKey, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
   item: MediaItem
-  progress: ProgressLike[]
+  progressStats: ProgressStats
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -1839,7 +1926,6 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
   onSeason: (item: MediaItem, seasonNumber: number, episodes: MediaEpisode[], watched: boolean) => void
   assumeAllWatched?: boolean
 }) {
-  const watched = new Set(progress.filter(row => row.watchedAt).map(row => row.episodeId))
   const seasons = (item.seasons ?? []).filter(season => Number(season.seasonNumber) > 0)
   return (
       <div className="border-t border-[var(--media-line)] px-2.5 pb-3 pt-2.5">
@@ -1852,10 +1938,10 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
             const episodes = cached?.episodes ?? []
             const expectedEpisodeCount = episodes.length || Number(raw.episodeCount ?? 0)
             const watchedCount = episodes.length
-              ? episodes.filter(episode => assumeAllWatched || watched.has(episode.id)).length
+              ? episodes.filter(episode => assumeAllWatched || progressStats.watchedEpisodeIds.has(episode.id)).length
               : assumeAllWatched
                 ? expectedEpisodeCount
-                : progress.filter(row => row.watchedAt && row.episodeId.startsWith(`${key}:e`)).length
+                : progressStats.watchedBySeasonKey.get(key) ?? 0
             const allWatched = expectedEpisodeCount > 0 && watchedCount >= expectedEpisodeCount
             const seasonSummary = watchedCount > 0 || cached
               ? `${watchedCount} of ${expectedEpisodeCount} watched`
@@ -1879,7 +1965,7 @@ function SeasonPanel({ item, progress, seasonCache, seasonErrors, openSeasonKey,
                 {openSeasonKey === key ? (
                   <div className="border-t border-[var(--media-line)] px-2 py-2">
                     {error ? <p className="px-1 py-2 text-[13px] font-semibold text-red">{error}</p> : !cached ? <p className="px-1 py-2 text-[13px] font-semibold text-[var(--media-muted)]">Loading episodes...</p> : cached.episodes.map(episode => {
-                      const episodeWatched = assumeAllWatched || watched.has(episode.id)
+                      const episodeWatched = assumeAllWatched || progressStats.watchedEpisodeIds.has(episode.id)
                       return (
                       <button key={episode.id} type="button" onClick={() => onEpisode(item, episode, !episodeWatched)} className="flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left active:bg-[var(--media-panel-2)]">
                         <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${episodeWatched ? 'border-accent-border bg-accent-bg text-accent' : 'border-[var(--media-line)] text-transparent'}`}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
@@ -2103,9 +2189,9 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
   )
 }
 
-function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeasonKey, onClose, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
+function TvProgressSheet({ item, progressStats, seasonCache, seasonErrors, openSeasonKey, onClose, onLoadSeason, onEpisode, onSeason, assumeAllWatched = false }: {
   item: MediaItem | null
-  progress: Array<{ episodeId: string; watchedAt?: string | number | Date | null }>
+  progressStats: ProgressStats
   seasonCache: Record<string, MediaSeasonPayload>
   seasonErrors: Record<string, string>
   openSeasonKey: string | null
@@ -2131,7 +2217,7 @@ function TvProgressSheet({ item, progress, seasonCache, seasonErrors, openSeason
         <div className="max-h-[calc(82dvh-84px)] overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+16px)]">
           <SeasonPanel
             item={item}
-            progress={progress}
+            progressStats={progressStats}
             seasonCache={seasonCache}
             seasonErrors={seasonErrors}
             openSeasonKey={openSeasonKey}

@@ -261,12 +261,13 @@ export async function searchMedia(query: string) {
   return normalized
 }
 
-export async function discoverFeed(excludedIds: Set<string>, page = 1) {
+export async function discoverFeed(excludedIds: Set<string>, page = 1, pageCount = 1) {
   const mainstreamPage = Math.max(1, page)
-  const explorationPage = Math.max(1, page + 1)
-  const [trending, movies, tv, classics] = await Promise.all([
+  const lookahead = Math.min(3, Math.max(1, pageCount))
+  const pages = Array.from({ length: lookahead }, (_value, index) => mainstreamPage + index)
+  const [trending, moviePages, tvPages, classicPages] = await Promise.all([
     tmdbFetch<{ results?: TmdbMedia[] }>('/trending/all/week', { language: 'en-GB' }),
-    tmdbFetch<{ results?: TmdbMedia[] }>('/discover/movie', {
+    Promise.all(pages.map(targetPage => tmdbFetch<{ results?: TmdbMedia[] }>('/discover/movie', {
       language: 'en-GB',
       region: 'GB',
       include_adult: false,
@@ -274,17 +275,17 @@ export async function discoverFeed(excludedIds: Set<string>, page = 1) {
       sort_by: 'popularity.desc',
       'vote_count.gte': 250,
       with_original_language: 'en',
-      page: mainstreamPage,
-    }),
-    tmdbFetch<{ results?: TmdbMedia[] }>('/discover/tv', {
+      page: targetPage,
+    }))),
+    Promise.all(pages.map(targetPage => tmdbFetch<{ results?: TmdbMedia[] }>('/discover/tv', {
       language: 'en-GB',
       watch_region: 'GB',
       sort_by: 'popularity.desc',
       'vote_count.gte': 120,
       with_original_language: 'en',
-      page: mainstreamPage,
-    }),
-    tmdbFetch<{ results?: TmdbMedia[] }>('/discover/movie', {
+      page: targetPage,
+    }))),
+    Promise.all(pages.map(targetPage => tmdbFetch<{ results?: TmdbMedia[] }>('/discover/movie', {
       language: 'en-GB',
       region: 'GB',
       include_adult: false,
@@ -293,15 +294,17 @@ export async function discoverFeed(excludedIds: Set<string>, page = 1) {
       'vote_average.gte': 7,
       'vote_count.gte': 1000,
       with_original_language: 'en',
-      page: explorationPage,
-    }),
+      page: targetPage + 1,
+    }))),
   ])
 
   const pools = [
     ...(trending.results ?? []),
-    ...(movies.results ?? []).map(item => ({ ...item, media_type: 'movie' })),
-    ...(tv.results ?? []).map(item => ({ ...item, media_type: 'tv' })),
-    ...(classics.results ?? []).map(item => ({ ...item, media_type: 'movie' })),
+    ...pages.flatMap((_targetPage, index) => [
+      ...(moviePages[index]?.results ?? []).map(item => ({ ...item, media_type: 'movie' })),
+      ...(tvPages[index]?.results ?? []).map(item => ({ ...item, media_type: 'tv' })),
+      ...(classicPages[index]?.results ?? []).map(item => ({ ...item, media_type: 'movie' })),
+    ]),
   ]
   const seen = new Set<string>()
   const normalized = pools

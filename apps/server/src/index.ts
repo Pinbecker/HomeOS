@@ -16,6 +16,7 @@ import { appendConversationUserMessage, confirmAiJob, conversationMessages, getA
 import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
 import { registerWeatherRoutes } from './weather'
 import { registerMediaRoutes } from './media'
+import { registerDropzoneRoutes } from './dropzone'
 
 const app = Fastify({
   logger: true,
@@ -29,7 +30,7 @@ app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', process.env.VITE_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '*')
   reply.header('Access-Control-Allow-Credentials', 'true')
   reply.header('Access-Control-Allow-Headers', 'Content-Type')
-  reply.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
+  reply.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
 
   if (request.url.startsWith('/api/')) {
     reply.header('Cache-Control', 'no-store')
@@ -435,6 +436,7 @@ app.get('/api/ai/jobs', async (request, reply) => {
 
 registerWeatherRoutes(app)
 registerMediaRoutes(app)
+registerDropzoneRoutes(app)
 
 app.get('/*', async (request, reply) => {
   if (request.url.startsWith('/api/')) {

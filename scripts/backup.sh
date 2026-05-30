@@ -50,7 +50,7 @@ echo "$LOG_PREFIX Daily backups retained: $DAILY_COUNT"
 
 # --- Also backup files directory ---
 if [ -d "/data/files" ]; then
-    rsync -a --delete /data/files/ "$BACKUP_DIR/files/"
+    rsync -a --delete --exclude 'dropzone/' /data/files/ "$BACKUP_DIR/files/"
     echo "$LOG_PREFIX Files directory synced to backup"
 fi
 

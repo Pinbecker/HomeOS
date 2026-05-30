@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { AiCapture } from '../components/ai-capture'
 import { enqueueMutation, refreshAppState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
+import { DropzonePanel } from './dropzone-panel'
 import { NotesPanel } from './notes'
 import { ScreenShell } from './shell'
 
-type CaptureTab = 'inbox' | 'notes'
+type CaptureTab = 'inbox' | 'notes' | 'drop'
 
 function formatRelativeTime(value: string | number | Date) {
   const date = new Date(value)
@@ -242,10 +243,11 @@ export function InboxPage({ initialTab = 'inbox' }: { initialTab?: CaptureTab } 
 
   return (
     <ScreenShell title="Capture">
-      <div className="mx-4 mb-4 grid grid-cols-2 rounded-xl bg-surface-2 p-1">
+      <div className="mx-4 mb-4 grid grid-cols-3 rounded-xl bg-surface-2 p-1">
         {([
           ['inbox', 'Inbox'],
           ['notes', 'Notes'],
+          ['drop', 'Drop'],
         ] as Array<[CaptureTab, string]>).map(([id, label]) => (
           <button
             key={id}
@@ -257,7 +259,7 @@ export function InboxPage({ initialTab = 'inbox' }: { initialTab?: CaptureTab } 
           </button>
         ))}
       </div>
-      {tab === 'inbox' ? <InboxPanel /> : <NotesPanel />}
+      {tab === 'inbox' ? <InboxPanel /> : tab === 'notes' ? <NotesPanel /> : <DropzonePanel />}
     </ScreenShell>
   )
 }

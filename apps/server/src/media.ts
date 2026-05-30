@@ -22,7 +22,9 @@ export function registerMediaRoutes(app: FastifyInstance) {
     if (!session) return reply.status(401).send({ error: 'Unauthorized' })
 
     const requestedPage = Number((request.query as { page?: string }).page ?? 1)
+    const requestedLookahead = Number((request.query as { lookahead?: string }).lookahead ?? 1)
     const page = Number.isFinite(requestedPage) ? Math.max(1, requestedPage) : 1
+    const lookahead = Number.isFinite(requestedLookahead) ? Math.min(3, Math.max(1, requestedLookahead)) : 1
     const [userStates, familyStates, interactions] = await Promise.all([
       db.query.mediaUserStates.findMany({
         where: eq(mediaUserStates.userId, session.user.id),
@@ -44,7 +46,7 @@ export function registerMediaRoutes(app: FastifyInstance) {
         .filter(row => row.action !== 'skip' || Number(new Date(row.createdAt)) >= skipCutoff)
         .map(row => row.mediaItemId),
     ])
-    return reply.send({ items: await discoverFeed(excluded, page), page })
+    return reply.send({ items: await discoverFeed(excluded, page, lookahead), page: page + lookahead - 1 })
   })
 
   app.get('/api/media/search', async (request, reply) => {

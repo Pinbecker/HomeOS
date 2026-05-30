@@ -42,8 +42,10 @@ async function api<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export async function fetchMediaFeed(page = 1) {
-  return api<{ items: MediaItem[]; page: number }>(`/api/media/feed?page=${page}`)
+export async function fetchMediaFeed(page = 1, lookahead = 1) {
+  const params = new URLSearchParams({ page: String(page) })
+  if (lookahead > 1) params.set('lookahead', String(lookahead))
+  return api<{ items: MediaItem[]; page: number }>(`/api/media/feed?${params.toString()}`)
 }
 
 export async function searchMedia(query: string) {

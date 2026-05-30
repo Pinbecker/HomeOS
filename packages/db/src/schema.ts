@@ -377,6 +377,38 @@ export const fileAttachments = sqliteTable('file_attachments', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 })
 
+export type DropzoneEntryKind = 'text' | 'link' | 'file'
+
+export const dropzoneEntries = sqliteTable('dropzone_entries', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  kind: text('kind').$type<DropzoneEntryKind>().notNull(),
+  text: text('text'),
+  originalUrl: text('original_url'),
+  fileId: text('file_id').references(() => files.id, { onDelete: 'cascade' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  deletedAt: integer('deleted_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+})
+
+export const dropzoneUploadSessions = sqliteTable('dropzone_upload_sessions', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  createdById: text('created_by_id').notNull().references(() => users.id),
+  originalName: text('original_name').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  chunkSizeBytes: integer('chunk_size_bytes').notNull(),
+  totalChunks: integer('total_chunks').notNull(),
+  uploadedChunks: text('uploaded_chunks', { mode: 'json' }).$type<number[]>().notNull().default([]),
+  status: text('status').$type<'active' | 'complete' | 'cancelled'>().notNull().default('active'),
+  fileId: text('file_id').references(() => files.id, { onDelete: 'set null' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+})
+
 // ============================================================
 // TAGS
 // ============================================================
