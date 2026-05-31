@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm'
 import { db } from '@homeos/db'
-import { dropzoneEntries, dropzoneUploadSessions, files } from '@homeos/db/schema'
+import { dropzoneEntries, dropzoneUploadSessions, files, users } from '@homeos/db/schema'
 import { getSession } from './sync'
 
 const HOUSEHOLD_ID = process.env.HOUSEHOLD_ID ?? 'default'
@@ -27,6 +27,9 @@ type DropzoneEntryPayload = {
   fileName: string | null
   mimeType: string | null
   sizeBytes: number | null
+  createdById: string
+  createdByName: string | null
+  canDelete: boolean
   createdAt: string
   expiresAt: string
 }
@@ -112,7 +115,7 @@ async function cleanupDropzone() {
   }
 }
 
-async function entryPayloads() {
+async function entryPayloads(currentUserId: string) {
   await cleanupDropzone()
   const now = new Date()
   const entries = await db.query.dropzoneEntries.findMany({
@@ -120,11 +123,15 @@ async function entryPayloads() {
     orderBy: (table, { desc }) => [desc(table.createdAt)],
   })
   const fileIds = entries.map(entry => entry.fileId).filter((id): id is string => Boolean(id))
+  const userIds = Array.from(new Set(entries.map(entry => entry.createdById)))
   const fileRows = fileIds.length ? await db.query.files.findMany({ where: inArray(files.id, fileIds) }) : []
+  const userRows = userIds.length ? await db.query.users.findMany({ where: inArray(users.id, userIds) }) : []
   const fileById = new Map(fileRows.map(file => [file.id, file]))
+  const userById = new Map(userRows.map(user => [user.id, user]))
 
   return entries.map((entry): DropzoneEntryPayload => {
     const file = entry.fileId ? fileById.get(entry.fileId) ?? null : null
+    const user = userById.get(entry.createdById) ?? null
     return {
       id: entry.id,
       kind: entry.kind,
@@ -134,6 +141,9 @@ async function entryPayloads() {
       fileName: file?.originalName ?? null,
       mimeType: file?.mimeType ?? null,
       sizeBytes: file?.sizeBytes ?? null,
+      createdById: entry.createdById,
+      createdByName: user?.name ?? null,
+      canDelete: entry.createdById === currentUserId,
       createdAt: entry.createdAt.toISOString(),
       expiresAt: entry.expiresAt.toISOString(),
     }
@@ -157,7 +167,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
   app.get('/api/dropzone', async (request, reply) => {
     const session = await requireSession(request, reply)
     if (!session) return
-    return reply.send({ entries: await entryPayloads(), maxFileBytes: MAX_FILE_BYTES, chunkSizeBytes: CHUNK_SIZE_BYTES })
+    return reply.send({ entries: await entryPayloads(session.user.id), maxFileBytes: MAX_FILE_BYTES, chunkSizeBytes: CHUNK_SIZE_BYTES })
   })
 
   app.post('/api/dropzone/text', async (request, reply) => {
@@ -182,7 +192,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
       deletedAt: null,
       createdAt: now,
     })
-    return reply.send({ entries: await entryPayloads() })
+    return reply.send({ entries: await entryPayloads(session.user.id) })
   })
 
   app.post('/api/dropzone/uploads', async (request, reply) => {
@@ -265,7 +275,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
     const id = (request.params as { id?: string }).id ?? ''
     const upload = await db.query.dropzoneUploadSessions.findFirst({ where: and(eq(dropzoneUploadSessions.id, id), eq(dropzoneUploadSessions.createdById, session.user.id)) })
     if (!upload) return reply.status(404).send({ error: 'Upload not found.' })
-    if (upload.status === 'complete') return reply.send({ entries: await entryPayloads() })
+    if (upload.status === 'complete') return reply.send({ entries: await entryPayloads(session.user.id) })
     if (upload.status !== 'active') return reply.status(400).send({ error: 'Upload is not active.' })
 
     const uploaded = new Set(upload.uploadedChunks ?? [])
@@ -326,7 +336,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
       .where(eq(dropzoneUploadSessions.id, upload.id))
     await fs.rm(chunkDir(upload.id), { recursive: true, force: true }).catch(() => undefined)
 
-    return reply.send({ entries: await entryPayloads() })
+    return reply.send({ entries: await entryPayloads(session.user.id) })
   })
 
   app.get('/api/dropzone/files/:fileId/download', async (request, reply) => {
@@ -380,7 +390,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
       await db.delete(files).where(eq(files.id, entry.fileId))
     }
     await db.delete(dropzoneEntries).where(eq(dropzoneEntries.id, entry.id))
-    return reply.send({ entries: await entryPayloads() })
+    return reply.send({ entries: await entryPayloads(session.user.id) })
   })
 
   app.delete('/api/dropzone', async (request, reply) => {
@@ -394,6 +404,6 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
       await db.delete(files).where(inArray(files.id, fileIds))
     }
     if (entries.length) await db.delete(dropzoneEntries).where(inArray(dropzoneEntries.id, entries.map(entry => entry.id)))
-    return reply.send({ entries: await entryPayloads() })
+    return reply.send({ entries: await entryPayloads(session.user.id) })
   })
 }

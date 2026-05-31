@@ -10,6 +10,9 @@ type DropEntry = {
   fileName: string | null
   mimeType: string | null
   sizeBytes: number | null
+  createdById: string
+  createdByName: string | null
+  canDelete: boolean
   createdAt: string
   expiresAt: string
 }
@@ -371,7 +374,11 @@ function DropRow({ entry, index, onCopy, onDelete }: { entry: DropEntry; index: 
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14.5px] font-semibold text-text-1">{entry.kind === 'file' ? entry.fileName : textValue}</p>
           {entry.kind !== 'file' && entry.text && entry.text !== textValue ? <p className="mt-0.5 line-clamp-2 text-[12px] text-text-2">{entry.text}</p> : null}
-          {entry.kind === 'file' ? <p className="mt-0.5 text-[12px] text-text-2">{formatBytes(entry.sizeBytes)} · {entry.mimeType || 'file'} · {formatRelative(entry.createdAt)}</p> : <p className="mt-0.5 text-[12px] text-text-2">{entry.kind === 'link' ? 'Link' : 'Text'} · {formatRelative(entry.createdAt)}</p>}
+          {entry.kind === 'file' ? (
+            <p className="mt-0.5 text-[12px] text-text-2">{formatBytes(entry.sizeBytes)} · {entry.mimeType || 'file'} · {formatRelative(entry.createdAt)} · Added by {entry.createdByName ?? 'someone else'}</p>
+          ) : (
+            <p className="mt-0.5 text-[12px] text-text-2">{entry.kind === 'link' ? 'Link' : 'Text'} · {formatRelative(entry.createdAt)} · Added by {entry.createdByName ?? 'someone else'}</p>
+          )}
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-2">
@@ -391,7 +398,11 @@ function DropRow({ entry, index, onCopy, onDelete }: { entry: DropEntry; index: 
             {entry.originalUrl ? <a href={entry.originalUrl} target="_blank" rel="noreferrer" className="flex h-8 items-center gap-1 rounded-lg bg-surface-2 px-2.5 text-[12px] font-bold text-text-2"><ExternalLink className="h-3.5 w-3.5" /> Open</a> : null}
           </>
         ) : null}
-        <button type="button" onClick={() => { void onDelete(entry.id) }} className="flex h-8 items-center gap-1 rounded-lg bg-red-bg px-2.5 text-[12px] font-bold text-red"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+        {entry.canDelete ? (
+          <button type="button" onClick={() => { void onDelete(entry.id) }} className="flex h-8 items-center gap-1 rounded-lg bg-red-bg px-2.5 text-[12px] font-bold text-red"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+        ) : (
+          <span className="flex min-h-8 items-center rounded-lg bg-surface-2 px-2.5 text-[12px] font-bold text-text-2">Only {entry.createdByName ?? 'the sender'} can delete</span>
+        )}
       </div>
     </div>
   )

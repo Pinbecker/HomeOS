@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { changePassword, signOut } from '@homeos/auth/client'
 import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
@@ -12,7 +12,7 @@ import { calculateCycleInsights, cycleCalendarItems, cycleDate, findCurrentOpenC
 import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
 import { ScreenShell } from './shell'
 
-type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
+type ShoppingGroup = { id: string; name: string; color: string; count: number; preview: string[]; href: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
 type CycleScheduleKind = 'logged' | 'predicted' | 'fertile' | 'ovulation'
@@ -21,8 +21,20 @@ type BinWithDate = { id: string; name: string; colour: string; nextCollection: D
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
 type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolean; error: string | null }
-type HomeSectionKey = 'ai' | 'cycleStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
+type HomeSectionKey = 'ai' | 'kitBoard' | 'cycleStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
 type HomeScreenSettings = Record<HomeSectionKey, boolean>
+type HomeScreenPreferences = { enabled: HomeScreenSettings; order: HomeSectionKey[] }
+type CycleDueSoon = { predictedStart: Date; daysUntil: number }
+type DropTextEntry = {
+  id: string
+  kind: 'text' | 'link' | 'file'
+  text: string | null
+  originalUrl: string | null
+  createdById: string
+  createdByName: string | null
+  canDelete: boolean
+  createdAt: string
+}
 type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
@@ -51,6 +63,7 @@ const STATIC_BIN_SCHEDULES = [
 const TONIGHT_CACHE_KEY = 'homeos:dashboard-tonight:v1'
 const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> = [
   { key: 'ai', label: 'AI input', sub: 'Quick capture box' },
+  { key: 'kitBoard', label: 'Dropzone', sub: 'Temporary text and links' },
   { key: 'cycleStatus', label: 'Cycle status', sub: 'Period day card when active' },
   { key: 'pinned', label: 'Pinned', sub: 'Pinned notes and facts' },
   { key: 'headsUp', label: 'Heads up', sub: 'Bins and inbox alerts' },
@@ -58,8 +71,11 @@ const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> 
   { key: 'schedule', label: 'Schedule', sub: 'Calendar, tasks and renewals' },
   { key: 'shopping', label: 'Shopping', sub: 'Shopping preview' },
 ]
+const HOME_SECTION_BY_KEY = new Map(HOME_SECTIONS.map(section => [section.key, section]))
+const DEFAULT_HOME_SECTION_ORDER = HOME_SECTIONS.map(section => section.key)
 const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
   ai: true,
+  kitBoard: true,
   cycleStatus: true,
   pinned: false,
   headsUp: true,
@@ -139,14 +155,50 @@ function saveTonightCache(shows: TonightShow[]) {
   }
 }
 
-function readHomeScreenSettings(value: unknown): HomeScreenSettings {
+function formatShortRelative(value: string) {
+  const diff = Date.now() - new Date(value).getTime()
+  const minutes = Math.max(0, Math.round(diff / 60_000))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
+async function readJsonError(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => null) as { error?: string } | null
+  return payload?.error ?? fallback
+}
+
+function readHomeScreenPreferences(value: unknown): HomeScreenPreferences {
   const raw = settingObject(value)
-  return HOME_SECTIONS.reduce<HomeScreenSettings>((next, section) => {
+  const enabled = HOME_SECTIONS.reduce<HomeScreenSettings>((next, section) => {
     next[section.key] = typeof raw[section.key] === 'boolean'
       ? raw[section.key] as boolean
       : DEFAULT_HOME_SCREEN_SETTINGS[section.key]
     return next
   }, { ...DEFAULT_HOME_SCREEN_SETTINGS })
+  const rawOrder = Array.isArray(raw.order) ? raw.order : []
+  const validKeys = new Set<HomeSectionKey>(DEFAULT_HOME_SECTION_ORDER)
+  const order = rawOrder.filter((key): key is HomeSectionKey => typeof key === 'string' && validKeys.has(key as HomeSectionKey))
+  const seen = new Set(order)
+  for (const key of DEFAULT_HOME_SECTION_ORDER) {
+    if (!seen.has(key)) order.push(key)
+  }
+  return { enabled, order }
+}
+
+function homeScreenSettingsPayload(preferences: HomeScreenPreferences) {
+  return { ...preferences.enabled, order: preferences.order }
+}
+
+function reorderHomeSections(order: HomeSectionKey[], key: HomeSectionKey, nextIndex: number) {
+  const index = order.indexOf(key)
+  if (index < 0 || nextIndex < 0 || nextIndex >= order.length || index === nextIndex) return order
+  const next = [...order]
+  const [item] = next.splice(index, 1)
+  next.splice(nextIndex, 0, item)
+  return next
 }
 
 function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Renewal[], now: Date): DayGroup[] {
@@ -390,7 +442,8 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const householdRow = useAppState(state => state.data.household[0] ?? null)
   const personalSettings = readUserSettings(householdRow?.settings, currentUser?.id)
   const syncedAppearance = settingObject(personalSettings.appearance)
-  const homeScreenSettings = readHomeScreenSettings(personalSettings.homeScreen)
+  const homeScreenPreferences = readHomeScreenPreferences(personalSettings.homeScreen)
+  const homeScreenSettings = homeScreenPreferences.enabled
   const notificationPreferences = notificationPreferencesFromSettings(personalSettings.notificationPreferences as Record<string, unknown> | null | undefined)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -398,8 +451,22 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [homeOrderDraft, setHomeOrderDraft] = useState<HomeSectionKey[]>(homeScreenPreferences.order)
+  const [draggingHomeKey, setDraggingHomeKey] = useState<HomeSectionKey | null>(null)
+  const homeRowRefs = useRef(new Map<HomeSectionKey, HTMLDivElement>())
+  const homeDragRef = useRef<{
+    key: HomeSectionKey
+    pointerId: number
+    active: boolean
+    order: HomeSectionKey[]
+    timeout: number
+  } | null>(null)
 
   useEffect(() => watchAutoTheme(() => setIsDark(actualThemeIsDark())), [])
+
+  useEffect(() => {
+    if (!homeDragRef.current?.active) setHomeOrderDraft(homeScreenPreferences.order)
+  }, [homeScreenPreferences.order.join('|')])
 
   useEffect(() => {
     const syncedTheme = syncedAppearance.theme
@@ -464,13 +531,83 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
 
   function updateHomeScreenSetting(key: HomeSectionKey, enabled: boolean) {
     if (!currentUser) return
-    void saveUserSettings(currentUser.id, current => ({
-      ...current,
-      homeScreen: {
-        ...readHomeScreenSettings(current.homeScreen),
-        [key]: enabled,
-      },
-    }))
+    void saveUserSettings(currentUser.id, current => {
+      const preferences = readHomeScreenPreferences(current.homeScreen)
+      return {
+        ...current,
+        homeScreen: homeScreenSettingsPayload({
+          ...preferences,
+          enabled: {
+            ...preferences.enabled,
+            [key]: enabled,
+          },
+        }),
+      }
+    })
+  }
+
+  function saveHomeSectionOrder(order: HomeSectionKey[]) {
+    if (!currentUser) return
+    void saveUserSettings(currentUser.id, current => {
+      const preferences = readHomeScreenPreferences(current.homeScreen)
+      return {
+        ...current,
+        homeScreen: homeScreenSettingsPayload({ ...preferences, order }),
+      }
+    })
+  }
+
+  function beginHomeSectionDrag(key: HomeSectionKey, event: React.PointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const order = [...homeOrderDraft]
+    const timeout = window.setTimeout(() => {
+      const state = homeDragRef.current
+      if (!state || state.key !== key || state.pointerId !== event.pointerId) return
+      state.active = true
+      setDraggingHomeKey(key)
+    }, 180)
+    homeDragRef.current = { key, pointerId: event.pointerId, active: false, order, timeout }
+  }
+
+  function updateHomeSectionDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const state = homeDragRef.current
+    if (!state || state.pointerId !== event.pointerId || !state.active) return
+    event.preventDefault()
+    const target = state.order.find(key => {
+      const rect = homeRowRefs.current.get(key)?.getBoundingClientRect()
+      return rect ? event.clientY >= rect.top && event.clientY <= rect.bottom : false
+    })
+    if (!target || target === state.key) return
+    const nextIndex = state.order.indexOf(target)
+    const nextOrder = reorderHomeSections(state.order, state.key, nextIndex)
+    if (nextOrder === state.order) return
+    state.order = nextOrder
+    setHomeOrderDraft(nextOrder)
+  }
+
+  function finishHomeSectionDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const state = homeDragRef.current
+    if (!state || state.pointerId !== event.pointerId) return
+    window.clearTimeout(state.timeout)
+    if (state.active) {
+      saveHomeSectionOrder(state.order)
+      setDraggingHomeKey(null)
+    }
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture may already have been released by the browser.
+    }
+    homeDragRef.current = null
+  }
+
+  function cancelHomeSectionDrag() {
+    const state = homeDragRef.current
+    if (state) window.clearTimeout(state.timeout)
+    homeDragRef.current = null
+    setDraggingHomeKey(null)
+    setHomeOrderDraft(homeScreenPreferences.order)
   }
 
   function updateNotificationPreferences(recipe: (current: NotificationPreferences) => NotificationPreferences) {
@@ -568,15 +705,42 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                     <span className="w-10" />
                   </div>
                   <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
-                    {HOME_SECTIONS.map((section, index) => (
-                      <div key={section.key} className={`flex items-center gap-3 px-4 py-3.5 ${index > 0 ? 'border-t border-border' : ''}`}>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[15px] font-semibold text-text-1">{section.label}</p>
-                          <p className="mt-0.5 text-[12px] text-text-2">{section.sub}</p>
+                    {homeOrderDraft.map((key, index) => {
+                      const section = HOME_SECTION_BY_KEY.get(key)
+                      if (!section) return null
+                      const dragging = draggingHomeKey === section.key
+                      return (
+                        <div
+                          key={section.key}
+                          ref={node => {
+                            if (node) homeRowRefs.current.set(section.key, node)
+                            else homeRowRefs.current.delete(section.key)
+                          }}
+                          className={`flex items-center gap-3 px-4 py-3.5 transition ${index > 0 ? 'border-t border-border' : ''} ${dragging ? 'relative z-10 bg-surface-2 shadow-sm' : ''}`}
+                        >
+                          <button
+                            type="button"
+                            onPointerDown={event => beginHomeSectionDrag(section.key, event)}
+                            onPointerMove={updateHomeSectionDrag}
+                            onPointerUp={finishHomeSectionDrag}
+                            onPointerCancel={cancelHomeSectionDrag}
+                            className={`touch-none flex h-9 w-9 shrink-0 cursor-grab items-center justify-center rounded-xl text-text-3 active:cursor-grabbing active:bg-surface-2 ${dragging ? 'bg-accent-bg text-accent' : 'bg-surface-2'}`}
+                            aria-label={`Hold and drag ${section.label}`}
+                          >
+                            <svg viewBox="0 0 18 18" fill="currentColor" className="h-[18px] w-[18px]">
+                              <circle cx="6" cy="4.5" r="1.1" /><circle cx="12" cy="4.5" r="1.1" />
+                              <circle cx="6" cy="9" r="1.1" /><circle cx="12" cy="9" r="1.1" />
+                              <circle cx="6" cy="13.5" r="1.1" /><circle cx="12" cy="13.5" r="1.1" />
+                            </svg>
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[15px] font-semibold text-text-1">{section.label}</p>
+                            <p className="mt-0.5 text-[12px] text-text-2">{section.sub}</p>
+                          </div>
+                          <Switch checked={homeScreenSettings[section.key]} onChange={enabled => updateHomeScreenSetting(section.key, enabled)} />
                         </div>
-                        <Switch checked={homeScreenSettings[section.key]} onChange={enabled => updateHomeScreenSetting(section.key, enabled)} />
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </>
               ) : null}
@@ -1115,6 +1279,191 @@ function HomePeriodCard({ entry, ending, onEnd }: { entry: CycleEntry; ending: b
   )
 }
 
+function HomeCycleDueCard({ dueSoon, starting, onStart }: { dueSoon: CycleDueSoon; starting: boolean; onStart: () => void }) {
+  const label = dueSoon.daysUntil === 0
+    ? 'Due today'
+    : dueSoon.daysUntil === 1
+      ? 'Due tomorrow'
+      : `Due in ${dueSoon.daysUntil} days`
+
+  return (
+    <section className="mx-4 mb-4">
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-white" style={{ background: '#C04A7A' }}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+            <path d="M8 2.5C5.4 5.7 4.1 7.9 4.1 9.8a3.9 3.9 0 0 0 7.8 0C11.9 7.9 10.6 5.7 8 2.5Z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-bold text-text-1">Period due to start soon</p>
+          <p className="mt-0.5 truncate text-[11.5px] text-text-2">{label} · predicted {formatCycleDate(dueSoon.predictedStart, { day: 'numeric', month: 'short' })}</p>
+        </div>
+        <button type="button" onClick={onStart} disabled={starting} className="shrink-0 rounded-xl border border-border bg-surface-2 px-3 py-2 text-[12.5px] font-bold text-text-1 active:opacity-75 disabled:opacity-45">
+          {starting ? 'Starting...' : 'Start'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function DropzoneBoardCard() {
+  const [entries, setEntries] = useState<DropTextEntry[]>([])
+  const [text, setText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  async function load() {
+    const response = await fetch('/api/dropzone', { cache: 'no-store' })
+    if (!response.ok) {
+      setError(await readJsonError(response, 'Could not load Dropzone.'))
+      return
+    }
+    const payload = await response.json() as { entries?: DropTextEntry[] }
+    setEntries((payload.entries ?? []).filter(entry => entry.kind !== 'file').slice(0, 8))
+    setError(null)
+  }
+
+  useEffect(() => {
+    void load()
+    const onFocus = () => { void load() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  async function saveText() {
+    const value = text.trim()
+    if (!value || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/dropzone/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: value }),
+      })
+      if (!response.ok) {
+        setError(await readJsonError(response, 'Could not save that.'))
+        return
+      }
+      const payload = await response.json() as { entries?: DropTextEntry[] }
+      setEntries((payload.entries ?? []).filter(entry => entry.kind !== 'file').slice(0, 8))
+      setText('')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function copyText(value: string | null) {
+    if (!value) return
+    await navigator.clipboard?.writeText(value).catch(() => undefined)
+  }
+
+  function toggleTextEntry(entryId: string) {
+    setExpandedIds(current => {
+      const next = new Set(current)
+      if (next.has(entryId)) next.delete(entryId)
+      else next.add(entryId)
+      return next
+    })
+  }
+
+  const visibleEntries = showAll ? entries : entries.slice(0, 1)
+
+  return (
+    <section className="mx-4 mb-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[19px] font-bold" style={{ color: '#00A3A3', letterSpacing: '-0.01em' }}>Dropzone</h2>
+        <a href="/drop" className="text-[13px] font-semibold text-accent">Drop</a>
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="p-3">
+          <textarea
+            value={text}
+            onChange={event => setText(event.target.value)}
+            placeholder="Paste text or a link..."
+            rows={3}
+            className="w-full resize-none rounded-xl bg-surface-2 px-3 py-2.5 text-[14px] leading-relaxed text-text-1 outline-none placeholder:text-text-3"
+          />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="truncate text-[11.5px] text-text-3">Saved text expires after 7 days</p>
+            <button type="button" onClick={() => { void saveText() }} disabled={!text.trim() || saving} className="h-9 shrink-0 rounded-xl bg-accent px-3 text-[13px] font-bold text-white active:opacity-80 disabled:opacity-40">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+          {error ? <p className="mt-2 text-[12px] font-semibold text-red">{error}</p> : null}
+        </div>
+        {entries.length > 0 ? (
+          <div className="border-t border-border">
+            {visibleEntries.map((entry, index) => {
+              const value = entry.originalUrl ?? entry.text
+              const expanded = expandedIds.has(entry.id)
+              return (
+                <div key={entry.id} className={`flex items-center gap-3 px-3 py-2.5 ${index > 0 ? 'border-t border-border' : ''}`}>
+                  <button type="button" onClick={() => toggleTextEntry(entry.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-75">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-surface-2 text-accent">
+                      {entry.kind === 'link' ? (
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M6.8 4.3 8 3.1a3 3 0 0 1 4.2 4.2L11 8.5" /><path d="M9.2 11.7 8 12.9a3 3 0 0 1-4.2-4.2L5 7.5" /><path d="M6.4 9.6 9.6 6.4" /></svg>
+                      ) : (
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><rect x="4" y="3" width="8" height="10" rx="1.5" /><path d="M6.5 6h3M6.5 8.5h3" /></svg>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`${expanded ? 'whitespace-pre-wrap break-words' : 'truncate'} text-[13.5px] font-semibold text-text-1`}>{value}</p>
+                      <p className="mt-0.5 text-[11.5px] text-text-2">{entry.kind === 'link' ? 'Link' : 'Text'} · {formatShortRelative(entry.createdAt)} · Added by {entry.createdByName ?? 'someone else'}</p>
+                    </div>
+                  </button>
+                  <button type="button" onClick={() => { void copyText(value) }} className="shrink-0 rounded-lg bg-accent-bg px-2.5 py-1.5 text-[12px] font-bold text-accent active:opacity-75">Copy</button>
+                </div>
+              )
+            })}
+            {entries.length > 1 ? (
+              <button type="button" onClick={() => setShowAll(value => !value)} className="flex w-full items-center justify-center gap-1.5 border-t border-border px-3 py-2.5 text-[12px] font-bold text-text-2 active:bg-bg">
+                {showAll ? 'Hide older items' : `Show ${entries.length - 1} older ${entries.length === 2 ? 'item' : 'items'}`}
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${showAll ? 'rotate-180' : ''}`}><path d="M4 6l4 4 4-4" /></svg>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total: number }) {
+  return (
+    <section className="mx-4 mb-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[19px] font-bold" style={{ color: '#34C759', letterSpacing: '-0.01em' }}>Shopping</h2>
+        <a href="/household/shopping" className="text-[13px] font-semibold text-accent">Full list</a>
+      </div>
+      {total === 0 ? (
+        <a href="/household/shopping" className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
+          <div className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border opacity-40" />
+          <span className="text-[13.5px] text-text-3">Add shopping items</span>
+        </a>
+      ) : (
+        <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
+          {groups.map((group, index) => (
+            <a key={group.id} href={group.href} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}>
+              <div className="h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/20" style={{ background: group.color }} />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-[13.5px] font-semibold text-text-1">{group.name}</p>
+                  <span className="shrink-0 rounded-lg bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-text-2">{group.count}</span>
+                </div>
+                {group.preview.length > 0 ? <p className="mt-0.5 truncate text-[11.5px] text-text-2">{group.preview.join(', ')}</p> : null}
+              </div>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function DashboardPage() {
   const sessionUser = useSessionState(state => state.user)
   const appReady = useAppState(state => state.ready)
@@ -1126,11 +1475,19 @@ export function DashboardPage() {
     const lists = state.data.lists
     const householdSettings = state.data.household[0]?.settings ?? null
     const personalSettings = readUserSettings(householdSettings, sessionUser?.id)
-    const homeScreenSettings = readHomeScreenSettings(personalSettings.homeScreen)
+    const homeScreenPreferences = readHomeScreenPreferences(personalSettings.homeScreen)
+    const homeScreenSettings = homeScreenPreferences.enabled
     const cycleSettings = readCycleTrackerSettings(householdSettings)
     const cycleInsights = calculateCycleInsights(state.data.cycleEntries)
     const openCycle = findCurrentOpenCycleEntry(cycleInsights.entries, now)
     const openCycleEntry = openCycle ? state.data.cycleEntries.find(entry => entry.id === openCycle.id) ?? null : null
+    const todayCycle = cycleDate(now)
+    const cycleDueSoon = !openCycle && cycleInsights.predictedStart
+      ? (() => {
+        const daysUntil = Math.round((cycleInsights.predictedStart!.getTime() - todayCycle.getTime()) / 86_400_000)
+        return daysUntil >= 0 && daysUntil <= 2 ? { predictedStart: cycleInsights.predictedStart!, daysUntil } : null
+      })()
+      : null
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
     const savedCalendarColor = settingObject(personalSettings.calendar).color
     const defaultCalendarColor = normalizeHex(typeof savedCalendarColor === 'string' ? savedCalendarColor : null)
@@ -1138,11 +1495,25 @@ export function DashboardPage() {
       ?? '#007AFF'
     const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
     const feedColorMap = new Map(userFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
-    const shopMap = new Map(lists.filter(list => list.type === 'shopping' && !list.archived).map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
+    const shoppingLists = lists.filter(list => list.type === 'shopping' && !list.archived).sort((a, b) => a.sortOrder - b.sortOrder)
+    const shopMap = new Map(shoppingLists.map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
     const shoppingAll = state.data.listItems
       .filter(item => !item.deletedAt && !item.checked && shopMap.has(item.listId))
       .sort((a, b) => a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-      .map(item => ({ id: item.id, title: item.title, shopName: shopMap.get(item.listId)!.name, shopColor: shopMap.get(item.listId)!.color }))
+    const shoppingGroups = shoppingLists
+      .map(list => {
+        const items = shoppingAll.filter(item => item.listId === list.id)
+        const shop = shopMap.get(list.id)
+        return {
+          id: list.id,
+          name: shop?.name ?? list.name,
+          color: shop?.color ?? '#34C759',
+          count: items.length,
+          preview: items.slice(0, 3).map(item => item.title),
+          href: `/household/shopping/${list.id}`,
+        }
+      })
+      .filter(group => group.count > 0)
     const completedCutoff = now.getTime() - 6 * 60 * 60 * 1000
     const tasks = state.data.items
       .filter(item => {
@@ -1220,7 +1591,8 @@ export function DashboardPage() {
 
     return {
       user: sessionUser ?? state.data.users[0],
-      shoppingItems: shoppingAll.slice(0, 12) as ShoppingItem[],
+      householdId: state.data.household[0]?.id ?? 'default',
+      shoppingGroups: shoppingGroups as ShoppingGroup[],
       shoppingTotal: shoppingAll.length,
       tasks: tasks as Task[],
       inboxCount: inbox.length,
@@ -1231,13 +1603,15 @@ export function DashboardPage() {
       pins,
       householdSettings,
       homeScreenSettings,
+      homeSectionOrder: homeScreenPreferences.order,
       openCycleEntry,
+      cycleDueSoon,
     }
   })
-  const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
   const [tonightShows, setTonightShows] = useState<TonightShow[]>(() => loadTonightCache())
   const [homeWeather, setHomeWeather] = useState<DashboardWeatherState>(() => ({ snapshot: loadCachedWeather('home'), loading: false, error: null }))
   const [endingCycleId, setEndingCycleId] = useState<string | null>(null)
+  const [startingCycle, setStartingCycle] = useState(false)
   const now = useMemo(() => new Date(), [])
   const sharedWeather = useMemo(() => readSharedWeatherSettings(snapshot.householdSettings), [snapshot.householdSettings])
   const scheduleWeatherByDate = useMemo(() => {
@@ -1297,28 +1671,36 @@ export function DashboardPage() {
     }
   }, [sharedWeather.home?.latitude, sharedWeather.home?.longitude])
 
-  async function toggleShopItem(item: ShoppingItem) {
-    const willCheck = !checkedShopIds.has(item.id)
-    setCheckedShopIds(prev => {
-      const next = new Set(prev)
-      if (willCheck) next.add(item.id)
-      else next.delete(item.id)
-      return next
-    })
+  async function startCurrentPeriod() {
+    if (startingCycle || snapshot.openCycleEntry) return
+    setStartingCycle(true)
+    const nowIso = new Date().toISOString()
+    const id = makeId('cycle')
+    const payload: CycleEntry = {
+      id,
+      householdId: snapshot.householdId,
+      startDate: cycleDate(new Date()).toISOString(),
+      endDate: null,
+      ovulationDate: null,
+      ovulationSource: null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }
+
     await enqueueMutation({
       id: makeId('mutation'),
-      name: 'shopping.upsert',
-      entityType: 'list_item',
-      entityId: item.id,
+      name: 'cycle.entry.upsert',
+      entityType: 'cycle_entry',
+      entityId: id,
       operation: 'upsert',
-      payload: {
-        id: item.id,
-        title: item.title,
-        checked: willCheck,
-        checkedAt: willCheck ? new Date().toISOString() : null,
-        updatedAt: new Date().toISOString(),
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        cycleEntries: [...prev.data.cycleEntries, payload],
       },
-    })
+    })).finally(() => setStartingCycle(false))
   }
 
   async function endCurrentPeriod() {
@@ -1362,6 +1744,66 @@ export function DashboardPage() {
     )
   }
 
+  function renderHomeSection(section: HomeSectionKey) {
+    switch (section) {
+      case 'ai':
+        return snapshot.homeScreenSettings.ai ? <AiCapture surface="home" placeholder="Speak or type anything for the house brain" /> : null
+      case 'kitBoard':
+        return snapshot.homeScreenSettings.kitBoard ? <DropzoneBoardCard /> : null
+      case 'cycleStatus':
+        if (!snapshot.homeScreenSettings.cycleStatus) return null
+        if (snapshot.openCycleEntry) {
+          return <HomePeriodCard entry={snapshot.openCycleEntry} ending={endingCycleId === snapshot.openCycleEntry.id} onEnd={() => void endCurrentPeriod()} />
+        }
+        return snapshot.cycleDueSoon ? <HomeCycleDueCard dueSoon={snapshot.cycleDueSoon} starting={startingCycle} onStart={() => void startCurrentPeriod()} /> : null
+      case 'pinned':
+        return snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null
+      case 'headsUp':
+        return snapshot.homeScreenSettings.headsUp && hasAlerts ? (
+          <section className="mx-4 mb-4">
+            <div className="mb-3 flex items-center">
+              <h2 className="text-[19px] font-bold" style={{ color: '#FF9500', letterSpacing: '-0.01em' }}>Heads up</h2>
+            </div>
+            <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
+              {snapshot.bins.map((bin, index) => {
+                const dot = BIN_DOT[bin.colour] ?? '#6B7280'
+                return (
+                  <div key={bin.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                    <div className="h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/20" style={{ background: dot }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13.5px] font-semibold text-text-1">{bin.name}</p>
+                      <p className="text-[11.5px] text-text-2">Put out tonight before bed</p>
+                    </div>
+                    <span className="shrink-0 rounded-lg bg-amber-bg px-2 py-0.5 text-[11px] font-bold text-amber">Tomorrow</span>
+                  </div>
+                )
+              })}
+              {snapshot.inboxCount > 0 ? (
+                <a href="/inbox" className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${snapshot.bins.length > 0 ? 'border-t border-border' : ''}`}>
+                  <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent">
+                    <span className="text-[9px] font-extrabold leading-none text-white">{Math.min(snapshot.inboxCount, 99)}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] font-semibold text-text-1">{snapshot.inboxCount === 1 ? '1 item to sort' : `${snapshot.inboxCount} items to sort`}</p>
+                    {snapshot.inboxPreview[0] ? <p className="truncate text-[11.5px] text-text-2">&ldquo;{snapshot.inboxPreview[0].title}&rdquo;</p> : null}
+                  </div>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+                </a>
+              ) : null}
+            </div>
+          </section>
+        ) : null
+      case 'tonight':
+        return snapshot.homeScreenSettings.tonight && tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null
+      case 'schedule':
+        return snapshot.homeScreenSettings.schedule ? <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} weatherByDate={scheduleWeatherByDate} /> : null
+      case 'shopping':
+        return snapshot.homeScreenSettings.shopping ? <ShoppingSummaryCard groups={snapshot.shoppingGroups} total={snapshot.shoppingTotal} /> : null
+      default:
+        return null
+    }
+  }
+
   return (
     <ScreenShell title="Home" showHeader={false}>
       <header className="flex items-start justify-between px-5 pt-7 pb-5">
@@ -1372,80 +1814,7 @@ export function DashboardPage() {
         <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
       </header>
 
-      {snapshot.homeScreenSettings.ai ? <AiCapture surface="home" placeholder="Speak or type anything for the house brain" /> : null}
-
-      {snapshot.homeScreenSettings.cycleStatus && snapshot.openCycleEntry ? <HomePeriodCard entry={snapshot.openCycleEntry} ending={endingCycleId === snapshot.openCycleEntry.id} onEnd={() => void endCurrentPeriod()} /> : null}
-
-      {snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null}
-
-      {snapshot.homeScreenSettings.headsUp && hasAlerts ? (
-        <section className="mx-4 mb-4">
-          <div className="mb-3 flex items-center">
-            <h2 className="text-[19px] font-bold" style={{ color: '#FF9500', letterSpacing: '-0.01em' }}>Heads up</h2>
-          </div>
-          <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-            {snapshot.bins.map((bin, index) => {
-              const dot = BIN_DOT[bin.colour] ?? '#6B7280'
-              return (
-                <div key={bin.id} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
-                  <div className="h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/20" style={{ background: dot }} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13.5px] font-semibold text-text-1">{bin.name}</p>
-                    <p className="text-[11.5px] text-text-2">Put out tonight before bed</p>
-                  </div>
-                  <span className="shrink-0 rounded-lg bg-amber-bg px-2 py-0.5 text-[11px] font-bold text-amber">Tomorrow</span>
-                </div>
-              )
-            })}
-            {snapshot.inboxCount > 0 ? (
-              <a href="/inbox" className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${snapshot.bins.length > 0 ? 'border-t border-border' : ''}`}>
-                <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent">
-                  <span className="text-[9px] font-extrabold leading-none text-white">{Math.min(snapshot.inboxCount, 99)}</span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-semibold text-text-1">{snapshot.inboxCount === 1 ? '1 item to sort' : `${snapshot.inboxCount} items to sort`}</p>
-                  {snapshot.inboxPreview[0] ? <p className="truncate text-[11.5px] text-text-2">&ldquo;{snapshot.inboxPreview[0].title}&rdquo;</p> : null}
-                </div>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
-              </a>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {snapshot.homeScreenSettings.tonight && tonightShows.length > 0 ? <OnTonightCard shows={tonightShows} /> : null}
-
-      {snapshot.homeScreenSettings.schedule ? <ScheduleBlock calendarEvents={snapshot.calendarEvents} tasks={snapshot.tasks} renewals={snapshot.renewals} now={now} weatherByDate={scheduleWeatherByDate} /> : null}
-
-      {snapshot.homeScreenSettings.shopping ? <section className="mx-4 mb-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[19px] font-bold" style={{ color: '#34C759', letterSpacing: '-0.01em' }}>Shopping</h2>
-          <a href="/household/shopping" className="text-[13px] font-semibold text-accent">Full list</a>
-        </div>
-        {snapshot.shoppingItems.length === 0 ? (
-          <a href="/household/shopping" className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-            <div className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border opacity-40" />
-            <span className="text-[13.5px] text-text-3">Add shopping items</span>
-          </a>
-        ) : (
-          <div className="rounded-2xl px-2 py-1.5" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-            <div className="grid grid-cols-2 gap-x-3">
-              {snapshot.shoppingItems.map(item => {
-                const checked = checkedShopIds.has(item.id)
-                return (
-                  <button key={item.id} onClick={() => toggleShopItem(item)} className="flex min-w-0 items-center gap-2.5 px-2 py-[9px] text-left active:opacity-70">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] transition-transform active:scale-90" style={checked ? { background: item.shopColor, boxShadow: `0 0 0 2px ${item.shopColor}` } : { boxShadow: `0 0 0 2px ${item.shopColor}` }} title={item.shopName}>
-                      {checked ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
-                    </span>
-                    <span className={`truncate text-[13.5px] font-medium ${checked ? 'text-text-2 line-through' : 'text-text-1'}`}>{item.title}</span>
-                  </button>
-                )
-              })}
-            </div>
-            {snapshot.shoppingTotal > snapshot.shoppingItems.length ? <div className="px-2 pt-1 pb-0.5"><span className="text-[12px] text-text-3">+ {snapshot.shoppingTotal - snapshot.shoppingItems.length} more</span></div> : null}
-          </div>
-        )}
-      </section> : null}
+      {snapshot.homeSectionOrder.map(section => <div key={section}>{renderHomeSection(section)}</div>)}
 
       <div className="h-4" />
     </ScreenShell>
