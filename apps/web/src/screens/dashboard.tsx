@@ -1313,6 +1313,7 @@ function DropzoneBoardCard() {
   const [error, setError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
   async function load() {
     const response = await fetch('/api/dropzone', { cache: 'no-store' })
@@ -1350,9 +1351,21 @@ function DropzoneBoardCard() {
       const payload = await response.json() as { entries?: DropTextEntry[] }
       setEntries((payload.entries ?? []).filter(entry => entry.kind !== 'file').slice(0, 8))
       setText('')
+      requestAnimationFrame(() => resizeTextArea(''))
     } finally {
       setSaving(false)
     }
+  }
+
+  function resizeTextArea(nextText = text) {
+    const element = textAreaRef.current
+    if (!element) return
+    element.style.height = 'auto'
+    const lineHeight = 21
+    const minHeight = lineHeight + 20
+    const maxHeight = lineHeight * 3 + 20
+    element.style.height = `${Math.max(minHeight, Math.min(maxHeight, element.scrollHeight))}px`
+    element.style.overflowY = element.scrollHeight > maxHeight || nextText.split('\n').length > 3 ? 'auto' : 'hidden'
   }
 
   async function copyText(value: string | null) {
@@ -1380,11 +1393,15 @@ function DropzoneBoardCard() {
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <div className="p-3">
           <textarea
+            ref={textAreaRef}
             value={text}
-            onChange={event => setText(event.target.value)}
+            onChange={event => {
+              setText(event.target.value)
+              requestAnimationFrame(() => resizeTextArea(event.target.value))
+            }}
             placeholder="Paste text or a link..."
-            rows={3}
-            className="w-full resize-none rounded-xl bg-surface-2 px-3 py-2.5 text-[14px] leading-relaxed text-text-1 outline-none placeholder:text-text-3"
+            rows={1}
+            className="w-full resize-none rounded-xl bg-surface-2 px-3 py-2.5 text-[14px] leading-[21px] text-text-1 outline-none placeholder:text-text-3"
           />
           <div className="mt-2 flex items-center justify-between gap-3">
             <p className="truncate text-[11.5px] text-text-3">Saved text expires after 7 days</p>
@@ -1499,7 +1516,10 @@ export function DashboardPage() {
     const shopMap = new Map(shoppingLists.map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
     const shoppingAll = state.data.listItems
       .filter(item => !item.deletedAt && !item.checked && shopMap.has(item.listId))
-      .sort((a, b) => a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .sort((a, b) => {
+        const priority = (b.priority === 'urgent' ? 1 : 0) - (a.priority === 'urgent' ? 1 : 0)
+        return priority !== 0 ? priority : a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      })
     const shoppingGroups = shoppingLists
       .map(list => {
         const items = shoppingAll.filter(item => item.listId === list.id)

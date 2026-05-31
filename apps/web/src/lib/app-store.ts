@@ -47,6 +47,7 @@ type ListItem = {
   itemId?: string | null
   title: string
   sortOrder: number
+  priority?: 'normal' | 'urgent'
   checked: boolean
   checkedAt?: string | number | Date | null
   checkedById?: string | null

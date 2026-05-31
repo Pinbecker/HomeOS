@@ -51,6 +51,7 @@ const DEFAULT_CAL_COLOR = '#007AFF'
 const DEFAULT_ROW_H = 112
 const MIN_ROW_H = 40
 const MAX_ROW_H = 170
+const CALENDAR_ROW_HEIGHT_KEY = 'homeos:calendar-row-height'
 const BAR_GAP = 2
 const MIN_BAR_H = 13
 const DATE_H = 36
@@ -207,6 +208,25 @@ function dateTimeParts(ms: number) {
 
 function scrollOffsetWithin(container: HTMLElement, element: HTMLElement) {
   return container.scrollTop + element.getBoundingClientRect().top - container.getBoundingClientRect().top
+}
+
+function readStoredRowHeight(userId?: string | null) {
+  if (typeof window === 'undefined') return DEFAULT_ROW_H
+  const keys = [
+    userId ? `homeos:user:${userId}:calendar-row-height` : null,
+    CALENDAR_ROW_HEIGHT_KEY,
+  ].filter((key): key is string => Boolean(key))
+  for (const key of keys) {
+    const value = Number(window.localStorage.getItem(key))
+    if (Number.isFinite(value) && value >= MIN_ROW_H && value <= MAX_ROW_H) return value
+  }
+  return DEFAULT_ROW_H
+}
+
+function saveStoredRowHeight(value: number, userId?: string | null) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(CALENDAR_ROW_HEIGHT_KEY, String(value))
+  if (userId) window.localStorage.setItem(`homeos:user:${userId}:calendar-row-height`, String(value))
 }
 
 type WeekBarItem = {
@@ -444,8 +464,8 @@ function CalendarPageInner() {
       feeds: userFeeds as CalFeed[],
     }
   })
-  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_H)
-  const rowHeightRef = useRef(DEFAULT_ROW_H)
+  const [rowHeight, setRowHeight] = useState(() => readStoredRowHeight(sessionUser?.id))
+  const rowHeightRef = useRef(rowHeight)
   const [selectedKey, setSelectedKey] = useState(initialTarget.dayKey)
   const [visibleMonthKey, setVisibleMonthKey] = useState(initialTarget.monthKey)
   const [detail, setDetail] = useState<CalEvent | null>(null)
@@ -462,6 +482,11 @@ function CalendarPageInner() {
   const googleSyncRef = useRef(false)
 
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
+  useEffect(() => {
+    const saved = readStoredRowHeight(sessionUser?.id)
+    rowHeightRef.current = saved
+    setRowHeight(saved)
+  }, [sessionUser?.id])
   useEffect(() => {
     const saved = snapshot.calendarColor ?? localStorage.getItem(`homeos:user:${sessionUser?.id}:cal-color`) ?? localStorage.getItem('homeos:cal-color')
     const hex = normalizeHex(saved)
@@ -495,7 +520,7 @@ function CalendarPageInner() {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('online', onVisible)
     }
-  }, [])
+  }, [sessionUser?.id])
 
   const feedMap = useMemo(() => new Map(snapshot.feeds.map(feed => [feed.id, feed])), [snapshot.feeds])
   const getEventColor = (event: CalEvent) => {
@@ -570,7 +595,7 @@ function CalendarPageInner() {
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
-  }, [])
+  }, [sessionUser?.id])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -646,6 +671,7 @@ function CalendarPageInner() {
       const next = Math.min(MAX_ROW_H, Math.max(MIN_ROW_H, Math.round(pinchRef.current.height * (Math.sqrt(dx * dx + dy * dy) / pinchRef.current.dist))))
       if (next !== rowHeightRef.current) {
         rowHeightRef.current = next
+        saveStoredRowHeight(next, sessionUser?.id)
         setRowHeight(next)
       }
     }
@@ -660,7 +686,7 @@ function CalendarPageInner() {
       element.removeEventListener('touchmove', onTouchMove)
       element.removeEventListener('touchend', onTouchEnd)
     }
-  }, [])
+  }, [sessionUser?.id])
 
   function goToday() {
     setSelectedKey(todayKey)

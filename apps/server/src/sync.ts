@@ -893,6 +893,7 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
       listId: (payload.listId as string | undefined) ?? existing.listId,
       title: (payload.title as string | undefined) ?? existing.title,
       sortOrder: (payload.sortOrder as number | undefined) ?? existing.sortOrder,
+      priority: (payload.priority as 'normal' | 'urgent' | undefined) ?? existing.priority,
       checked: nextChecked,
       checkedAt: payload.checkedAt === undefined
         ? existing.checkedAt
@@ -910,6 +911,7 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
       itemId: (payload.itemId as string | undefined) ?? null,
       title: (payload.title as string | undefined) ?? '',
       sortOrder: (payload.sortOrder as number | undefined) ?? 0,
+      priority: (payload.priority as 'normal' | 'urgent' | undefined) ?? 'normal',
       checked: (payload.checked as boolean | undefined) ?? false,
       checkedAt: payload.checkedAt ? new Date(payload.checkedAt as string | number) : null,
       checkedById: (payload.checkedById as string | undefined) ?? ((payload.checked as boolean | undefined) ? userId : null),

@@ -7,6 +7,15 @@ import { SwipeRow } from '../components/swipe-row'
 const DEFAULT_LIST_COLOR = '#007AFF'
 const GENERAL_SHOPPING_ICON = 'general-shopping'
 
+function sortShoppingItems<T extends { checked: boolean; priority?: 'normal' | 'urgent'; sortOrder: number; createdAt: string | number | Date }>(items: T[]) {
+  return [...items].sort((a, b) => {
+    if (a.checked !== b.checked) return a.checked ? 1 : -1
+    const priority = (b.priority === 'urgent' ? 1 : 0) - (a.priority === 'urgent' ? 1 : 0)
+    if (priority !== 0) return priority
+    return a.sortOrder - b.sortOrder || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  })
+}
+
 function Chevron() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-text-3 shrink-0">
@@ -157,7 +166,7 @@ export function ShoppingDetailPage() {
 
   const isAll = shopId === 'all'
   const currentShop = isAll ? null : shops.find(shop => shop.id === shopId) ?? null
-  const visibleItems = useMemo(() => isAll ? items : items.filter(item => item.listId === shopId), [isAll, items, shopId])
+  const visibleItems = useMemo(() => sortShoppingItems(isAll ? items : items.filter(item => item.listId === shopId)), [isAll, items, shopId])
   const unchecked = visibleItems.filter(item => !item.checked)
   const checked = visibleItems.filter(item => item.checked)
   const [name, setName] = useState(currentShop?.name ?? '')
@@ -178,6 +187,7 @@ export function ShoppingDetailPage() {
       listId: targetListId,
       title,
       sortOrder: visibleItems.length,
+      priority: 'normal' as const,
       checked: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -232,6 +242,28 @@ export function ShoppingDetailPage() {
     }, prev => ({
       ...prev,
       data: { ...prev.data, listItems: prev.data.listItems.filter(row => row.id !== itemId) },
+    }))
+  }
+
+  async function togglePriority(itemId: string) {
+    const current = visibleItems.find(item => item.id === itemId)
+    if (!current) return
+    const nextPriority: 'normal' | 'urgent' = current.priority === 'urgent' ? 'normal' : 'urgent'
+    const payload = {
+      ...current,
+      priority: nextPriority,
+      updatedAt: new Date().toISOString(),
+    }
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'shopping.upsert',
+      entityType: 'list_item',
+      entityId: itemId,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: { ...prev.data, listItems: prev.data.listItems.map(row => row.id === itemId ? { ...row, ...payload } : row) },
     }))
   }
 
@@ -324,7 +356,13 @@ export function ShoppingDetailPage() {
 
   function ItemRow({ item, checkedRow, index, showShopLabel = false }: { item: typeof visibleItems[number]; checkedRow: boolean; index: number; showShopLabel?: boolean }) {
     return (
-      <SwipeRow onDelete={() => deleteItem(item.id)} className={index > 0 ? 'border-t border-border' : ''}>
+      <SwipeRow
+        actions={[
+          { key: 'priority', label: item.priority === 'urgent' ? 'Normal' : 'Urgent', onClick: () => { void togglePriority(item.id) }, bg: item.priority === 'urgent' ? '#8E8E93' : '#FF9500' },
+          { key: 'delete', label: 'Delete', onClick: () => { void deleteItem(item.id) }, className: 'bg-red', closeOnClick: false },
+        ]}
+        className={index > 0 ? 'border-t border-border' : ''}
+      >
         <div className="flex items-center">
           <button
             onClick={() => toggleItem(item.id)}
@@ -342,6 +380,7 @@ export function ShoppingDetailPage() {
             <span className={`min-w-0 flex-1 truncate text-[14.5px] font-medium ${checkedRow ? 'text-text-3 line-through' : 'text-text-1'}`}>
               {item.title}
             </span>
+            {item.priority === 'urgent' && !checkedRow ? <span className="shrink-0 rounded-lg bg-amber-bg px-2 py-0.5 text-[10.5px] font-bold text-amber">Urgent</span> : null}
           </button>
           {showShopLabel ? (
             <span className="shrink-0 pr-4 text-[11px] font-medium" style={{ color: shopMeta.get(item.listId)?.color ?? DEFAULT_LIST_COLOR }}>

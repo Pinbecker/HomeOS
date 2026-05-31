@@ -119,7 +119,7 @@ async function entryPayloads(currentUserId: string) {
   await cleanupDropzone()
   const now = new Date()
   const entries = await db.query.dropzoneEntries.findMany({
-    where: and(isNull(dropzoneEntries.deletedAt), gt(dropzoneEntries.expiresAt, now)),
+    where: and(eq(dropzoneEntries.createdById, currentUserId), isNull(dropzoneEntries.deletedAt), gt(dropzoneEntries.expiresAt, now)),
     orderBy: (table, { desc }) => [desc(table.createdAt)],
   })
   const fileIds = entries.map(entry => entry.fileId).filter((id): id is string => Boolean(id))
@@ -344,7 +344,7 @@ export function registerDropzoneRoutes(app: FastifyInstance) {
     if (!session) return
     const fileId = (request.params as { fileId?: string }).fileId ?? ''
     const now = new Date()
-    const entry = await db.query.dropzoneEntries.findFirst({ where: and(eq(dropzoneEntries.fileId, fileId), isNull(dropzoneEntries.deletedAt), gt(dropzoneEntries.expiresAt, now)) })
+    const entry = await db.query.dropzoneEntries.findFirst({ where: and(eq(dropzoneEntries.fileId, fileId), eq(dropzoneEntries.createdById, session.user.id), isNull(dropzoneEntries.deletedAt), gt(dropzoneEntries.expiresAt, now)) })
     if (!entry) return reply.status(404).send({ error: 'File not found.' })
     const row = await db.query.files.findFirst({ where: eq(files.id, fileId) })
     if (!row) return reply.status(404).send({ error: 'File not found.' })

@@ -147,6 +147,7 @@ export const listItems = sqliteTable('list_items', {
   itemId: text('item_id').references(() => items.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
+  priority: text('priority', { enum: ['normal', 'urgent'] }).notNull().default('normal'),
   checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
   checkedAt: integer('checked_at', { mode: 'timestamp' }),
   checkedById: text('checked_by_id').references(() => users.id),
