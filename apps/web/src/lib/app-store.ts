@@ -277,6 +277,13 @@ type BootstrapPayload = {
   data: AppData
 }
 
+type PullPayload = {
+  checkpoint?: number
+  changes?: SyncChange[]
+  reset?: boolean
+  data?: AppData
+}
+
 type SyncChange = {
   entityType: string
   entityId: string
@@ -1076,8 +1083,12 @@ async function refreshFromServer(options: { silent?: boolean } = {}) {
     }
 
     try {
-      const payload = await pull()
-      for (const change of payload.changes as SyncChange[]) {
+      const payload = await pull() as PullPayload
+      if (payload.reset && payload.data) {
+        mergeBootstrap({ data: payload.data })
+        return
+      }
+      for (const change of payload.changes ?? []) {
         applyChange(change)
       }
       setState(prev => ({ ...prev, syncing: false, ready: true, error: null }))

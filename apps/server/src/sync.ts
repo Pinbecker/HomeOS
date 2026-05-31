@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { fromNodeHeaders } from 'better-auth/node'
-import { eq, gt, max } from 'drizzle-orm'
+import { eq, gt, lt, max, min, sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { auth } from '@homeos/auth'
 import { db } from '@homeos/db'
@@ -53,6 +53,11 @@ export async function getSession(request: FastifyRequest) {
 export async function getCheckpoint() {
   const row = await db.select({ version: max(syncChanges.version) }).from(syncChanges)
   return row[0]?.version ?? 0
+}
+
+async function getMinimumRetainedCheckpoint() {
+  const row = await db.select({ version: min(syncChanges.version) }).from(syncChanges)
+  return row[0]?.version ?? null
 }
 
 export async function buildBootstrap() {
@@ -144,6 +149,17 @@ export async function buildBootstrap() {
 }
 
 export async function pullChanges(since: number) {
+  const minimumRetained = await getMinimumRetainedCheckpoint()
+  if (since > 0 && minimumRetained !== null && since < minimumRetained - 1) {
+    const bootstrap = await buildBootstrap()
+    return {
+      checkpoint: bootstrap.checkpoint,
+      changes: [],
+      reset: true,
+      data: bootstrap.data,
+    }
+  }
+
   const changes = await db
     .select()
     .from(syncChanges)
@@ -153,6 +169,23 @@ export async function pullChanges(since: number) {
   return {
     checkpoint: changes.at(-1)?.version ?? since,
     changes,
+  }
+}
+
+export async function compactSyncHistory() {
+  const retentionDays = Number(process.env.SYNC_RETENTION_DAYS ?? 3)
+  if (!Number.isFinite(retentionDays) || retentionDays < 1) return { syncChangesDeleted: 0, appliedMutationsDeleted: 0 }
+
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+  const [{ count: syncBefore }] = await db.select({ count: sql<number>`count(*)` }).from(syncChanges).where(lt(syncChanges.createdAt, cutoff))
+  const [{ count: mutationsBefore }] = await db.select({ count: sql<number>`count(*)` }).from(appliedMutations).where(lt(appliedMutations.createdAt, cutoff))
+
+  await db.delete(syncChanges).where(lt(syncChanges.createdAt, cutoff))
+  await db.delete(appliedMutations).where(lt(appliedMutations.createdAt, cutoff))
+
+  return {
+    syncChangesDeleted: Number(syncBefore ?? 0),
+    appliedMutationsDeleted: Number(mutationsBefore ?? 0),
   }
 }
 

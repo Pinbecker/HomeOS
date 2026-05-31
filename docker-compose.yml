@@ -49,6 +49,18 @@ services:
     container_name: homeapp_backup
     restart: unless-stopped
     env_file: .env
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "test -f /data/backups/status/last-success && test $$(($$(date +%s) - $$(cat /data/backups/status/last-success))) -lt 5400",
+        ]
+      interval: 15m
+      timeout: 10s
+      retries: 2
+      start_period: 70m
     volumes:
       - db_data:/data/db:ro
       - file_data:/data/files:ro
@@ -56,7 +68,7 @@ services:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
     entrypoint: >
       sh -c "
-        apk add --no-cache sqlite rsync &&
+        apk add --no-cache sqlite rsync rclone &&
         echo '0 * * * * /scripts/backup.sh >> /var/log/backup.log 2>&1' | crontab - &&
         crond -f -l 6
       "

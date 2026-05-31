@@ -10,7 +10,7 @@ import { calendarFeeds, items, pushSubscriptions, tvChannels, tvProgrammes } fro
 import { exchangeCode, isGoogleConfigured, saveConnection, consentUrl } from './google-oauth'
 import { syncGoogleCalendar } from './google-calendar'
 import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
-import { applyMutations, buildBootstrap, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, sweepOrphanedRecordReminders, type SyncMutation } from './sync'
+import { applyMutations, buildBootstrap, compactSyncHistory, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, sweepOrphanedRecordReminders, type SyncMutation } from './sync'
 import { transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
 import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
@@ -490,6 +490,10 @@ setInterval(() => {
   dispatchTvNotifications().catch(error => app.log.error(error))
 }, 60_000)
 
+setInterval(() => {
+  compactSyncHistory().catch(error => app.log.error(error))
+}, 24 * 60 * 60 * 1000)
+
 setTimeout(() => {
   sweepOrphanedRecordReminders().catch(error => app.log.error(error))
   syncAllIcsFeeds().catch(error => app.log.error(error))
@@ -499,6 +503,7 @@ setTimeout(() => {
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))
+  compactSyncHistory().catch(error => app.log.error(error))
 }, 15_000)
 
 function cookieValue(cookieHeader: string, name: string) {
