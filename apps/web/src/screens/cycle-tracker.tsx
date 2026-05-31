@@ -10,6 +10,7 @@ import {
   cycleDate,
   cycleDateInput,
   cycleDayKey,
+  findCurrentOpenCycleEntry,
   formatCycleDate,
   parseCycleDateInput,
   readCycleTrackerSettings,
@@ -37,10 +38,7 @@ export function CycleTrackerPage() {
   const insights = useMemo(() => calculateCycleInsights(snapshot.entries), [snapshot.entries])
   const settings = readCycleTrackerSettings(snapshot.household?.settings)
   const openPeriod = useMemo(() => {
-    const today = cycleDate(new Date())
-    return insights.entries
-      .filter(entry => !entry.end && entry.start.getTime() <= today.getTime())
-      .at(-1) ?? null
+    return findCurrentOpenCycleEntry(insights.entries)
   }, [insights.entries])
   const [month, setMonth] = useState(currentCycleCalendarMonth)
   const [periodError, setPeriodError] = useState<string | null>(null)
@@ -557,7 +555,7 @@ function TimelineEntryRow({ entry, insights }: { entry: CycleEntry; insights: Cy
         <p className="truncate text-[14px] font-semibold text-text-1">{formatCycleDate(entry.startDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
         <p className="mt-0.5 truncate text-[12px] text-text-2">
           {gap ? `${gap} days since previous start` : 'First logged start'}
-          {duration ? ` - ${duration}d period` : ' - Incomplete'}
+          {duration ? ` - ${duration}d period` : ' - Start only'}
           {ovulation}
         </p>
       </div>

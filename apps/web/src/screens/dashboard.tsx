@@ -8,14 +8,15 @@ import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentT
 import { enqueueMutation, makeId, type CycleEntry, useAppState } from '../lib/app-store'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
-import { calculateCycleInsights, cycleCalendarItems, cycleDate, formatCycleDate, readCycleTrackerSettings } from '../lib/cycle-tracker'
+import { calculateCycleInsights, cycleCalendarItems, cycleDate, findCurrentOpenCycleEntry, formatCycleDate, readCycleTrackerSettings } from '../lib/cycle-tracker'
 import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
 import { ScreenShell } from './shell'
 
 type ShoppingItem = { id: string; title: string; shopName: string; shopColor: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
-type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; href?: string; estimated?: boolean }
+type CycleScheduleKind = 'logged' | 'predicted' | 'fertile' | 'ovulation'
+type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
@@ -23,7 +24,7 @@ type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolea
 type HomeSectionKey = 'ai' | 'cycleStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
 type HomeScreenSettings = Record<HomeSectionKey, boolean>
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 type DayGroup = { key: string; label: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
@@ -66,7 +67,6 @@ const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
   schedule: true,
   shopping: true,
 }
-
 function toDate(value: string | number | Date | null | undefined) {
   if (!value) return null
   return value instanceof Date ? value : new Date(value)
@@ -169,6 +169,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       finishedToday: !event.allDay && event.endsAt.getTime() <= now.getTime() && startOfLocalDay(event.startsAt).getTime() === startOfLocalDay(now).getTime(),
       href: event.href,
       estimated: event.estimated,
+      cycleKind: event.cycleKind,
     })
   }
 
@@ -796,9 +797,7 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
     return (
       <a href={rowHref} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`} style={{ opacity: entry.estimated ? 0.78 : 1 }}>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: entry.finishedToday ? 'var(--surface-2)' : `color-mix(in srgb, ${entry.color} ${entry.estimated ? 8 : 15}%, var(--surface))` }}>
-          <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: entry.color }}>
-            <rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 6.5h12" /><path d="M5 1v3M11 1v3" />
-          </svg>
+          <ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} />
         </div>
         <div className="min-w-0 flex-1">
           <p className={`truncate text-[13.5px] font-semibold ${textState}`}>{entry.title}</p>
@@ -851,6 +850,43 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
       </div>
       {entry.overdue ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : entry.days > 0 ? <span className={`ml-2 shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold ${entry.days <= 7 ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>{entry.days}d</span> : null}
     </a>
+  )
+}
+
+function ScheduleCalendarIcon({ color, cycleKind }: { color: string; cycleKind?: CycleScheduleKind }) {
+  if (cycleKind === 'logged' || cycleKind === 'predicted') {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}>
+        <path d="M8 2.5C5.4 5.7 4.1 7.9 4.1 9.8a3.9 3.9 0 0 0 7.8 0C11.9 7.9 10.6 5.7 8 2.5Z" />
+      </svg>
+    )
+  }
+
+  if (cycleKind === 'fertile') {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}>
+        <circle cx="8" cy="8" r="1.4" />
+        <path d="M8 3.1c1.1 1.2 1.1 2.2 0 3.1-1.1-.9-1.1-1.9 0-3.1Z" />
+        <path d="M8 12.9c-1.1-1.2-1.1-2.2 0-3.1 1.1.9 1.1 1.9 0 3.1Z" />
+        <path d="M3.1 8c1.2-1.1 2.2-1.1 3.1 0-.9 1.1-1.9 1.1-3.1 0Z" />
+        <path d="M12.9 8c-1.2 1.1-2.2 1.1-3.1 0 .9-1.1 1.9-1.1 3.1 0Z" />
+      </svg>
+    )
+  }
+
+  if (cycleKind === 'ovulation') {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}>
+        <circle cx="8" cy="8" r="2.5" />
+        <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}>
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" /><path d="M2 6.5h12" /><path d="M5 1v3M11 1v3" />
+    </svg>
   )
 }
 
@@ -1057,7 +1093,7 @@ function OnTonightCard({ shows }: { shows: Array<{ title: string; channel: strin
   )
 }
 
-function HomePeriodCard({ entry, onEnd }: { entry: CycleEntry; onEnd: () => void }) {
+function HomePeriodCard({ entry, ending, onEnd }: { entry: CycleEntry; ending: boolean; onEnd: () => void }) {
   const start = cycleDate(entry.startDate)
   const day = Math.max(1, Math.floor((cycleDate(new Date()).getTime() - start.getTime()) / 86_400_000) + 1)
 
@@ -1065,14 +1101,14 @@ function HomePeriodCard({ entry, onEnd }: { entry: CycleEntry; onEnd: () => void
     <section className="mx-4 mb-4">
       <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold text-white" style={{ background: '#C04A7A' }}>
-          Day {day}
+          {day}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-bold text-text-1">Period Day {day}</p>
           <p className="mt-0.5 truncate text-[11.5px] text-text-2">Started {formatCycleDate(start, { day: 'numeric', month: 'short' })}</p>
         </div>
-        <button type="button" onClick={onEnd} className="shrink-0 rounded-xl border border-border bg-surface-2 px-3 py-2 text-[12.5px] font-bold text-text-1 active:opacity-75">
-          End period
+        <button type="button" onClick={onEnd} disabled={ending} className="shrink-0 rounded-xl border border-border bg-surface-2 px-3 py-2 text-[12.5px] font-bold text-text-1 active:opacity-75 disabled:opacity-45">
+          {ending ? 'Ending...' : 'End period'}
         </button>
       </div>
     </section>
@@ -1093,10 +1129,7 @@ export function DashboardPage() {
     const homeScreenSettings = readHomeScreenSettings(personalSettings.homeScreen)
     const cycleSettings = readCycleTrackerSettings(householdSettings)
     const cycleInsights = calculateCycleInsights(state.data.cycleEntries)
-    const todayCycle = cycleDate(now)
-    const openCycle = cycleInsights.entries
-      .filter(entry => !entry.end && entry.start.getTime() <= todayCycle.getTime())
-      .at(-1) ?? null
+    const openCycle = findCurrentOpenCycleEntry(cycleInsights.entries, now)
     const openCycleEntry = openCycle ? state.data.cycleEntries.find(entry => entry.id === openCycle.id) ?? null : null
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
     const savedCalendarColor = settingObject(personalSettings.calendar).color
@@ -1164,6 +1197,7 @@ export function DashboardPage() {
         color: item.color,
         href: '/cycle-tracker',
         estimated: item.estimated,
+        cycleKind: item.kind,
       }))
       .filter(event => event.startsAt >= startToday && event.startsAt <= scheduleWindow)
     const renewals = state.data.records
@@ -1203,6 +1237,7 @@ export function DashboardPage() {
   const [checkedShopIds, setCheckedShopIds] = useState<Set<string>>(new Set())
   const [tonightShows, setTonightShows] = useState<TonightShow[]>(() => loadTonightCache())
   const [homeWeather, setHomeWeather] = useState<DashboardWeatherState>(() => ({ snapshot: loadCachedWeather('home'), loading: false, error: null }))
+  const [endingCycleId, setEndingCycleId] = useState<string | null>(null)
   const now = useMemo(() => new Date(), [])
   const sharedWeather = useMemo(() => readSharedWeatherSettings(snapshot.householdSettings), [snapshot.householdSettings])
   const scheduleWeatherByDate = useMemo(() => {
@@ -1288,7 +1323,8 @@ export function DashboardPage() {
 
   async function endCurrentPeriod() {
     const entry = snapshot.openCycleEntry
-    if (!entry) return
+    if (!entry || endingCycleId === entry.id) return
+    setEndingCycleId(entry.id)
     const nowIso = new Date().toISOString()
     const payload: CycleEntry = {
       ...entry,
@@ -1296,20 +1332,24 @@ export function DashboardPage() {
       updatedAt: nowIso,
     }
 
-    await enqueueMutation({
-      id: makeId('mutation'),
-      name: 'cycle.entry.upsert',
-      entityType: 'cycle_entry',
-      entityId: entry.id,
-      operation: 'upsert',
-      payload,
-    }, prev => ({
-      ...prev,
-      data: {
-        ...prev.data,
-        cycleEntries: prev.data.cycleEntries.map(row => row.id === entry.id ? payload : row),
-      },
-    }))
+    try {
+      await enqueueMutation({
+        id: makeId('mutation'),
+        name: 'cycle.entry.upsert',
+        entityType: 'cycle_entry',
+        entityId: entry.id,
+        operation: 'upsert',
+        payload,
+      }, prev => ({
+        ...prev,
+        data: {
+          ...prev.data,
+          cycleEntries: prev.data.cycleEntries.map(row => row.id === entry.id ? payload : row),
+        },
+      }))
+    } finally {
+      setEndingCycleId(current => current === entry.id ? null : current)
+    }
   }
 
   if (!appReady) {
@@ -1334,7 +1374,7 @@ export function DashboardPage() {
 
       {snapshot.homeScreenSettings.ai ? <AiCapture surface="home" placeholder="Speak or type anything for the house brain" /> : null}
 
-      {snapshot.homeScreenSettings.cycleStatus && snapshot.openCycleEntry ? <HomePeriodCard entry={snapshot.openCycleEntry} onEnd={() => void endCurrentPeriod()} /> : null}
+      {snapshot.homeScreenSettings.cycleStatus && snapshot.openCycleEntry ? <HomePeriodCard entry={snapshot.openCycleEntry} ending={endingCycleId === snapshot.openCycleEntry.id} onEnd={() => void endCurrentPeriod()} /> : null}
 
       {snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null}
 

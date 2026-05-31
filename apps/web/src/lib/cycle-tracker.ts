@@ -10,6 +10,7 @@ const FERTILE_COLOR = '#7C6CE4'
 const OVULATION_COLOR = '#E58A2A'
 const PREDICTION_LOOKBACK_MONTHS = 12
 const DEFAULT_LUTEAL_DAYS = 14
+const MAX_CURRENT_OPEN_PERIOD_DAYS = 14
 
 export type CycleConfidence = 'none' | 'low' | 'medium' | 'high'
 
@@ -177,10 +178,21 @@ export function calculateCycleInsights(entries: CycleEntry[]): CycleInsights {
   }
 }
 
+export function findCurrentOpenCycleEntry(entries: NormalizedCycleEntry[], value: Date = new Date()) {
+  const latest = entries.at(-1) ?? null
+  if (!latest?.start || latest.end) return null
+
+  const today = cycleDate(value)
+  if (latest.start.getTime() > today.getTime()) return null
+
+  const day = daysBetween(latest.start, today) + 1
+  return day <= MAX_CURRENT_OPEN_PERIOD_DAYS ? latest : null
+}
+
 export function cycleCalendarItems(entries: CycleEntry[], options: { includePrediction?: boolean; includeOvulation?: boolean; includeKnownOvulation?: boolean } = {}) {
   const insights = calculateCycleInsights(entries)
   const today = cycleDate(new Date())
-  const latestEntryId = insights.entries.at(-1)?.id ?? null
+  const currentOpenEntryId = findCurrentOpenCycleEntry(insights.entries, today)?.id ?? null
   const items: CycleCalendarItem[] = insights.entries.flatMap(entry => {
     if (entry.end) {
       return eachPeriodDay(entry.start, entry.end).map(day => ({
@@ -194,7 +206,7 @@ export function cycleCalendarItems(entries: CycleEntry[], options: { includePred
       }))
     }
 
-    const openEnd = entry.id === latestEntryId && entry.start.getTime() <= today.getTime() ? today : entry.start
+    const openEnd = entry.id === currentOpenEntryId ? today : entry.start
     return eachPeriodDay(entry.start, openEnd).map(day => ({
       id: `cycle-${entry.id}-day-${day.day}`,
       title: `Period Day ${day.day}`,
