@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '@homeos/db'
 import { mediaEpisodes, mediaItems, mediaSeasons } from '@homeos/db/schema'
+import { enrichProviderGroupsWithWatchmode } from './watchmode'
 
 export type MediaType = 'movie' | 'tv'
 
@@ -124,11 +125,13 @@ function genreNames(mediaType: MediaType, media: TmdbMedia) {
 }
 
 function providerGroups(raw: unknown) {
-  const gb = (raw as { results?: { GB?: { link?: string; flatrate?: TmdbProvider[]; rent?: TmdbProvider[]; buy?: TmdbProvider[] } } })?.results?.GB
+  const gb = (raw as { results?: { GB?: { link?: string; flatrate?: TmdbProvider[]; free?: TmdbProvider[]; ads?: TmdbProvider[]; rent?: TmdbProvider[]; buy?: TmdbProvider[] } } })?.results?.GB
   if (!gb) return null
   return {
     link: gb.link ?? null,
     flatrate: (gb.flatrate ?? []).slice(0, 8),
+    free: (gb.free ?? []).slice(0, 8),
+    ads: (gb.ads ?? []).slice(0, 8),
     rent: (gb.rent ?? []).slice(0, 8),
     buy: (gb.buy ?? []).slice(0, 8),
   }
@@ -236,13 +239,19 @@ export async function cacheMedia(item: ReturnType<typeof normalizeMedia>) {
 }
 
 export async function getMediaDetails(mediaType: MediaType, tmdbId: number) {
-  const [details, providers, credits] = await Promise.all([
+  const [details, providers, credits, existing] = await Promise.all([
     tmdbFetch<TmdbMedia>(`/${mediaType}/${tmdbId}`, { language: 'en-GB' }),
     tmdbFetch<unknown>(`/${mediaType}/${tmdbId}/watch/providers`),
     tmdbFetch<TmdbCredits>(`/${mediaType}/${tmdbId}/credits`, { language: 'en-GB' }),
+    db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mediaId(mediaType, tmdbId)) }),
   ])
   const normalized = normalizeMedia(details, mediaType)
-  normalized.providers = providerGroups(providers)
+  normalized.providers = await enrichProviderGroupsWithWatchmode(
+    mediaType,
+    tmdbId,
+    providerGroups(providers),
+    existing?.providers as ReturnType<typeof providerGroups> | undefined,
+  )
   normalized.credits = creditGroups(credits)
   return cacheMedia(normalized)
 }

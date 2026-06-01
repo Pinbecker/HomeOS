@@ -89,9 +89,90 @@ const swipeIntents: Record<SwipeIntent, {
 }
 
 function serviceProviders(item: MediaItem, enabledIds: number[] = []) {
-  const providers = item.providers as { flatrate?: MediaProvider[] } | null | undefined
-  const flatrate = providers?.flatrate ?? []
-  return (enabledIds.length ? flatrate.filter(provider => enabledIds.includes(provider.provider_id)) : flatrate).slice(0, 4)
+  const available = streamingProviders(item)
+  return (enabledIds.length ? available.filter(provider => enabledIds.includes(provider.provider_id)) : available).slice(0, 4)
+}
+
+function streamingProviders(item: MediaItem) {
+  const providers = item.providers as { flatrate?: MediaProvider[]; free?: MediaProvider[]; ads?: MediaProvider[] } | null | undefined
+  return uniqueProviders([...(providers?.flatrate ?? []), ...(providers?.free ?? []), ...(providers?.ads ?? [])])
+}
+
+function allItemProviders(item: MediaItem) {
+  const providers = item.providers as { flatrate?: MediaProvider[]; free?: MediaProvider[]; ads?: MediaProvider[]; rent?: MediaProvider[]; buy?: MediaProvider[] } | null | undefined
+  return uniqueProviders([...(providers?.flatrate ?? []), ...(providers?.free ?? []), ...(providers?.ads ?? []), ...(providers?.rent ?? []), ...(providers?.buy ?? [])])
+}
+
+function uniqueProviders(providers: MediaProvider[]) {
+  const seen = new Set<number>()
+  return providers.filter(provider => {
+    if (seen.has(provider.provider_id)) return false
+    seen.add(provider.provider_id)
+    return true
+  })
+}
+
+function providerNameKey(value: string) {
+  const name = value.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
+  if (name.includes('netflix')) return 'netflix'
+  if (name.includes('amazon') || name.includes('prime video')) return 'prime-video'
+  if (name.includes('disney')) return 'disney-plus'
+  if (name.includes('paramount')) return 'paramount-plus'
+  if (name.includes('sky go') || name === 'sky') return 'sky-go'
+  if (name.includes('bbc') || name.includes('iplayer')) return 'bbc-iplayer'
+  if (name.includes('channel 4') || name.includes('all 4')) return 'channel-4'
+  if (name.includes('itv') || name.includes('itvx')) return 'itvx'
+  return name
+}
+
+function titleSearchQuery(item: MediaItem) {
+  return [item.title, item.year ? String(item.year) : null].filter(Boolean).join(' ')
+}
+
+function itemProviderLink(item: MediaItem) {
+  const providers = item.providers as { link?: string | null } | null | undefined
+  return typeof providers?.link === 'string' && providers.link ? providers.link : null
+}
+
+function providerLinksAreFresh(fetchedAt: string | undefined) {
+  if (!fetchedAt) return false
+  const age = Date.now() - Date.parse(fetchedAt)
+  return Number.isFinite(age) && age >= 0 && age < 30 * 24 * 60 * 60 * 1000
+}
+
+function exactProviderWatchUrl(provider: MediaProvider) {
+  const links = provider.links
+  if (!links || !providerLinksAreFresh(links.fetchedAt)) return null
+
+  const navigatorLike = globalThis.navigator
+  const userAgent = navigatorLike?.userAgent ?? ''
+  const isAndroid = /Android/i.test(userAgent)
+  const isIos = /iPad|iPhone|iPod/i.test(userAgent)
+    || (navigatorLike?.platform === 'MacIntel' && Number(navigatorLike?.maxTouchPoints ?? 0) > 1)
+
+  if (isIos && links.iosUrl) return links.iosUrl
+  if (isAndroid && links.androidUrl) return links.androidUrl
+  return links.webUrl ?? links.iosUrl ?? links.androidUrl ?? null
+}
+
+function providerWatchUrl(item: MediaItem, provider: MediaProvider) {
+  const exact = exactProviderWatchUrl(provider)
+  if (exact) return exact
+
+  const name = provider.provider_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const query = encodeURIComponent(titleSearchQuery(item))
+  const compactQuery = encodeURIComponent(item.title)
+
+  if (name.includes('netflix')) return `https://www.netflix.com/search?q=${compactQuery}`
+  if (name.includes('amazon') || name.includes('prime video')) return `https://www.primevideo.com/search/ref=atv_nb_sr?phrase=${compactQuery}`
+  if (name.includes('disney')) return `https://www.disneyplus.com/search?q=${compactQuery}`
+  if (name.includes('paramount')) return `https://www.paramountplus.com/search/?query=${compactQuery}`
+  if (name.includes('sky go') || name === 'sky') return `https://www.sky.com/watch/search?q=${query}`
+  if (name.includes('bbc') || name.includes('iplayer')) return `https://www.bbc.co.uk/iplayer/search?q=${compactQuery}`
+  if (name.includes('channel 4') || name.includes('all 4')) return `https://www.channel4.com/search?q=${compactQuery}`
+  if (name.includes('itv') || name.includes('itvx')) return `https://www.itv.com/watch/search?q=${compactQuery}`
+
+  return itemProviderLink(item)
 }
 
 function providerEmptyText(item: MediaItem, selectedProviderIds: number[]) {
@@ -124,8 +205,7 @@ function runtimeLabel(item: MediaItem) {
 }
 
 function providerSearchText(item: MediaItem) {
-  const providers = item.providers as { flatrate?: MediaProvider[]; rent?: MediaProvider[]; buy?: MediaProvider[] } | null | undefined
-  return [...(providers?.flatrate ?? []), ...(providers?.rent ?? []), ...(providers?.buy ?? [])]
+  return allItemProviders(item)
     .map(provider => provider.provider_name)
     .join(' ')
 }
@@ -1273,7 +1353,7 @@ function MediaCard({ item, selectedProviderIds, intent, intentStrength = 0, isPr
         </div>
       </div>
       <div className="shrink-0 px-4 py-3">
-        <MediaProviderSection providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
+        <MediaProviderSection item={item} providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
         {(item.genres ?? []).length ? <p className="mt-2.5 truncate text-[11px] font-semibold uppercase text-[var(--media-faint)]">{(item.genres ?? []).slice(0, 3).join(' / ')}</p> : null}
         <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-[var(--media-muted)]">{item.overview || 'No synopsis available.'}</p>
       </div>
@@ -1303,7 +1383,7 @@ function SwipeDirectionIndicators({ intent, strength }: { intent: SwipeIntent | 
   )
 }
 
-function MediaProviderSection({ providers, emptyText, compact = false, trailing }: { providers: MediaProvider[]; emptyText?: string; compact?: boolean; trailing?: ReactNode }) {
+function MediaProviderSection({ item, providers, emptyText, compact = false, trailing }: { item: MediaItem; providers: MediaProvider[]; emptyText?: string; compact?: boolean; trailing?: ReactNode }) {
   if (!providers.length) {
     return (
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1323,7 +1403,7 @@ function MediaProviderSection({ providers, emptyText, compact = false, trailing 
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           {visibleProviders.map(provider => (
             <span key={provider.provider_id} className="flex min-w-0 items-center gap-1.5">
-              {provider.logo_path ? <img src={posterUrl(provider.logo_path, 'w92')} alt="" className={`${compact ? 'h-[18px] w-[18px] rounded-[4px]' : 'h-5 w-5 rounded-[5px]'} shrink-0 object-cover`} /> : null}
+              <ProviderIconLink item={item} provider={provider} className={`${compact ? 'h-[18px] w-[18px] rounded-[4px]' : 'h-5 w-5 rounded-[5px]'}`} />
             </span>
           ))}
           {overflow > 0 ? <span className="shrink-0 text-[11px] font-semibold text-[var(--media-muted)]">+{overflow}</span> : null}
@@ -1446,7 +1526,7 @@ function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, s
             {people.length ? people.join(', ') : providerEmptyText(item, selectedProviderIds)}
           </p>
           <div className="min-w-0" onClick={stop}>
-            <ProviderIconStrip providers={providers} trailing={providerTrailing} />
+            <ProviderIconStrip item={item} providers={providers} trailing={providerTrailing} />
           </div>
         </div>
         <div className="flex items-center gap-1.5 pt-1" onClick={stop}>
@@ -1457,7 +1537,7 @@ function CompactMediaRow({ item, selectedProviderIds, watchlistActive = false, s
   )
 }
 
-function ProviderIconStrip({ providers, trailing }: { providers: MediaProvider[]; trailing?: ReactNode }) {
+function ProviderIconStrip({ item, providers, trailing }: { item: MediaItem; providers: MediaProvider[]; trailing?: ReactNode }) {
   const visibleProviders = providers.slice(0, 3)
   const overflow = providers.length - visibleProviders.length
   if (!visibleProviders.length && !trailing) return null
@@ -1465,7 +1545,7 @@ function ProviderIconStrip({ providers, trailing }: { providers: MediaProvider[]
   return (
     <div className="flex w-full items-center justify-end gap-1.5">
       {visibleProviders.map(provider => (
-        provider.logo_path ? <img key={provider.provider_id} src={posterUrl(provider.logo_path, 'w92')} alt="" className="h-[17px] w-[17px] shrink-0 rounded-[4px] object-cover" /> : null
+        <ProviderIconLink key={provider.provider_id} item={item} provider={provider} className="h-[17px] w-[17px] rounded-[4px]" />
       ))}
       {overflow > 0 ? <span className="shrink-0 text-[10px] font-medium text-[var(--media-muted)]">+{overflow}</span> : null}
       <span className="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center">{trailing}</span>
@@ -2109,7 +2189,7 @@ function MediaDetailSheet({ item, loading, userState, familyState, selectedProvi
             </div>
           ) : null}
           <div className="mt-4 border-t border-[var(--media-line)] pt-3">
-            <DetailProviderStrip providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
+            <DetailProviderStrip item={item} providers={providers} emptyText={providerEmptyText(item, selectedProviderIds)} />
           </div>
         </div>
       </div>
@@ -2148,7 +2228,7 @@ function DetailPeople({ label, names }: { label: string; names: string[] }) {
   )
 }
 
-function DetailProviderStrip({ providers, emptyText }: { providers: MediaProvider[]; emptyText?: string }) {
+function DetailProviderStrip({ item, providers, emptyText }: { item: MediaItem; providers: MediaProvider[]; emptyText?: string }) {
   if (!providers.length) {
     return <p className="text-[12px] font-bold text-[var(--media-faint)]">{emptyText}</p>
   }
@@ -2159,13 +2239,72 @@ function DetailProviderStrip({ providers, emptyText }: { providers: MediaProvide
       <span className="shrink-0 text-[9.5px] font-bold uppercase text-[var(--media-faint)]">Streaming</span>
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         {visibleProviders.map(provider => (
-          <span key={provider.provider_id} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-[var(--media-panel-2)]">
-            {provider.logo_path ? <img src={posterUrl(provider.logo_path, 'w92')} alt="" className="h-full w-full object-cover" /> : null}
-          </span>
+          <ProviderIconLink key={provider.provider_id} item={item} provider={provider} className="h-8 w-8 rounded-[8px]" />
         ))}
         {overflow > 0 ? <span className="shrink-0 text-[11px] font-bold text-[var(--media-muted)]">+{overflow}</span> : null}
       </div>
     </div>
+  )
+}
+
+function exactProviderUrlForItem(item: MediaItem, provider: MediaProvider) {
+  const targetName = providerNameKey(provider.provider_name)
+  const match = allItemProviders(item).find(candidate => (
+    candidate.provider_id === provider.provider_id
+    || providerNameKey(candidate.provider_name) === targetName
+  ))
+  return match ? exactProviderWatchUrl(match) : null
+}
+
+function ProviderIconLink({ item, provider, className }: { item: MediaItem; provider: MediaProvider; className: string }) {
+  if (!provider.logo_path) return null
+  const href = providerWatchUrl(item, provider)
+  const exactHref = exactProviderWatchUrl(provider)
+  const label = `Open ${provider.provider_name} for ${item.title}`
+  const image = <img src={posterUrl(provider.logo_path, 'w92')} alt="" className="h-full w-full object-cover" loading="lazy" />
+
+  if (!href) {
+    return (
+      <span className={`${className} block shrink-0 overflow-hidden bg-[var(--media-panel-2)]`} aria-label={provider.provider_name} title={provider.provider_name}>
+        {image}
+      </span>
+    )
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
+      title={label}
+      onClick={event => {
+        event.stopPropagation()
+        if (exactHref) return
+
+        event.preventDefault()
+        const targetWindow = window.open('about:blank', '_blank')
+        if (targetWindow) targetWindow.opener = null
+
+        void (async () => {
+          let destination = href
+          try {
+            const payload = await fetchMediaDetails(item)
+            void syncMediaItem(payload.item)
+            destination = exactProviderUrlForItem(payload.item, provider) ?? href
+          } catch {
+            destination = href
+          }
+
+          if (targetWindow) targetWindow.location.href = destination
+          else window.location.href = destination
+        })()
+      }}
+      onPointerDown={event => event.stopPropagation()}
+      className={`${className} block shrink-0 overflow-hidden bg-[var(--media-panel-2)] transition active:scale-95`}
+    >
+      {image}
+    </a>
   )
 }
 

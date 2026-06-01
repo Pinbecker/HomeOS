@@ -6,6 +6,17 @@ export type MediaProvider = {
   provider_name: string
   logo_path?: string | null
   mediaTypes?: Array<'movie' | 'tv'>
+  links?: {
+    source?: string
+    sourceId?: number | null
+    sourceName?: string
+    type?: string
+    region?: string
+    webUrl?: string | null
+    iosUrl?: string | null
+    androidUrl?: string | null
+    fetchedAt?: string
+  }
 }
 
 export type MediaSeasonPayload = {
@@ -27,9 +38,9 @@ export function yearLabel(item: MediaItem) {
 }
 
 export function providerNames(item: MediaItem, enabledIds: number[] = []) {
-  const providers = item.providers as { flatrate?: MediaProvider[] } | null | undefined
-  const flatrate = providers?.flatrate ?? []
-  const chosen = enabledIds.length ? flatrate.filter(provider => enabledIds.includes(provider.provider_id)) : flatrate
+  const providers = item.providers as { flatrate?: MediaProvider[]; free?: MediaProvider[]; ads?: MediaProvider[] } | null | undefined
+  const available = [...(providers?.flatrate ?? []), ...(providers?.free ?? []), ...(providers?.ads ?? [])]
+  const chosen = enabledIds.length ? available.filter(provider => enabledIds.includes(provider.provider_id)) : available
   return chosen.map(provider => provider.provider_name).slice(0, 3)
 }
 
