@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
-import { Settings } from 'lucide-react'
+import { Heart, Settings, Trash2 } from 'lucide-react'
 import { SwipeRow } from '../components/swipe-row'
-import { enqueueMutation, getCurrentState, makeId, type CycleEntry, useAppState } from '../lib/app-store'
+import { enqueueMutation, getCurrentState, makeId, type CycleEntry, type CycleSexLog, useAppState } from '../lib/app-store'
 import {
   addCycleDays,
   calculateCycleInsights,
@@ -22,6 +22,7 @@ import { ScreenShell } from './shell'
 
 const ACCENT = '#C04A7A'
 const OVULATION = '#E58A2A'
+const SEX = '#D14E5D'
 const SOFT = 'color-mix(in srgb, #C04A7A 11%, var(--surface))'
 const SOFTER = 'color-mix(in srgb, #C04A7A 7%, var(--surface))'
 const DAY_MS = 86_400_000
@@ -34,6 +35,7 @@ export function CycleTrackerPage() {
     householdId: state.data.household[0]?.id ?? 'default',
     household: state.data.household[0] ?? null,
     entries: state.data.cycleEntries,
+    sexLogs: state.data.cycleSexLogs,
   }))
   const insights = useMemo(() => calculateCycleInsights(snapshot.entries), [snapshot.entries])
   const settings = readCycleTrackerSettings(snapshot.household?.settings)
@@ -42,14 +44,18 @@ export function CycleTrackerPage() {
   }, [insights.entries])
   const [month, setMonth] = useState(currentCycleCalendarMonth)
   const [periodError, setPeriodError] = useState<string | null>(null)
+  const [sexLogDate, setSexLogDate] = useState(() => cycleDateInput(new Date()))
+  const [sexLogError, setSexLogError] = useState<string | null>(null)
+  const [sexLogMessage, setSexLogMessage] = useState<string | null>(null)
+  const [sexLogOpen, setSexLogOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
-    if (!settingsOpen) return undefined
+    if (!settingsOpen && !sexLogOpen) return undefined
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
-  }, [settingsOpen])
+  }, [settingsOpen, sexLogOpen])
 
   async function saveCycleEntry(existing: CycleEntry | null, nextStartDate: string, nextEndDate: string, nextOvulationDate: string, setMessage: (message: string | null) => void) {
     const start = parseCycleDateInput(nextStartDate)
@@ -135,6 +141,65 @@ export function CycleTrackerPage() {
     }))
   }
 
+  async function saveSexLog() {
+    const loggedDate = parseCycleDateInput(sexLogDate)
+    if (Number.isNaN(loggedDate.getTime())) {
+      setSexLogError('Date is required')
+      setSexLogMessage(null)
+      return
+    }
+
+    const dateKey = cycleDateInput(loggedDate)
+    const now = new Date().toISOString()
+    const id = makeId('cycle-sex')
+    const payload: CycleSexLog = {
+      id,
+      householdId: snapshot.householdId,
+      loggedDate: loggedDate.toISOString(),
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'cycle.sex_log.upsert',
+      entityType: 'cycle_sex_log',
+      entityId: id,
+      operation: 'upsert',
+      payload,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        cycleSexLogs: prev.data.cycleSexLogs.some(row => row.id === id)
+          ? prev.data.cycleSexLogs.map(row => row.id === id ? payload : row)
+          : [...prev.data.cycleSexLogs, payload],
+      },
+    }))
+
+    setSexLogDate('')
+    setSexLogError(null)
+    setSexLogMessage(`Logged ${formatCycleDate(dateKey, { day: 'numeric', month: 'short', year: 'numeric' })}`)
+  }
+
+  async function deleteSexLog(log: CycleSexLog) {
+    await enqueueMutation({
+      id: makeId('mutation'),
+      name: 'cycle.sex_log.delete',
+      entityType: 'cycle_sex_log',
+      entityId: log.id,
+      operation: 'delete',
+      payload: null,
+    }, prev => ({
+      ...prev,
+      data: {
+        ...prev.data,
+        cycleSexLogs: prev.data.cycleSexLogs.filter(row => row.id !== log.id),
+      },
+    }))
+    setSexLogError(null)
+  }
+
   async function saveSettings(recipe: (current: CycleTrackerSettings) => CycleTrackerSettings) {
     const state = getCurrentState()
     const householdRow = state.data.household[0] ?? snapshot.household
@@ -184,13 +249,16 @@ export function CycleTrackerPage() {
 
         <PeriodActionCard openPeriod={openPeriod} error={periodError} onStart={() => void startPeriod()} onEnd={() => void endPeriod()} />
 
-        <MonthView month={month} entries={snapshot.entries} showOvulation={settings.showOvulationWindows} onPrevious={() => setMonth(value => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() - 1, 1)))} onNext={() => setMonth(value => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1)))} />
+        <MonthView month={month} entries={snapshot.entries} sexLogs={snapshot.sexLogs} showOvulation={settings.showOvulationWindows} onPrevious={() => setMonth(value => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() - 1, 1)))} onNext={() => setMonth(value => new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 1)))} />
 
         <section className="grid gap-3">
           <LineChart insights={insights} />
           <DurationChart entries={snapshot.entries} />
         </section>
+
+        <SexLogCard logs={snapshot.sexLogs} date={sexLogDate} error={sexLogError} message={sexLogMessage} onDateChange={value => { setSexLogDate(value); setSexLogError(null); setSexLogMessage(null) }} onSave={() => void saveSexLog()} onOpenLog={() => setSexLogOpen(true)} />
       </div>
+      <SexLogSheet open={sexLogOpen} logs={snapshot.sexLogs} onClose={() => setSexLogOpen(false)} onDelete={log => void deleteSexLog(log)} />
       <CycleSettingsSheet
         open={settingsOpen}
         entries={snapshot.entries}
@@ -281,6 +349,91 @@ function PeriodActionCard({ openPeriod, error, onStart, onEnd }: { openPeriod: C
   )
 }
 
+function SexLogCard({ logs, date, error, message, onDateChange, onSave, onOpenLog }: { logs: CycleSexLog[]; date: string; error: string | null; message: string | null; onDateChange: (value: string) => void; onSave: () => void; onOpenLog: () => void }) {
+  const latest = useMemo(() => [...logs].sort((a, b) => cycleDate(b.loggedDate).getTime() - cycleDate(a.loggedDate).getTime())[0] ?? null, [logs])
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-surface p-4">
+      <button type="button" onClick={onOpenLog} className="flex w-full min-w-0 items-center gap-2 text-left active:opacity-75">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white" style={{ background: SEX }}>
+          <Heart className="h-[18px] w-[18px]" strokeWidth={2.3} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[17px] font-bold text-text-1">Sex log</h2>
+          <p className="mt-0.5 text-[12px] text-text-2">{logs.length ? `${logs.length} logged${latest ? `, latest ${formatCycleDate(latest.loggedDate)}` : ''}` : 'No entries yet'}</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-surface-2 px-3 py-1.5 text-[12px] font-bold text-text-2">View log</span>
+      </button>
+      <div className="mt-4 border-t border-border pt-3">
+        <p className="mb-2 text-[12px] font-semibold text-text-3">Add entry</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <DateField value={date} onChange={onDateChange} />
+          </div>
+          <button type="button" onClick={onSave} className="flex h-11 shrink-0 items-center gap-2 rounded-xl px-3 text-[14px] font-bold text-white active:opacity-80" style={{ background: SEX }}>
+            <Heart className="h-[16px] w-[16px]" strokeWidth={2.4} />
+            Add
+          </button>
+        </div>
+      </div>
+      {error ? <p className="mt-2 text-[12px] font-semibold text-red">{error}</p> : null}
+      {message ? <p className="mt-2 text-[12px] font-semibold" style={{ color: SEX }}>{message}</p> : null}
+    </section>
+  )
+}
+
+function SexLogSheet({ open, logs, onClose, onDelete }: { open: boolean; logs: CycleSexLog[]; onClose: () => void; onDelete: (log: CycleSexLog) => void }) {
+  const newest = useMemo(() => [...logs].sort((a, b) => {
+    const dateDelta = cycleDate(b.loggedDate).getTime() - cycleDate(a.loggedDate).getTime()
+    if (dateDelta !== 0) return dateDelta
+    return Number(new Date(b.createdAt)) - Number(new Date(a.createdAt))
+  }), [logs])
+
+  if (!open) return null
+
+  return (
+    <>
+      <button type="button" aria-label="Close sex log" onClick={onClose} className="fixed inset-0 z-[58] bg-black/40" />
+      <div className="fixed inset-x-0 bottom-0 z-[60]">
+        <div className="mx-auto max-w-lg overflow-hidden rounded-t-[26px] border-t border-border bg-surface shadow-[0_-10px_40px_rgba(0,0,0,0.18)]" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+          <div className="px-4 pb-2 pt-3">
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-text-3/35" />
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-[19px] font-bold text-text-1">Sex log</h2>
+                <p className="mt-0.5 text-[12px] text-text-2">{logs.length ? `${logs.length} date entries` : 'No entries yet'}</p>
+              </div>
+              <button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-2 active:opacity-70" aria-label="Close">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="h-4 w-4"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[62vh] overflow-y-auto border-t border-border">
+            {newest.length === 0 ? (
+              <p className="px-4 py-8 text-center text-[14px] text-text-2">No entries yet</p>
+            ) : (
+              newest.map((log, index) => (
+                <div key={log.id} className={`flex min-w-0 items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white" style={{ background: SEX }}>
+                    <Heart className="h-[17px] w-[17px]" strokeWidth={2.4} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-semibold text-text-1">{formatCycleDate(log.loggedDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="mt-0.5 text-[12px] text-text-2">Logged date entry</p>
+                  </div>
+                  <button type="button" onClick={() => onDelete(log)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-2 active:opacity-70" aria-label={`Delete sex log for ${formatCycleDate(log.loggedDate, { day: 'numeric', month: 'short', year: 'numeric' })}`}>
+                    <Trash2 className="h-[16px] w-[16px]" strokeWidth={2.2} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 function MetricGrid({ metrics }: { metrics: Array<[string, string]> }) {
   return (
     <div className="grid min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
@@ -303,7 +456,7 @@ function ConfidenceBadge({ confidence, color = ACCENT }: { confidence: CycleConf
   )
 }
 
-function MonthView({ month, entries, showOvulation, onPrevious, onNext }: { month: Date; entries: CycleEntry[]; showOvulation: boolean; onPrevious: () => void; onNext: () => void }) {
+function MonthView({ month, entries, sexLogs, showOvulation, onPrevious, onNext }: { month: Date; entries: CycleEntry[]; sexLogs: CycleSexLog[]; showOvulation: boolean; onPrevious: () => void; onNext: () => void }) {
   const { items } = cycleCalendarItems(entries, { includePrediction: true, includeKnownOvulation: true, includeOvulation: showOvulation })
   const statuses = new Map<string, { status: DayStatus; label: string }>()
   for (const item of items) {
@@ -320,6 +473,11 @@ function MonthView({ month, entries, showOvulation, onPrevious, onNext }: { mont
       if (existing && dayPriority(existing.status) >= dayPriority(next.status)) continue
       statuses.set(key, next)
     }
+  }
+  const sexCounts = new Map<string, number>()
+  for (const log of sexLogs) {
+    const key = cycleDayKey(cycleDate(log.loggedDate))
+    sexCounts.set(key, (sexCounts.get(key) ?? 0) + 1)
   }
 
   const days = monthGrid(month)
@@ -340,11 +498,14 @@ function MonthView({ month, entries, showOvulation, onPrevious, onNext }: { mont
         {WEEKDAYS.map((day, index) => <p key={`${day}-${index}`} className="pb-1 text-center text-[11px] font-bold text-text-3">{day}</p>)}
         {days.map(day => {
           const inMonth = day.getUTCMonth() === month.getUTCMonth()
-          const status = statuses.get(cycleDayKey(day))
+          const key = cycleDayKey(day)
+          const status = statuses.get(key)
+          const sexCount = sexCounts.get(key) ?? 0
           return (
             <div key={day.toISOString()} className={`relative flex aspect-square flex-col items-center justify-center rounded-xl text-[13px] ${inMonth ? 'text-text-1' : 'text-text-3'}`} style={dayStyle(status?.status)}>
               <span>{day.getUTCDate()}</span>
               {status ? <span className="mt-0.5 max-w-full truncate px-1 text-[8.5px] font-bold leading-none opacity-90">{status.label}</span> : null}
+              {sexCount ? <span className="mt-0.5 max-w-full truncate rounded-full px-1.5 text-[8.5px] font-bold leading-[12px]" style={sexLabelStyle(status?.status)}>{sexCount > 1 ? `Sex x${sexCount}` : 'Sex'}</span> : null}
             </div>
           )
         })}
@@ -354,6 +515,7 @@ function MonthView({ month, entries, showOvulation, onPrevious, onNext }: { mont
         <LegendDot label="Period Est." style={{ background: SOFTER }} />
         {showOvulation ? <LegendDot label="Fertile" style={{ border: '1px dashed #7C6CE4', background: 'color-mix(in srgb, #7C6CE4 9%, var(--surface))' }} /> : null}
         {showOvulation ? <LegendDot label="Ovulation" style={{ background: 'color-mix(in srgb, #E58A2A 18%, var(--surface))' }} /> : null}
+        <LegendDot label="Sex" style={{ background: SEX }} />
       </div>
     </section>
   )
@@ -724,6 +886,11 @@ function dayStyle(status: DayStatus | undefined): CSSProperties {
   if (status === 'ovulation') return { background: 'color-mix(in srgb, #E58A2A 12%, var(--surface))', border: '1px dashed #E58A2A', color: '#C77424', fontWeight: 700 }
   if (status === 'knownOvulation') return { background: 'color-mix(in srgb, #E58A2A 20%, var(--surface))', color: '#B9641D', fontWeight: 800 }
   return {}
+}
+
+function sexLabelStyle(status: DayStatus | undefined): CSSProperties {
+  if (status === 'confirmed') return { background: 'rgba(255,255,255,0.22)', color: '#fff' }
+  return { background: 'color-mix(in srgb, #D14E5D 15%, var(--surface))', color: SEX }
 }
 
 function dayPriority(status: DayStatus) {

@@ -133,6 +133,13 @@ export type CycleEntry = {
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
+export type CycleSexLog = {
+  id: string
+  householdId: string
+  loggedDate: string | number | Date
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
 type Bin = {
   id: string
   householdId: string
@@ -256,6 +263,7 @@ type AppData = {
   calendarEvents: CalendarEvent[]
   calendarFeeds: CalendarFeed[]
   cycleEntries: CycleEntry[]
+  cycleSexLogs: CycleSexLog[]
   bins: Bin[]
   mediaItems: MediaItem[]
   mediaUserStates: MediaUserState[]
@@ -321,6 +329,7 @@ const emptyData: AppData = {
   calendarEvents: [],
   calendarFeeds: [],
   cycleEntries: [],
+  cycleSexLogs: [],
   bins: [],
   mediaItems: [],
   mediaUserStates: [],
@@ -818,6 +827,11 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.cycleEntries, mutation.entityId)
         : mergeCollection(next.cycleEntries, mutation.payload as CycleEntry)
       break
+    case 'cycle_sex_log':
+      next.cycleSexLogs = mutation.operation === 'delete'
+        ? removeCollection(next.cycleSexLogs, mutation.entityId)
+        : mergeCollection(next.cycleSexLogs, mutation.payload as CycleSexLog)
+      break
     case 'media_item':
       next.mediaItems = mutation.operation === 'delete'
         ? removeCollection(next.mediaItems, mutation.entityId)
@@ -921,6 +935,11 @@ function applyChange(change: SyncChange) {
         next.data.cycleEntries = change.operation === 'delete'
           ? removeCollection(next.data.cycleEntries, change.entityId)
           : mergeCollection(next.data.cycleEntries, change.payload as CycleEntry)
+        break
+      case 'cycle_sex_log':
+        next.data.cycleSexLogs = change.operation === 'delete'
+          ? removeCollection(next.data.cycleSexLogs, change.entityId)
+          : mergeCollection(next.data.cycleSexLogs, change.payload as CycleSexLog)
         break
       case 'media_item':
         next.data.mediaItems = change.operation === 'delete'

@@ -10,6 +10,7 @@ import {
   calendarEvents,
   calendarFeeds,
   cycleEntries,
+  cycleSexLogs,
   entityLinks,
   household,
   householdMembers,
@@ -76,6 +77,7 @@ export async function buildBootstrap() {
     allCalendarEvents,
     allCalendarFeeds,
     allCycleEntries,
+    allCycleSexLogs,
     allBins,
     allMediaItems,
     allMediaUserStates,
@@ -97,6 +99,7 @@ export async function buildBootstrap() {
     db.select().from(calendarEvents),
     db.select().from(calendarFeeds),
     db.select().from(cycleEntries),
+    db.select().from(cycleSexLogs),
     db.select().from(bins),
     db.select().from(mediaItems),
     db.select().from(mediaUserStates),
@@ -136,6 +139,7 @@ export async function buildBootstrap() {
       calendarEvents: allCalendarEvents,
       calendarFeeds: allCalendarFeeds,
       cycleEntries: allCycleEntries,
+      cycleSexLogs: allCycleSexLogs,
       bins: allBins,
       mediaItems: syncedMediaItems,
       mediaUserStates: allMediaUserStates,
@@ -313,6 +317,10 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
       const row = await db.query.cycleEntries.findFirst({ where: eq(cycleEntries.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
+    case 'cycle_sex_log': {
+      const row = await db.query.cycleSexLogs.findFirst({ where: eq(cycleSexLogs.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     case 'media_item': {
       const row = await db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
@@ -441,6 +449,12 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       break
     case 'cycle.entry.delete':
       await db.delete(cycleEntries).where(eq(cycleEntries.id, mutation.entityId))
+      break
+    case 'cycle.sex_log.upsert':
+      await upsertCycleSexLog(mutation)
+      break
+    case 'cycle.sex_log.delete':
+      await db.delete(cycleSexLogs).where(eq(cycleSexLogs.id, mutation.entityId))
       break
     case 'media.item.upsert':
       await upsertMediaItem(mutation)
@@ -704,6 +718,35 @@ async function upsertCycleEntry(mutation: SyncMutation) {
       ovulationSource,
       createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
       updatedAt: payload.updatedAt ? new Date(payload.updatedAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertCycleSexLog(mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.cycleSexLogs.findFirst({ where: eq(cycleSexLogs.id, mutation.entityId) })
+  const loggedDate = payload.loggedDate
+    ? new Date(payload.loggedDate as string | number)
+    : existing?.loggedDate
+
+  if (!loggedDate || Number.isNaN(loggedDate.getTime())) {
+    throw new Error('Sex log date is required')
+  }
+
+  const values = {
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
+    loggedDate,
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(cycleSexLogs).set(values).where(eq(cycleSexLogs.id, mutation.entityId))
+  } else {
+    await db.insert(cycleSexLogs).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
     })
   }
 }

@@ -258,6 +258,16 @@ export const cycleEntries = sqliteTable('cycle_entries', {
   dateOrderCheck: check('cycle_entries_date_order_check', sql`${table.endDate} IS NULL OR ${table.endDate} >= ${table.startDate}`),
 }))
 
+export const cycleSexLogs = sqliteTable('cycle_sex_logs', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  loggedDate: integer('logged_date', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  dateIdx: index('cycle_sex_logs_logged_date_idx').on(table.loggedDate),
+}))
+
 // ============================================================
 // GOOGLE CALENDAR — per-user OAuth connection (tokens for the
 // shared family calendar). Separate from better-auth's `accounts`
