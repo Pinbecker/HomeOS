@@ -269,6 +269,101 @@ export const cycleSexLogs = sqliteTable('cycle_sex_logs', {
 }))
 
 // ============================================================
+// ULCER TRACKER — per-user mouth ulcer episodes and lifecycle events
+//   Location pins use image-relative percentages so they survive
+//   responsive layout and asset resizing.
+// ============================================================
+
+export type UlcerStatus = 'active' | 'healing' | 'healed' | 'reopened'
+export type UlcerEventType =
+  | 'noticed'
+  | 'observation'
+  | 'treatment_started'
+  | 'treatment_stopped'
+  | 'worsened'
+  | 'improved'
+  | 'healed'
+  | 'reopened'
+export type MouthRegion =
+  | 'upper_inner_lip'
+  | 'lower_inner_lip'
+  | 'left_cheek'
+  | 'right_cheek'
+  | 'tongue_top'
+  | 'tongue_left'
+  | 'tongue_right'
+  | 'upper_gum'
+  | 'lower_gum'
+  | 'roof'
+  | 'other'
+
+export type UlcerWellbeing = {
+  stress?: number
+  sleep?: number
+  illness?: boolean
+  medication?: boolean
+  cycleRelated?: boolean
+}
+
+export type UlcerEventStage = 'new' | 'worse' | 'same' | 'better' | 'nearly_healed' | 'healed'
+
+export const ulcerEpisodes = sqliteTable('ulcer_episodes', {
+  id: text('id').primaryKey(),
+  householdId: text('household_id').notNull().references(() => household.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mouthRegion: text('mouth_region').$type<MouthRegion>().notNull(),
+  x: integer('x').notNull(),
+  y: integer('y').notNull(),
+  label: text('label'),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  healedAt: integer('healed_at', { mode: 'timestamp' }),
+  firstNoticedAt: integer('first_noticed_at', { mode: 'timestamp' }).notNull(),
+  estimatedStartedAt: integer('estimated_started_at', { mode: 'timestamp' }),
+  resolvedAt: integer('resolved_at', { mode: 'timestamp' }),
+  status: text('status').$type<UlcerStatus>().notNull().default('active'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  userStatusIdx: index('ulcer_episodes_user_status_idx').on(table.userId, table.status),
+  startedAtIdx: index('ulcer_episodes_started_at_idx').on(table.startedAt),
+  firstNoticedIdx: index('ulcer_episodes_first_noticed_idx').on(table.firstNoticedAt),
+  statusCheck: check('ulcer_episodes_status_check', sql`${table.status} IN ('active', 'healing', 'healed', 'reopened')`),
+  positionCheck: check('ulcer_episodes_position_check', sql`${table.x} >= 0 AND ${table.x} <= 100 AND ${table.y} >= 0 AND ${table.y} <= 100`),
+  dateOrderCheck: check('ulcer_episodes_date_order_check', sql`${table.healedAt} IS NULL OR ${table.healedAt} >= ${table.startedAt}`),
+  resolvedOrderCheck: check('ulcer_episodes_resolved_order_check', sql`${table.resolvedAt} IS NULL OR ${table.resolvedAt} >= ${table.firstNoticedAt}`),
+}))
+
+export const ulcerCheckins = sqliteTable('ulcer_checkins', {
+  id: text('id').primaryKey(),
+  episodeId: text('episode_id').notNull().references(() => ulcerEpisodes.id, { onDelete: 'cascade' }),
+  householdId: text('household_id').notNull().references(() => household.id),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  loggedAt: integer('logged_at', { mode: 'timestamp' }).notNull(),
+  eventType: text('event_type').$type<UlcerEventType>().notNull().default('observation'),
+  stage: text('stage').$type<UlcerEventStage>(),
+  severity: integer('severity').notNull(),
+  pain: integer('pain').notNull(),
+  sizeMm: integer('size_mm').notNull(),
+  redness: integer('redness'),
+  triggers: text('triggers', { mode: 'json' }).$type<string[]>().default([]),
+  treatments: text('treatments', { mode: 'json' }).$type<string[]>().default([]),
+  wellbeing: text('wellbeing', { mode: 'json' }).$type<UlcerWellbeing>(),
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, table => ({
+  episodeLoggedIdx: index('ulcer_checkins_episode_logged_idx').on(table.episodeId, table.loggedAt),
+  userLoggedIdx: index('ulcer_checkins_user_logged_idx').on(table.userId, table.loggedAt),
+  eventTypeIdx: index('ulcer_checkins_event_type_idx').on(table.eventType),
+  eventTypeCheck: check('ulcer_checkins_event_type_check', sql`${table.eventType} IN ('noticed', 'observation', 'treatment_started', 'treatment_stopped', 'worsened', 'improved', 'healed', 'reopened')`),
+  stageCheck: check('ulcer_checkins_stage_check', sql`${table.stage} IS NULL OR ${table.stage} IN ('new', 'worse', 'same', 'better', 'nearly_healed', 'healed')`),
+  severityCheck: check('ulcer_checkins_severity_check', sql`${table.severity} >= 0 AND ${table.severity} <= 10`),
+  painCheck: check('ulcer_checkins_pain_check', sql`${table.pain} >= 0 AND ${table.pain} <= 10`),
+  sizeCheck: check('ulcer_checkins_size_check', sql`${table.sizeMm} >= 0 AND ${table.sizeMm} <= 50`),
+  rednessCheck: check('ulcer_checkins_redness_check', sql`${table.redness} IS NULL OR (${table.redness} >= 0 AND ${table.redness} <= 10)`),
+}))
+
+// ============================================================
 // GOOGLE CALENDAR — per-user OAuth connection (tokens for the
 // shared family calendar). Separate from better-auth's `accounts`
 // table so the auth library doesn't treat these as login providers.

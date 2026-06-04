@@ -147,6 +147,15 @@ async function fetchJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function resolveWatchShow(title: string) {
+  try {
+    const payload = await fetchJson<{ show: { id: number; name: string } | null }>(`/api/watch/resolve?q=${encodeURIComponent(title)}`)
+    return payload.show
+  } catch {
+    return null
+  }
+}
+
 function TelevisionIcon({ className = 'h-4 w-4' }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -237,6 +246,7 @@ export function WatchPage() {
 
     const id = makeId('watch')
     const now = new Date().toISOString()
+    const tvmazeShow = await resolveWatchShow(cleanTitle)
     const payload = {
       id,
       householdId,
@@ -244,7 +254,14 @@ export function WatchPage() {
       type: 'watchlist_tv',
       title: cleanTitle,
       status: 'active',
-      metadata: { showName: cleanTitle, channel, posterUrl, following: true },
+      metadata: {
+        showName: tvmazeShow?.name ?? cleanTitle,
+        channel,
+        posterUrl,
+        following: true,
+        matchMode: 'new_only',
+        tvmazeId: tvmazeShow?.id ?? null,
+      },
       createdAt: now,
       updatedAt: now,
     }

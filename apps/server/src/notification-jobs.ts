@@ -3,6 +3,7 @@ import { and, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm'
 import { db } from '@homeos/db'
 import { household, items, notifications, reminders, tvProgrammes, users } from '@homeos/db/schema'
 import { sendPushToUser, type PushPayload } from './push'
+import { filterFollowedProgrammesWithTvmaze, type FollowedTvShow } from './tvmaze'
 
 type ChangeRecorder = (change: { entityType: string; entityId: string; operation: 'upsert' | 'delete'; payload: Record<string, unknown> | null }) => Promise<unknown>
 type NotificationPreferences = {
@@ -154,6 +155,9 @@ function withSentMetadata(metadata: Record<string, unknown> | null | undefined, 
 }
 
 function channelName(feedId: string) {
+  if (feedId.startsWith('BBCOne')) return 'BBC One'
+  if (feedId.startsWith('ITV1')) return 'ITV1'
+  if (feedId.startsWith('Channel4')) return 'Channel 4'
   return feedId.replace(/HD\.uk$|\.uk$/g, '').replace(/And/g, '&')
 }
 
@@ -327,13 +331,7 @@ export async function dispatchTvNotifications() {
     where: and(gte(tvProgrammes.startsAt, now), lte(tvProgrammes.startsAt, dayEnd)),
     orderBy: (table, { asc }) => [asc(table.startsAt)],
   })
-  const wanted = new Map(followed.map(show => [show.title.toLowerCase(), typeof show.metadata?.channel === 'string' ? show.metadata.channel : null]))
-  const matches = programmes.filter(programme => {
-    const preferredChannel = wanted.get(programme.title.toLowerCase())
-    if (preferredChannel === undefined) return false
-    const channel = channelName(programme.channelId)
-    return !preferredChannel || preferredChannel === channel
-  })
+  const matches = await filterFollowedProgrammesWithTvmaze(followed.map(watchFollowFromItem), programmes, channelName)
   const today = londonParts(now).dateKey
 
   const allUsers = await db.query.users.findMany({ columns: { id: true } })
@@ -362,5 +360,16 @@ export async function dispatchTvNotifications() {
       const shouldSend = await recordNotificationForUser(user.id, programme.title, body, 'tv_tonight', entityId)
       if (shouldSend) await sendPushToUser(user.id, { title: programme.title, body, url: '/watch' })
     }
+  }
+}
+
+function watchFollowFromItem(show: { title: string; metadata?: Record<string, unknown> | null }): FollowedTvShow {
+  const metadata = show.metadata ?? {}
+  const tvmazeId = Number(metadata.tvmazeId)
+  return {
+    title: show.title,
+    channel: typeof metadata.channel === 'string' ? metadata.channel : null,
+    tvmazeId: Number.isFinite(tvmazeId) && tvmazeId > 0 ? tvmazeId : null,
+    matchMode: typeof metadata.matchMode === 'string' ? metadata.matchMode : null,
   }
 }

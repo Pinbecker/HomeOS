@@ -9,6 +9,7 @@ import { enqueueMutation, makeId, type CycleEntry, useAppState } from '../lib/ap
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
 import { calculateCycleInsights, cycleCalendarItems, cycleDate, findCurrentOpenCycleEntry, formatCycleDate, readCycleTrackerSettings } from '../lib/cycle-tracker'
+import { calculateUlcerInsights, formatUlcerDate, mouthRegionLabel } from '../lib/ulcer-tracker'
 import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
 import { ScreenShell } from './shell'
 
@@ -21,10 +22,11 @@ type BinWithDate = { id: string; name: string; colour: string; nextCollection: D
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
 type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolean; error: string | null }
-type HomeSectionKey = 'ai' | 'kitBoard' | 'cycleStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
+type HomeSectionKey = 'ai' | 'kitBoard' | 'cycleStatus' | 'ulcerStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
 type HomeScreenSettings = Record<HomeSectionKey, boolean>
 type HomeScreenPreferences = { enabled: HomeScreenSettings; order: HomeSectionKey[] }
 type CycleDueSoon = { predictedStart: Date; daysUntil: number }
+type ActiveUlcerSummary = { count: number; peakSeverity: number | null; topRegion: string | null; startedAt: Date | null }
 type DropTextEntry = {
   id: string
   kind: 'text' | 'link' | 'file'
@@ -65,6 +67,7 @@ const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> 
   { key: 'ai', label: 'AI input', sub: 'Quick capture box' },
   { key: 'kitBoard', label: 'Dropzone', sub: 'Temporary text and links' },
   { key: 'cycleStatus', label: 'Cycle status', sub: 'Period day card when active' },
+  { key: 'ulcerStatus', label: 'Ulcer status', sub: 'Active mouth ulcer card' },
   { key: 'pinned', label: 'Pinned', sub: 'Pinned notes and facts' },
   { key: 'headsUp', label: 'Heads up', sub: 'Bins and inbox alerts' },
   { key: 'tonight', label: 'On Tonight', sub: 'TV section when shows are available' },
@@ -77,6 +80,7 @@ const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
   ai: true,
   kitBoard: true,
   cycleStatus: true,
+  ulcerStatus: true,
   pinned: false,
   headsUp: true,
   tonight: true,
@@ -1306,6 +1310,27 @@ function HomeCycleDueCard({ dueSoon, starting, onStart }: { dueSoon: CycleDueSoo
   )
 }
 
+function HomeUlcerCard({ summary }: { summary: ActiveUlcerSummary }) {
+  return (
+    <section className="mx-4 mb-4">
+      <a href="/ulcer-tracker" className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-2">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold text-white" style={{ background: '#E25555' }}>
+          {summary.count}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-bold text-text-1">{summary.count === 1 ? 'Active mouth ulcer' : `${summary.count} active mouth ulcers`}</p>
+          <p className="mt-0.5 truncate text-[11.5px] text-text-2">
+            {summary.topRegion ?? 'Latest location'}
+            {summary.peakSeverity !== null ? ` · severity ${summary.peakSeverity}/10` : ''}
+            {summary.startedAt ? ` · since ${formatUlcerDate(summary.startedAt)}` : ''}
+          </p>
+        </div>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+      </a>
+    </section>
+  )
+}
+
 function DropzoneBoardCard() {
   const [entries, setEntries] = useState<DropTextEntry[]>([])
   const [text, setText] = useState('')
@@ -1505,6 +1530,22 @@ export function DashboardPage() {
         return daysUntil >= 0 && daysUntil <= 2 ? { predictedStart: cycleInsights.predictedStart!, daysUntil } : null
       })()
       : null
+    const ulcerInsights = calculateUlcerInsights(state.data.ulcerEpisodes, state.data.ulcerCheckins, sessionUser?.id, state.data.cycleEntries)
+    const activeUlcers = ulcerInsights.activeEpisodes
+    const activeUlcerSummary: ActiveUlcerSummary = activeUlcers.length
+      ? (() => {
+        const ranked = activeUlcers
+          .map(episode => ({ episode, latest: ulcerInsights.latestByEpisode.get(episode.id) }))
+          .sort((a, b) => (b.latest?.severity ?? 0) - (a.latest?.severity ?? 0) || b.episode.startedAt.getTime() - a.episode.startedAt.getTime())
+        const top = ranked[0]
+        return {
+          count: activeUlcers.length,
+          peakSeverity: Math.max(...ranked.map(row => row.latest?.severity ?? 0)),
+          topRegion: top ? mouthRegionLabel(top.episode.mouthRegion) : null,
+          startedAt: top?.episode.startedAt ?? null,
+        }
+      })()
+      : { count: 0, peakSeverity: null, topRegion: null, startedAt: null }
     const listColorMap = new Map(lists.map(list => [list.id, list.color ?? '#FF9500']))
     const savedCalendarColor = settingObject(personalSettings.calendar).color
     const defaultCalendarColor = normalizeHex(typeof savedCalendarColor === 'string' ? savedCalendarColor : null)
@@ -1626,6 +1667,7 @@ export function DashboardPage() {
       homeSectionOrder: homeScreenPreferences.order,
       openCycleEntry,
       cycleDueSoon,
+      activeUlcerSummary,
     }
   })
   const [tonightShows, setTonightShows] = useState<TonightShow[]>(() => loadTonightCache())
@@ -1776,6 +1818,10 @@ export function DashboardPage() {
           return <HomePeriodCard entry={snapshot.openCycleEntry} ending={endingCycleId === snapshot.openCycleEntry.id} onEnd={() => void endCurrentPeriod()} />
         }
         return snapshot.cycleDueSoon ? <HomeCycleDueCard dueSoon={snapshot.cycleDueSoon} starting={startingCycle} onStart={() => void startCurrentPeriod()} /> : null
+      case 'ulcerStatus':
+        return snapshot.homeScreenSettings.ulcerStatus && snapshot.activeUlcerSummary.count > 0
+          ? <HomeUlcerCard summary={snapshot.activeUlcerSummary} />
+          : null
       case 'pinned':
         return snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null
       case 'headsUp':

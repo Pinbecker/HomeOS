@@ -140,6 +140,72 @@ export type CycleSexLog = {
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
+export type MouthRegion =
+  | 'upper_inner_lip'
+  | 'lower_inner_lip'
+  | 'left_cheek'
+  | 'right_cheek'
+  | 'tongue_top'
+  | 'tongue_left'
+  | 'tongue_right'
+  | 'upper_gum'
+  | 'lower_gum'
+  | 'roof'
+  | 'other'
+export type UlcerStatus = 'active' | 'healing' | 'healed' | 'reopened'
+export type UlcerEventType =
+  | 'noticed'
+  | 'observation'
+  | 'treatment_started'
+  | 'treatment_stopped'
+  | 'worsened'
+  | 'improved'
+  | 'healed'
+  | 'reopened'
+export type UlcerEventStage = 'new' | 'worse' | 'same' | 'better' | 'nearly_healed' | 'healed'
+export type UlcerWellbeing = {
+  stress?: number
+  sleep?: number
+  illness?: boolean
+  medication?: boolean
+  cycleRelated?: boolean
+}
+export type UlcerEpisode = {
+  id: string
+  householdId: string
+  userId: string
+  mouthRegion: MouthRegion
+  x: number
+  y: number
+  label?: string | null
+  startedAt: string | number | Date
+  healedAt?: string | number | Date | null
+  firstNoticedAt?: string | number | Date | null
+  estimatedStartedAt?: string | number | Date | null
+  resolvedAt?: string | number | Date | null
+  status: UlcerStatus
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
+export type UlcerCheckin = {
+  id: string
+  episodeId: string
+  householdId: string
+  userId: string
+  loggedAt: string | number | Date
+  eventType?: UlcerEventType
+  stage?: UlcerEventStage | null
+  severity: number
+  pain: number
+  sizeMm: number
+  redness?: number | null
+  triggers?: string[] | null
+  treatments?: string[] | null
+  wellbeing?: UlcerWellbeing | null
+  notes?: string | null
+  createdAt: string | number | Date
+  updatedAt: string | number | Date
+}
 type Bin = {
   id: string
   householdId: string
@@ -264,6 +330,8 @@ type AppData = {
   calendarFeeds: CalendarFeed[]
   cycleEntries: CycleEntry[]
   cycleSexLogs: CycleSexLog[]
+  ulcerEpisodes: UlcerEpisode[]
+  ulcerCheckins: UlcerCheckin[]
   bins: Bin[]
   mediaItems: MediaItem[]
   mediaUserStates: MediaUserState[]
@@ -330,6 +398,8 @@ const emptyData: AppData = {
   calendarFeeds: [],
   cycleEntries: [],
   cycleSexLogs: [],
+  ulcerEpisodes: [],
+  ulcerCheckins: [],
   bins: [],
   mediaItems: [],
   mediaUserStates: [],
@@ -832,6 +902,16 @@ function applyMutationToData(data: AppData, mutation: Pick<SyncMutation, 'entity
         ? removeCollection(next.cycleSexLogs, mutation.entityId)
         : mergeCollection(next.cycleSexLogs, mutation.payload as CycleSexLog)
       break
+    case 'ulcer_episode':
+      next.ulcerEpisodes = mutation.operation === 'delete'
+        ? removeCollection(next.ulcerEpisodes, mutation.entityId)
+        : mergeCollection(next.ulcerEpisodes, mutation.payload as UlcerEpisode)
+      break
+    case 'ulcer_checkin':
+      next.ulcerCheckins = mutation.operation === 'delete'
+        ? removeCollection(next.ulcerCheckins, mutation.entityId)
+        : mergeCollection(next.ulcerCheckins, mutation.payload as UlcerCheckin)
+      break
     case 'media_item':
       next.mediaItems = mutation.operation === 'delete'
         ? removeCollection(next.mediaItems, mutation.entityId)
@@ -940,6 +1020,16 @@ function applyChange(change: SyncChange) {
         next.data.cycleSexLogs = change.operation === 'delete'
           ? removeCollection(next.data.cycleSexLogs, change.entityId)
           : mergeCollection(next.data.cycleSexLogs, change.payload as CycleSexLog)
+        break
+      case 'ulcer_episode':
+        next.data.ulcerEpisodes = change.operation === 'delete'
+          ? removeCollection(next.data.ulcerEpisodes, change.entityId)
+          : mergeCollection(next.data.ulcerEpisodes, change.payload as UlcerEpisode)
+        break
+      case 'ulcer_checkin':
+        next.data.ulcerCheckins = change.operation === 'delete'
+          ? removeCollection(next.data.ulcerCheckins, change.entityId)
+          : mergeCollection(next.data.ulcerCheckins, change.payload as UlcerCheckin)
         break
       case 'media_item':
         next.data.mediaItems = change.operation === 'delete'

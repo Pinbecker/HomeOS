@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays,
   Clapperboard,
+  CircleDot,
   Droplet,
   Grid3X3,
   House,
@@ -92,6 +93,12 @@ const menuItems: MenuItem[] = [
     label: 'Cycle',
     color: '#C04A7A',
     icon: Droplet,
+  },
+  {
+    href: '/ulcer-tracker',
+    label: 'Ulcers',
+    color: '#E25555',
+    icon: CircleDot,
   },
 ]
 

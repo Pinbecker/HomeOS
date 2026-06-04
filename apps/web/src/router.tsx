@@ -18,6 +18,7 @@ import { RemindersPage } from './screens/reminders'
 import { ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
 import { LoginPage } from './screens/shared'
 import { TaskDetailPage, TasksOverviewPage } from './screens/tasks'
+import { UlcerTrackerPage } from './screens/ulcer-tracker'
 import { WatchPage } from './screens/watch'
 import { WeatherPage } from './screens/weather'
 
@@ -214,6 +215,11 @@ const cycleTrackerRoute = createRoute({
   path: '/cycle-tracker',
   component: CycleTrackerPage,
 })
+const ulcerTrackerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/ulcer-tracker',
+  component: UlcerTrackerPage,
+})
 const householdRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/household',
@@ -328,6 +334,7 @@ const routeTree = rootRoute.addChildren([
   calendarRoute,
   weatherRoute,
   cycleTrackerRoute,
+  ulcerTrackerRoute,
   householdRoute,
   householdBinsRoute,
   householdPlansRoute,

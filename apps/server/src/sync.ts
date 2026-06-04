@@ -27,6 +27,8 @@ import {
   records,
   reminders,
   syncChanges,
+  ulcerCheckins,
+  ulcerEpisodes,
   users,
 } from '@homeos/db/schema'
 import { createGoogleEvent, deleteGoogleEvent, updateGoogleEvent } from './google-calendar'
@@ -78,6 +80,8 @@ export async function buildBootstrap() {
     allCalendarFeeds,
     allCycleEntries,
     allCycleSexLogs,
+    allUlcerEpisodes,
+    allUlcerCheckins,
     allBins,
     allMediaItems,
     allMediaUserStates,
@@ -100,6 +104,8 @@ export async function buildBootstrap() {
     db.select().from(calendarFeeds),
     db.select().from(cycleEntries),
     db.select().from(cycleSexLogs),
+    db.select().from(ulcerEpisodes),
+    db.select().from(ulcerCheckins),
     db.select().from(bins),
     db.select().from(mediaItems),
     db.select().from(mediaUserStates),
@@ -140,6 +146,8 @@ export async function buildBootstrap() {
       calendarFeeds: allCalendarFeeds,
       cycleEntries: allCycleEntries,
       cycleSexLogs: allCycleSexLogs,
+      ulcerEpisodes: allUlcerEpisodes,
+      ulcerCheckins: allUlcerCheckins,
       bins: allBins,
       mediaItems: syncedMediaItems,
       mediaUserStates: allMediaUserStates,
@@ -321,6 +329,14 @@ async function buildRecordedChange(mutation: SyncMutation): Promise<RecordedChan
       const row = await db.query.cycleSexLogs.findFirst({ where: eq(cycleSexLogs.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
     }
+    case 'ulcer_episode': {
+      const row = await db.query.ulcerEpisodes.findFirst({ where: eq(ulcerEpisodes.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
+    case 'ulcer_checkin': {
+      const row = await db.query.ulcerCheckins.findFirst({ where: eq(ulcerCheckins.id, mutation.entityId) })
+      return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
+    }
     case 'media_item': {
       const row = await db.query.mediaItems.findFirst({ where: eq(mediaItems.id, mutation.entityId) })
       return row ? { ...mutation, payload: row } : { ...mutation, operation: 'delete', payload: null }
@@ -455,6 +471,18 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       break
     case 'cycle.sex_log.delete':
       await db.delete(cycleSexLogs).where(eq(cycleSexLogs.id, mutation.entityId))
+      break
+    case 'ulcer.episode.upsert':
+      await upsertUlcerEpisode(userId, mutation)
+      break
+    case 'ulcer.episode.delete':
+      await db.delete(ulcerEpisodes).where(eq(ulcerEpisodes.id, mutation.entityId))
+      break
+    case 'ulcer.checkin.upsert':
+      await upsertUlcerCheckin(userId, mutation)
+      break
+    case 'ulcer.checkin.delete':
+      await db.delete(ulcerCheckins).where(eq(ulcerCheckins.id, mutation.entityId))
       break
     case 'media.item.upsert':
       await upsertMediaItem(mutation)
@@ -748,6 +776,187 @@ async function upsertCycleSexLog(mutation: SyncMutation) {
       ...values,
       createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
     })
+  }
+}
+
+function numberInRange(value: unknown, fallback: number, min: number, max: number) {
+  const next = Number(value ?? fallback)
+  if (!Number.isFinite(next)) return fallback
+  return Math.min(max, Math.max(min, Math.round(next)))
+}
+
+function stringArray(value: unknown, fallback: string[] = []) {
+  if (!Array.isArray(value)) return fallback
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map(item => item.trim())
+}
+
+function wellbeingPayload(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  return {
+    stress: source.stress === undefined ? undefined : numberInRange(source.stress, 0, 0, 10),
+    sleep: source.sleep === undefined ? undefined : numberInRange(source.sleep, 0, 0, 10),
+    illness: source.illness === undefined ? undefined : Boolean(source.illness),
+    medication: source.medication === undefined ? undefined : Boolean(source.medication),
+    cycleRelated: source.cycleRelated === undefined ? undefined : Boolean(source.cycleRelated),
+  }
+}
+
+const ULCER_STATUSES = new Set(['active', 'healing', 'healed', 'reopened'])
+const ULCER_EVENT_TYPES = new Set(['noticed', 'observation', 'treatment_started', 'treatment_stopped', 'worsened', 'improved', 'healed', 'reopened'])
+const ULCER_EVENT_STAGES = new Set(['new', 'worse', 'same', 'better', 'nearly_healed', 'healed'])
+
+function nullableDate(value: unknown, fallback: Date | null | undefined) {
+  if (value === undefined) return fallback ?? null
+  if (value === null || value === '') return null
+  const date = new Date(value as string | number)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+async function upsertUlcerEpisode(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.ulcerEpisodes.findFirst({ where: eq(ulcerEpisodes.id, mutation.entityId) })
+  const startedAt = payload.startedAt
+    ? new Date(payload.startedAt as string | number)
+    : existing?.startedAt
+  const healedAt = payload.healedAt === undefined
+    ? existing?.healedAt ?? null
+    : (payload.healedAt ? new Date(payload.healedAt as string | number) : null)
+  const firstNoticedAt = nullableDate(payload.firstNoticedAt, existing?.firstNoticedAt ?? startedAt)
+  const estimatedStartedAt = nullableDate(payload.estimatedStartedAt, existing?.estimatedStartedAt ?? startedAt)
+  const resolvedAt = nullableDate(payload.resolvedAt, existing?.resolvedAt ?? healedAt)
+  const status = (payload.status as typeof ulcerEpisodes.$inferInsert.status | undefined) ?? existing?.status ?? 'active'
+
+  if (!startedAt || Number.isNaN(startedAt.getTime())) {
+    throw new Error('Ulcer start date is required')
+  }
+  if (!firstNoticedAt || Number.isNaN(firstNoticedAt.getTime())) {
+    throw new Error('Ulcer first noticed date is required')
+  }
+  if (healedAt && Number.isNaN(healedAt.getTime())) {
+    throw new Error('Ulcer healed date is invalid')
+  }
+  if (healedAt && healedAt.getTime() < startedAt.getTime()) {
+    throw new Error('Ulcer healed date cannot be before start date')
+  }
+  if (resolvedAt && resolvedAt.getTime() < firstNoticedAt.getTime()) {
+    throw new Error('Ulcer resolved date cannot be before first noticed date')
+  }
+  if (!ULCER_STATUSES.has(status ?? '')) {
+    throw new Error('Ulcer status is invalid')
+  }
+
+  const values = {
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? process.env.HOUSEHOLD_ID ?? 'default',
+    userId: (payload.userId as string | undefined) ?? existing?.userId ?? userId,
+    mouthRegion: (payload.mouthRegion as typeof ulcerEpisodes.$inferInsert.mouthRegion | undefined) ?? existing?.mouthRegion ?? 'other',
+    x: numberInRange(payload.x, existing?.x ?? 50, 0, 100),
+    y: numberInRange(payload.y, existing?.y ?? 50, 0, 100),
+    label: payload.label === undefined ? existing?.label ?? null : (payload.label as string | null),
+    startedAt,
+    healedAt,
+    firstNoticedAt,
+    estimatedStartedAt,
+    resolvedAt,
+    status: resolvedAt ? 'healed' as const : status,
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(ulcerEpisodes).set(values).where(eq(ulcerEpisodes.id, mutation.entityId))
+  } else {
+    await db.insert(ulcerEpisodes).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+}
+
+async function upsertUlcerCheckin(userId: string, mutation: SyncMutation) {
+  const payload = mutation.payload ?? {}
+  const now = new Date()
+  const existing = await db.query.ulcerCheckins.findFirst({ where: eq(ulcerCheckins.id, mutation.entityId) })
+  const episodeId = (payload.episodeId as string | undefined) ?? existing?.episodeId
+  const loggedAt = payload.loggedAt
+    ? new Date(payload.loggedAt as string | number)
+    : existing?.loggedAt
+
+  if (!episodeId) throw new Error('Ulcer episode is required')
+  if (!loggedAt || Number.isNaN(loggedAt.getTime())) {
+    throw new Error('Ulcer check-in date is required')
+  }
+
+  const episode = await db.query.ulcerEpisodes.findFirst({ where: eq(ulcerEpisodes.id, episodeId) })
+  if (!episode) throw new Error('Ulcer episode does not exist')
+  const eventType = (payload.eventType as typeof ulcerCheckins.$inferInsert.eventType | undefined) ?? existing?.eventType ?? 'observation'
+  const stage = payload.stage === undefined
+    ? existing?.stage ?? null
+    : (payload.stage as typeof ulcerCheckins.$inferInsert.stage | null)
+  if (!ULCER_EVENT_TYPES.has(eventType)) {
+    throw new Error('Ulcer event type is invalid')
+  }
+  if (stage && !ULCER_EVENT_STAGES.has(stage)) {
+    throw new Error('Ulcer event stage is invalid')
+  }
+
+  const values = {
+    episodeId,
+    householdId: (payload.householdId as string | undefined) ?? existing?.householdId ?? episode.householdId,
+    userId: (payload.userId as string | undefined) ?? existing?.userId ?? episode.userId ?? userId,
+    loggedAt,
+    eventType,
+    stage,
+    severity: numberInRange(payload.severity, existing?.severity ?? 0, 0, 10),
+    pain: numberInRange(payload.pain, existing?.pain ?? 0, 0, 10),
+    sizeMm: numberInRange(payload.sizeMm, existing?.sizeMm ?? 1, 0, 50),
+    redness: payload.redness === undefined || payload.redness === null
+      ? existing?.redness ?? null
+      : numberInRange(payload.redness, existing?.redness ?? 0, 0, 10),
+    triggers: stringArray(payload.triggers, existing?.triggers ?? []),
+    treatments: stringArray(payload.treatments, existing?.treatments ?? []),
+    wellbeing: payload.wellbeing === undefined ? existing?.wellbeing ?? null : wellbeingPayload(payload.wellbeing),
+    notes: payload.notes === undefined ? existing?.notes ?? null : (payload.notes as string | null),
+    updatedAt: now,
+  }
+
+  if (existing) {
+    await db.update(ulcerCheckins).set(values).where(eq(ulcerCheckins.id, mutation.entityId))
+  } else {
+    await db.insert(ulcerCheckins).values({
+      id: mutation.entityId,
+      ...values,
+      createdAt: payload.createdAt ? new Date(payload.createdAt as string | number) : now,
+    })
+  }
+
+  if (eventType === 'healed') {
+    await db.update(ulcerEpisodes).set({
+      healedAt: loggedAt,
+      resolvedAt: loggedAt,
+      status: 'healed',
+      updatedAt: now,
+    }).where(eq(ulcerEpisodes.id, episodeId))
+  } else if (eventType === 'reopened') {
+    await db.update(ulcerEpisodes).set({
+      healedAt: null,
+      resolvedAt: null,
+      status: 'reopened',
+      updatedAt: now,
+    }).where(eq(ulcerEpisodes.id, episodeId))
+  } else if (eventType === 'improved') {
+    await db.update(ulcerEpisodes).set({
+      status: 'healing',
+      updatedAt: now,
+    }).where(eq(ulcerEpisodes.id, episodeId))
+  } else if (eventType === 'worsened' || eventType === 'observation' || eventType === 'treatment_started') {
+    await db.update(ulcerEpisodes).set({
+      status: episode.status === 'healed' ? 'reopened' : episode.status,
+      resolvedAt: episode.status === 'healed' ? null : episode.resolvedAt,
+      healedAt: episode.status === 'healed' ? null : episode.healedAt,
+      updatedAt: now,
+    }).where(eq(ulcerEpisodes.id, episodeId))
   }
 }
 
