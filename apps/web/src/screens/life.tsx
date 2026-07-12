@@ -1,4 +1,18 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import {
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
+  Bell,
+  CalendarClock,
+  CircleDollarSign,
+  Clock3,
+  Plus,
+  Trash2,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import { SwipeRow } from '../components/swipe-row'
@@ -41,10 +55,30 @@ type VaultReminder = {
   entityType: string
   entityId: string
   message?: string | null
+  kind?: ReminderKind | null
+  dueAt?: string | number | Date | null
+  leadDays?: number | null
+  repeatInterval?: RepeatInterval | null
   triggerAt: string | number | Date
   dispatchedAt?: string | number | Date | null
   dismissedAt?: string | number | Date | null
   createdAt: string | number | Date
+}
+
+type ReminderKind = 'general' | 'renewal' | 'expiry' | 'maintenance' | 'payment' | 'follow_up' | 'mot' | 'service'
+type RepeatInterval = 'monthly' | 'quarterly' | 'yearly'
+type ImportantDateDraft = {
+  id: string | 'new'
+  kind: ReminderKind
+  message: string
+  dueDate: string
+  remindTime: string
+  leadDays: number
+  repeatInterval: RepeatInterval | ''
+}
+type RecordEditorDraft = {
+  title: string
+  subtitle: string
 }
 
 type HouseholdRow = {
@@ -64,6 +98,30 @@ const BASE_CATEGORIES: CategoryMeta[] = [
   { key: 'subscription', label: 'Money & Bills', icon: '💳', color: '#AF52DE', desc: 'Recurring payments and subscriptions', defaultFields: ['Amount', 'Frequency', 'Account'], renewalLabel: 'Next payment', builtin: true },
   { key: 'pet', label: 'Pets', icon: '🐾', color: '#FF2D55', desc: 'Insurance, vet, microchip', defaultFields: ['Microchip', 'Vet', 'Date of birth', 'Insurer'], builtin: true },
   { key: 'reference', label: 'Reference', icon: '📋', color: '#8E8E93', desc: 'Wi-Fi, router, anything else handy', defaultFields: ['Detail'], builtin: true },
+]
+
+const IMPORTANT_DATE_KINDS: Array<{ kind: ReminderKind; label: string; icon: LucideIcon }> = [
+  { kind: 'renewal', label: 'Renewal', icon: CalendarClock },
+  { kind: 'expiry', label: 'Expiry', icon: Clock3 },
+  { kind: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { kind: 'payment', label: 'Payment', icon: CircleDollarSign },
+  { kind: 'follow_up', label: 'Follow-up', icon: Bell },
+  { kind: 'general', label: 'Reminder', icon: Bell },
+]
+
+const LEAD_DAY_OPTIONS = [
+  { value: 0, label: 'On the day' },
+  { value: 1, label: '1 day before' },
+  { value: 7, label: '1 week before' },
+  { value: 14, label: '2 weeks before' },
+  { value: 30, label: '1 month before' },
+]
+
+const REPEAT_OPTIONS: Array<{ value: RepeatInterval | ''; label: string }> = [
+  { value: '', label: 'Does not repeat' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'yearly', label: 'Yearly' },
 ]
 
 type CategoryOverride = Partial<Pick<CategoryMeta, 'label' | 'icon' | 'color' | 'desc' | 'defaultFields' | 'renewalLabel'>>
@@ -143,6 +201,102 @@ function formatShortDate(value: string | number | Date) {
   return `${datePart} · ${date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })}`
 }
 
+function formatRelativeDue(value: string | number | Date) {
+  const target = new Date(value)
+  const today = new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const targetStart = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime()
+  const days = Math.round((targetStart - start) / 86_400_000)
+  if (days < 0) return 'Overdue'
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  if (days <= 30) return `${days} days`
+  return formatRenewal(value)
+}
+
+function inferReminderKind(label: string | null | undefined): ReminderKind {
+  const value = (label ?? '').toLowerCase()
+  if (value.includes('mot')) return 'maintenance'
+  if (value.includes('service')) return 'maintenance'
+  if (value.includes('payment')) return 'payment'
+  if (value.includes('expir')) return 'expiry'
+  if (value.includes('follow')) return 'follow_up'
+  return 'renewal'
+}
+
+function dateValue(reminder: VaultReminder) {
+  return new Date(reminder.dueAt ?? reminder.triggerAt).getTime()
+}
+
+function kindMeta(kind: ReminderKind | null | undefined) {
+  if (kind === 'mot' || kind === 'service') return IMPORTANT_DATE_KINDS.find(option => option.kind === 'maintenance') ?? IMPORTANT_DATE_KINDS[IMPORTANT_DATE_KINDS.length - 1]
+  return IMPORTANT_DATE_KINDS.find(option => option.kind === (kind ?? 'general')) ?? IMPORTANT_DATE_KINDS[IMPORTANT_DATE_KINDS.length - 1]
+}
+
+function repeatLabel(value: RepeatInterval | null | undefined) {
+  if (value === 'monthly') return 'Monthly'
+  if (value === 'quarterly') return 'Quarterly'
+  if (value === 'yearly') return 'Yearly'
+  return null
+}
+
+function leadLabel(value: number | null | undefined) {
+  if (!value) return 'On the day'
+  if (value === 1) return '1 day before'
+  if (value === 7) return '1 week before'
+  if (value === 14) return '2 weeks before'
+  if (value === 30) return '1 month before'
+  return `${value} days before`
+}
+
+function dateAtStart(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day, 0, 0, 0, 0)
+}
+
+function triggerFromDate(dueDate: string, leadDays: number, remindTime: string) {
+  const date = dateAtStart(dueDate)
+  date.setDate(date.getDate() - leadDays)
+  const [hour, minute] = (remindTime || '09:00').split(':').map(Number)
+  date.setHours(hour, minute, 0, 0)
+  return date.toISOString()
+}
+
+function draftFromReminder(reminder: VaultReminder): ImportantDateDraft {
+  const kind = reminder.kind === 'mot' || reminder.kind === 'service' ? 'maintenance' : reminder.kind ?? 'general'
+  return {
+    id: reminder.id,
+    kind,
+    message: reminder.message ?? '',
+    dueDate: toInputDate(reminder.dueAt ?? reminder.triggerAt),
+    remindTime: toInputTime(reminder.triggerAt),
+    leadDays: reminder.leadDays ?? 0,
+    repeatInterval: reminder.repeatInterval ?? '',
+  }
+}
+
+function legacyRenewalReminder(record: LifeRecord, category: CategoryMeta, household: string): VaultReminder | null {
+  if (!record.renewalDate) return null
+  const kind = inferReminderKind(record.renewalLabel ?? category.renewalLabel)
+  const dueDate = toInputDate(record.renewalDate)
+  return {
+    id: `legacy-renewal-${record.id}`,
+    householdId: household,
+    createdById: 'system',
+    entityType: 'record',
+    entityId: record.id,
+    message: record.renewalLabel ?? category.renewalLabel ?? 'Renewal',
+    kind,
+    dueAt: dateFromInput(dueDate),
+    leadDays: 7,
+    repeatInterval: kind === 'renewal' ? 'yearly' : null,
+    triggerAt: triggerFromDate(dueDate, 7, '09:00'),
+    dispatchedAt: null,
+    dismissedAt: null,
+    createdAt: record.createdAt ?? new Date().toISOString(),
+  }
+}
+
 function normalizeFields(fields: RecordField[]) {
   return fields
     .map(field => ({ label: field.label.trim(), value: field.value.trim() }))
@@ -165,11 +319,14 @@ function BackChevron() {
   )
 }
 
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Section({ title, color, action, children }: { title: string; color?: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="mx-4 mb-5">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-[12px] font-bold uppercase tracking-wide text-text-3">{title}</p>
+        <div className="flex items-center gap-2">
+          {color ? <span className="h-3.5 w-[3px] rounded-full" style={{ background: color }} /> : null}
+          <p className="text-[14px] font-semibold text-text-1">{title}</p>
+        </div>
         {action}
       </div>
       {children}
@@ -177,10 +334,10 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   )
 }
 
-function EmptyRow({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+function EmptyRow({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-surface-2 text-[17px] text-text-2">{icon}</div>
+      <span className="h-7 w-[3px] shrink-0 rounded-full bg-border" />
       <div className="min-w-0">
         <p className="text-[14px] font-semibold text-text-1">{title}</p>
         <p className="mt-0.5 text-[12px] text-text-2">{subtitle}</p>
@@ -333,17 +490,34 @@ export function LifeCategoryPage() {
     const records = (state.data.records as LifeRecord[])
       .filter(record => record.category === category.key)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-    return { category, records }
+    const reminders = state.data.reminders
+      .filter(reminder => reminder.entityType === 'record' && !reminder.dismissedAt) as VaultReminder[]
+    return { category, records, reminders }
   })
   const [adding, setAdding] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [saving, setSaving] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const [moving, setMoving] = useState(false)
 
   async function addRecord() {
     if (!newTitle.trim() || saving) return
     setSaving(true)
     const id = await createRecord(snapshot.category, newTitle)
     window.location.href = `/life/admin/${id}`
+  }
+
+  async function moveRecord(recordId: string, direction: -1 | 1) {
+    if (moving) return
+    const from = snapshot.records.findIndex(record => record.id === recordId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= snapshot.records.length) return
+    const next = [...snapshot.records]
+    const [record] = next.splice(from, 1)
+    next.splice(to, 0, record)
+    setMoving(true)
+    await Promise.all(next.map((entry, index) => upsertRecord(entry, { sortOrder: index })))
+    setMoving(false)
   }
 
   return (
@@ -355,7 +529,16 @@ export function LifeCategoryPage() {
             <span className="text-[16px]">Vault</span>
           </a>
           <p className="max-w-[44%] truncate text-center text-[15px] font-semibold text-text-1">{snapshot.category.label}</p>
-          <button type="button" onClick={() => setAdding(true)} className="text-[16px] font-medium text-accent active:opacity-60">Add</button>
+          <div className="flex items-center gap-3">
+            {reordering ? (
+              <button type="button" onClick={() => setReordering(false)} className="text-[15px] font-semibold text-accent active:opacity-60">Done</button>
+            ) : (
+              <>
+                <button type="button" onClick={() => setReordering(true)} className="flex h-8 w-8 items-center justify-center text-text-2 active:opacity-60" aria-label="Reorder items" title="Reorder items"><ArrowDownUp className="h-[18px] w-[18px]" /></button>
+                <button type="button" onClick={() => setAdding(true)} className="text-[16px] font-medium text-accent active:opacity-60">Add</button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -393,35 +576,69 @@ export function LifeCategoryPage() {
             <button type="button" onClick={() => setAdding(true)} className="text-[15px] font-medium text-accent active:opacity-60">Add the first one</button>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl bg-surface">
-            {snapshot.records.map((record, index) => {
-              const visibleFields = (record.fields ?? []).filter(field => field.value).slice(0, 4)
+          <div className="space-y-2">
+            {snapshot.records.map(record => {
+              const valuedFields = (record.fields ?? []).filter(field => field.value)
+              const typedDates = snapshot.reminders
+                .filter(reminder => reminder.entityId === record.id && (reminder.kind ?? 'general') !== 'general')
+                .sort((a, b) => dateValue(a) - dateValue(b))
+              const legacyDate = typedDates.length === 0 && record.renewalDate
+                ? { label: record.renewalLabel ?? 'Renewal', dueAt: record.renewalDate }
+                : null
+              const nextDate = typedDates[0]
+                ? { label: kindMeta(typedDates[0].kind).label, dueAt: typedDates[0].dueAt ?? typedDates[0].triggerAt }
+                : legacyDate
               return (
-                <a key={record.id} href={`/life/admin/${record.id}`} className={`relative flex bg-surface active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-                  <span className="w-[3px] shrink-0" style={{ background: snapshot.category.color }} aria-hidden />
-                  <div className="min-w-0 flex-1 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[16px] font-semibold text-text-1">{record.title}</p>
-                        {record.subtitle ? <p className="mt-0.5 truncate text-[13px] text-text-2">{record.subtitle}</p> : null}
+                <article
+                  key={record.id}
+                  role={reordering ? undefined : 'link'}
+                  tabIndex={reordering ? undefined : 0}
+                  onClick={() => { if (!reordering) window.location.href = `/life/admin/${record.id}` }}
+                  onKeyDown={event => {
+                    if (!reordering && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault()
+                      window.location.href = `/life/admin/${record.id}`
+                    }
+                  }}
+                  className={`block overflow-hidden rounded-[14px] border border-t-[3px] border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition ${reordering ? '' : 'cursor-pointer active:bg-surface-2'}`}
+                  style={{ borderTopColor: snapshot.category.color }}
+                >
+                  <div className="flex h-full min-w-0 flex-col">
+                    <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[16px] font-semibold leading-5 text-text-1">{record.title}</p>
+                        <p className="mt-0.5 truncate text-[12.5px] leading-4 text-text-2">{record.subtitle || snapshot.category.label}</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {record.renewalDate ? <span className="rounded-lg bg-surface-2 px-2 py-1 text-[11.5px] font-semibold text-text-2">{record.renewalLabel ?? 'Due'} · {formatRenewal(record.renewalDate)}</span> : null}
-                        <Chevron />
-                      </div>
+                      {reordering ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, -1) }} disabled={moving || snapshot.records[0]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item up" title="Move item up"><ArrowUp className="h-4 w-4" /></button>
+                          <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, 1) }} disabled={moving || snapshot.records[snapshot.records.length - 1]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item down" title="Move item down"><ArrowDown className="h-4 w-4" /></button>
+                        </div>
+                      ) : <Chevron />}
                     </div>
-                    {visibleFields.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {visibleFields.map(field => (
-                          <span key={`${record.id}-${field.label}-${field.value}`} className="max-w-full truncate rounded-lg bg-surface-2 px-2 py-1 text-[11.5px] font-medium">
-                            <span className="text-text-3">{field.label}: </span>
-                            <span className="text-text-1">{field.value}</span>
-                          </span>
+
+                    {valuedFields.length > 0 ? (
+                      <div className="mx-4 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-border py-2.5">
+                        {valuedFields.map(field => (
+                          <div key={`${record.id}-${field.label}-${field.value}`} className="min-w-0">
+                            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: snapshot.category.color }}>{field.label || 'Detail'}</p>
+                            <p className="mt-0.5 truncate text-[13px] font-medium leading-4 text-text-1">{field.value}</p>
+                          </div>
                         ))}
                       </div>
                     ) : null}
+
+                    {nextDate ? (
+                      <div className="flex min-w-0 items-center gap-3 border-t border-border px-4 py-2.5">
+                        <span className="h-5 w-[3px] shrink-0 rounded-full" style={{ background: snapshot.category.color }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3">Next important date</p>
+                          <p className="truncate text-[13px] font-medium text-text-1">{nextDate.label} due {formatRelativeDue(nextDate.dueAt)}</p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                </a>
+                </article>
               )
             })}
           </div>
@@ -439,18 +656,18 @@ export function LifeEntityPage() {
     const categories = buildCategories(state.data.household[0]?.settings ?? null)
     const record = (state.data.records as LifeRecord[]).find(entry => entry.id === entityId) ?? null
     const category = record ? categories.find(entry => entry.key === record.category) ?? BASE_CATEGORIES[BASE_CATEGORIES.length - 1] : BASE_CATEGORIES[BASE_CATEGORIES.length - 1]
+    const household = state.data.household[0]?.id ?? 'default'
     const linkedReminders = state.data.reminders
       .filter(reminder => reminder.entityType === 'record' && reminder.entityId === entityId && !reminder.dismissedAt)
-      .sort((a, b) => new Date(a.triggerAt).getTime() - new Date(b.triggerAt).getTime()) as VaultReminder[]
-    return { category, record, linkedReminders }
+      .sort((a, b) => dateValue(a as VaultReminder) - dateValue(b as VaultReminder)) as VaultReminder[]
+    const hasTypedDate = linkedReminders.some(reminder => (reminder.kind ?? 'general') !== 'general')
+    const legacyRenewal = record && !hasTypedDate ? legacyRenewalReminder(record, category, household) : null
+    const importantDates = legacyRenewal ? [...linkedReminders, legacyRenewal].sort((a, b) => dateValue(a) - dateValue(b)) : linkedReminders
+    return { category, record, importantDates }
   })
-  const [headerEditing, setHeaderEditing] = useState(false)
-  const [headerDraft, setHeaderDraft] = useState({ title: '', subtitle: '' })
+  const [recordEditor, setRecordEditor] = useState<RecordEditorDraft | null>(null)
   const [fieldEditor, setFieldEditor] = useState<{ index: number; label: string; value: string } | null>(null)
-  const [renewalEditing, setRenewalEditing] = useState(false)
-  const [renewalDraft, setRenewalDraft] = useState({ label: '', date: '' })
-  const [reminderEditor, setReminderEditor] = useState<{ id: string | 'new'; message: string; date: string; time: string } | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [dateEditor, setDateEditor] = useState<ImportantDateDraft | null>(null)
   const [saving, setSaving] = useState(false)
 
   if (!snapshot.record) {
@@ -471,34 +688,32 @@ export function LifeEntityPage() {
     .map((field, index) => ({ field, index }))
     .filter(row => row.field.label || row.field.value)
   const household = householdId()
+  const nextDate = snapshot.importantDates.find(reminder => dateValue(reminder) >= new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()) ?? snapshot.importantDates[0]
 
-  function startHeaderEdit() {
-    setHeaderDraft({ title: record.title, subtitle: record.subtitle ?? '' })
-    setHeaderEditing(true)
-    setDeleteConfirm(false)
+  function startRecordEdit() {
+    setRecordEditor({
+      title: record.title,
+      subtitle: record.subtitle ?? '',
+    })
   }
 
-  async function saveHeader() {
-    if (!headerDraft.title.trim() || saving) return
+  async function saveRecordEdit() {
+    if (!recordEditor?.title.trim() || saving) return
     setSaving(true)
     await upsertRecord(record, {
-      title: headerDraft.title.trim(),
-      subtitle: headerDraft.subtitle.trim() || null,
+      title: recordEditor.title.trim(),
+      subtitle: recordEditor.subtitle.trim() || null,
     })
     setSaving(false)
-    setDeleteConfirm(false)
-    setHeaderEditing(false)
+    setRecordEditor(null)
   }
 
   async function saveField(index: number, draft: RecordField) {
     if (saving) return
     const next = [...fields]
     const cleaned = { label: draft.label.trim(), value: draft.value.trim() }
-    if (cleaned.label || cleaned.value) {
-      next[index] = cleaned
-    } else {
-      next.splice(index, 1)
-    }
+    if (cleaned.label || cleaned.value) next[index] = cleaned
+    else next.splice(index, 1)
     setSaving(true)
     await upsertRecord(record, { fields: normalizeFields(next) })
     setSaving(false)
@@ -515,36 +730,40 @@ export function LifeEntityPage() {
     setFieldEditor(null)
   }
 
-  function startRenewalEdit() {
-    setRenewalDraft({ label: record.renewalLabel ?? snapshot.category.renewalLabel ?? '', date: toInputDate(record.renewalDate) })
-    setRenewalEditing(true)
-  }
-
-  async function saveRenewal() {
-    if (saving) return
-    setSaving(true)
-    await upsertRecord(record, {
-      renewalLabel: renewalDraft.label.trim() || null,
-      renewalDate: dateFromInput(renewalDraft.date),
+  function startDateEdit(reminder?: VaultReminder) {
+    if (reminder) {
+      setDateEditor(draftFromReminder(reminder))
+      return
+    }
+    setDateEditor({
+      id: 'new',
+      kind: snapshot.category.renewalLabel ? inferReminderKind(snapshot.category.renewalLabel) : 'follow_up',
+      message: snapshot.category.renewalLabel ?? '',
+      dueDate: '',
+      remindTime: '09:00',
+      leadDays: snapshot.category.renewalLabel ? 7 : 0,
+      repeatInterval: inferReminderKind(snapshot.category.renewalLabel) === 'renewal' ? 'yearly' : '',
     })
-    setSaving(false)
-    setRenewalEditing(false)
   }
 
-  async function addOrUpdateReminder(reminder?: VaultReminder) {
-    if (!reminderEditor || !reminderEditor.date || saving) return
-    const triggerAt = dateTimeFromInputs(reminderEditor.date, reminderEditor.time)
-    if (!triggerAt) return
+  async function addOrUpdateImportantDate(reminder?: VaultReminder) {
+    if (!dateEditor || !dateEditor.dueDate || saving) return
+    const triggerAt = triggerFromDate(dateEditor.dueDate, dateEditor.leadDays, dateEditor.remindTime)
     setSaving(true)
     const now = new Date().toISOString()
-    const id = reminder?.id ?? makeId('reminder')
+    const legacy = reminder?.id.startsWith('legacy-renewal-') ?? false
+    const id = reminder && !legacy ? reminder.id : makeId('reminder')
     const payload = {
       id,
       householdId: household,
       createdById: reminder?.createdById ?? currentUser?.id ?? 'system',
       entityType: 'record',
       entityId: record.id,
-      message: reminderEditor.message.trim() || null,
+      message: dateEditor.message.trim() || kindMeta(dateEditor.kind).label,
+      kind: dateEditor.kind,
+      dueAt: dateFromInput(dateEditor.dueDate),
+      leadDays: dateEditor.leadDays,
+      repeatInterval: dateEditor.repeatInterval || null,
       triggerAt,
       dispatchedAt: reminder?.dispatchedAt ?? null,
       dismissedAt: reminder?.dismissedAt ?? null,
@@ -561,24 +780,29 @@ export function LifeEntityPage() {
       ...prev,
       data: {
         ...prev.data,
-        reminders: reminder
+        reminders: reminder && !legacy
           ? prev.data.reminders.map(row => row.id === id ? { ...row, ...payload } : row)
           : [...prev.data.reminders, payload],
       },
     }))
+    if (legacy || record.renewalDate) await upsertRecord(record, { renewalDate: null, renewalLabel: null })
     setSaving(false)
-    setReminderEditor(null)
+    setDateEditor(null)
   }
 
-  async function deleteReminder(reminderId: string) {
+  async function deleteImportantDate(reminder: VaultReminder) {
+    if (reminder.id.startsWith('legacy-renewal-')) {
+      await upsertRecord(record, { renewalDate: null, renewalLabel: null })
+      return
+    }
     await enqueueMutation({
       id: makeId('mutation'),
       name: 'reminder.delete',
       entityType: 'reminder',
-      entityId: reminderId,
+      entityId: reminder.id,
       operation: 'delete',
       payload: null,
-    }, prev => ({ ...prev, data: { ...prev.data, reminders: prev.data.reminders.filter(row => row.id !== reminderId) } }))
+    }, prev => ({ ...prev, data: { ...prev.data, reminders: prev.data.reminders.filter(row => row.id !== reminder.id) } }))
   }
 
   async function deleteRecord() {
@@ -603,52 +827,35 @@ export function LifeEntityPage() {
               <span className="text-[16px]">Back</span>
             </button>
             <p className="max-w-[44%] truncate text-center text-[15px] font-semibold text-text-1">{record.title}</p>
-            {headerEditing ? (
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={() => { setDeleteConfirm(false); setHeaderEditing(false) }} className="px-1 text-[15px] font-semibold text-text-2 active:opacity-60">Cancel</button>
-                <button type="button" onClick={() => { void saveHeader() }} disabled={!headerDraft.title.trim() || saving} className="px-1 text-[15px] font-semibold text-accent active:opacity-60 disabled:opacity-40">{saving ? 'Saving...' : 'Save'}</button>
-              </div>
-            ) : (
-              <button type="button" onClick={startHeaderEdit} className="px-1 text-[15px] font-semibold text-accent active:opacity-60">Edit</button>
-            )}
+            <button type="button" onClick={startRecordEdit} className="px-1 text-[15px] font-semibold text-accent active:opacity-60">Edit</button>
           </div>
         </div>
 
-        <header className="px-5 pb-5 pt-4">
-          {headerEditing ? (
-            <div>
-              <input value={headerDraft.title} onChange={event => setHeaderDraft(prev => ({ ...prev, title: event.target.value }))} placeholder="Title" className="w-full bg-transparent text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1 outline-none placeholder:text-text-3" />
-              <input value={headerDraft.subtitle} onChange={event => setHeaderDraft(prev => ({ ...prev, subtitle: event.target.value }))} placeholder="Description" className="mt-2 w-full bg-transparent text-[16px] text-text-2 outline-none placeholder:text-text-3" />
-              <div className="mt-4">
-                {deleteConfirm ? (
-                  <div className="rounded-2xl bg-surface p-4">
-                    <p className="text-[14px] font-semibold text-text-1">Delete this record?</p>
-                    <p className="mt-1 text-[12.5px] text-text-2">This removes it from Vault. This cannot be undone from this screen.</p>
-                    <div className="mt-3 flex gap-2">
-                      <button type="button" onClick={() => { void deleteRecord() }} disabled={saving} className="h-10 flex-1 rounded-xl bg-red text-[15px] font-semibold text-white disabled:opacity-50">Delete</button>
-                      <button type="button" onClick={() => setDeleteConfirm(false)} className="h-10 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setDeleteConfirm(true)} className="text-[13px] font-semibold text-red active:opacity-70">Delete record</button>
-                )}
+        <header className="px-5 pb-6 pt-5">
+          <div className="border-l-[3px] pl-3.5" style={{ borderLeftColor: snapshot.category.color }}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: snapshot.category.color }}>{snapshot.category.label}</p>
+            <h1 className="mt-1.5 text-[32px] font-bold leading-[1.06] text-text-1">{record.title}</h1>
+            {record.subtitle ? <p className="mt-2.5 text-[15px] leading-5 text-text-2">{record.subtitle}</p> : null}
+          </div>
+          {nextDate ? (
+            <div className="mt-5 flex items-center gap-3 border-y border-border py-3">
+              <span className="h-8 w-[3px] shrink-0 rounded-full" style={{ background: snapshot.category.color }} />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3">Next important date</p>
+                <p className="mt-0.5 truncate text-[14px] font-medium text-text-1">{nextDate.message || kindMeta(nextDate.kind).label} due {formatRelativeDue(nextDate.dueAt ?? nextDate.triggerAt)}</p>
               </div>
             </div>
-          ) : (
-            <>
-              <h1 className="text-[34px] font-extrabold leading-[1.02] tracking-tight text-text-1">{record.title}</h1>
-              {record.subtitle ? <p className="mt-2 text-[16px] text-text-2">{record.subtitle}</p> : null}
-            </>
-          )}
+          ) : null}
         </header>
 
-        <Section title="Key facts" action={<button type="button" onClick={() => setFieldEditor({ index: fields.length, label: '', value: '' })} className="text-[12px] font-semibold text-accent">Add field</button>}>
-          <div className="overflow-hidden rounded-2xl bg-surface">
+        <Section title="Key facts" color={snapshot.category.color}>
+          <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)]">
             {visibleFields.length > 0 ? visibleFields.map(({ field, index }) => (
               <FieldRow
                 key={`${field.label}-${field.value}-${index}`}
                 field={field}
                 index={index}
+                color={snapshot.category.color}
                 editing={fieldEditor?.index === index}
                 draft={fieldEditor}
                 onEdit={() => setFieldEditor({ index, label: field.label, value: field.value })}
@@ -657,11 +864,12 @@ export function LifeEntityPage() {
                 onCancel={() => setFieldEditor(null)}
                 onDelete={() => { void deleteField(index) }}
               />
-            )) : <EmptyRow icon="•" title="No key facts yet" subtitle="Add labels and values for this record." />}
+            )) : <EmptyRow title="No key facts yet" subtitle="Add labels and values for this record." />}
             {fieldEditor?.index === fields.length ? (
               <FieldRow
                 field={{ label: '', value: '' }}
                 index={fields.length}
+                color={snapshot.category.color}
                 editing
                 draft={fieldEditor}
                 onEdit={() => undefined}
@@ -670,62 +878,32 @@ export function LifeEntityPage() {
                 onCancel={() => setFieldEditor(null)}
                 onDelete={() => setFieldEditor(null)}
               />
-            ) : null}
+            ) : (
+              <button type="button" onClick={() => setFieldEditor({ index: fields.length, label: 'Detail', value: '' })} className={`flex h-12 w-full items-center gap-2 px-4 text-left text-[14px] font-semibold text-accent active:bg-surface-2 ${visibleFields.length > 0 ? 'border-t border-border' : ''}`}>
+                <Plus className="h-4 w-4" /> Add new fact
+              </button>
+            )}
           </div>
         </Section>
 
-        <Section title="Renewal" action={<button type="button" onClick={startRenewalEdit} className="text-[12px] font-semibold text-accent">{record.renewalDate ? 'Edit' : 'Add renewal'}</button>}>
-          <div className="overflow-hidden rounded-2xl bg-surface">
-            {renewalEditing ? (
-              <div className="p-4">
-                <div className="flex flex-col gap-3">
-                  <input value={renewalDraft.label} onChange={event => setRenewalDraft(prev => ({ ...prev, label: event.target.value }))} placeholder="Label, e.g. Renews, Expires" className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
-                  <label className="rounded-xl bg-surface-2 px-3 py-2">
-                    <span className="mb-1 block text-[12px] font-semibold text-text-2">Date</span>
-                    <input type="date" value={renewalDraft.date} onChange={event => setRenewalDraft(prev => ({ ...prev, date: event.target.value }))} className="w-full bg-transparent text-[15px] text-text-1 outline-none" />
-                  </label>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => { void saveRenewal() }} disabled={saving} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Save renewal</button>
-                    <button type="button" onClick={() => setRenewalEditing(false)} className="h-11 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
-                  </div>
-                </div>
-              </div>
-            ) : record.renewalDate ? (
-              <SwipeRow onDelete={() => { setRenewalDraft({ label: '', date: '' }); void upsertRecord(record, { renewalDate: null, renewalLabel: null }) }} deleteLabel="Clear" onEdit={startRenewalEdit}>
-                <button type="button" onClick={startRenewalEdit} className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left active:bg-surface-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-amber-bg text-[17px] text-amber">📅</div>
-                    <p className="truncate text-[13.5px] font-semibold text-amber">{record.renewalLabel || 'Due date'}</p>
-                  </div>
-                  <p className="shrink-0 text-right text-[14.5px] font-bold text-text-1">{formatRenewal(record.renewalDate)}</p>
-                </button>
-              </SwipeRow>
-            ) : <EmptyRow icon="📅" title="No renewal set" subtitle="Add a due date or renewal date for this record." />}
-          </div>
-        </Section>
-
-        <Section title="Reminders" action={<button type="button" onClick={() => setReminderEditor({ id: 'new', message: '', date: '', time: '09:00' })} className="text-[12px] font-semibold text-accent">Add reminder</button>}>
-          <div className="overflow-hidden rounded-2xl bg-surface">
-            {reminderEditor?.id === 'new' ? <ReminderEditor editor={reminderEditor} saving={saving} fallbackTitle={record.title} onDraft={patch => setReminderEditor(prev => prev ? { ...prev, ...patch } : prev)} onSave={() => { void addOrUpdateReminder() }} onCancel={() => setReminderEditor(null)} /> : null}
-            {snapshot.linkedReminders.length > 0 ? snapshot.linkedReminders.map((reminder, index) => (
-              <div key={reminder.id} className={(index > 0 || reminderEditor?.id === 'new') ? 'border-t border-border' : ''}>
-                {reminderEditor?.id === reminder.id ? (
-                  <ReminderEditor editor={reminderEditor} saving={saving} fallbackTitle={record.title} onDraft={patch => setReminderEditor(prev => prev ? { ...prev, ...patch } : prev)} onSave={() => { void addOrUpdateReminder(reminder) }} onCancel={() => setReminderEditor(null)} />
+        <Section title="Important dates" color={snapshot.category.color} action={<button type="button" onClick={() => startDateEdit()} className="inline-flex items-center gap-1 text-[13px] font-semibold text-accent"><Plus className="h-3.5 w-3.5" /> Add date</button>}>
+          <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)]">
+            {dateEditor?.id === 'new' ? <ImportantDateEditor editor={dateEditor} saving={saving} onDraft={patch => setDateEditor(prev => prev ? { ...prev, ...patch } : prev)} onSave={() => { void addOrUpdateImportantDate() }} onCancel={() => setDateEditor(null)} /> : null}
+            {snapshot.importantDates.length > 0 ? snapshot.importantDates.map((reminder, index) => (
+              <div key={reminder.id} className={(index > 0 || dateEditor?.id === 'new') ? 'border-t border-border' : ''}>
+                {dateEditor?.id === reminder.id ? (
+                  <ImportantDateEditor editor={dateEditor} saving={saving} onDraft={patch => setDateEditor(prev => prev ? { ...prev, ...patch } : prev)} onSave={() => { void addOrUpdateImportantDate(reminder) }} onCancel={() => setDateEditor(null)} />
                 ) : (
-                  <SwipeRow onDelete={() => { void deleteReminder(reminder.id) }} onEdit={() => setReminderEditor({ id: reminder.id, message: reminder.message ?? '', date: toInputDate(reminder.triggerAt), time: toInputTime(reminder.triggerAt) })}>
-                    <button type="button" onClick={() => setReminderEditor({ id: reminder.id, message: reminder.message ?? '', date: toInputDate(reminder.triggerAt), time: toInputTime(reminder.triggerAt) })} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-amber-bg text-[17px] text-amber">⏱</div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14.5px] font-semibold text-text-1">{reminder.message || record.title}</p>
-                        <p className="mt-0.5 text-[12px] text-text-2">{formatShortDate(reminder.triggerAt)}</p>
-                      </div>
-                    </button>
+                  <SwipeRow onDelete={() => { void deleteImportantDate(reminder) }} onEdit={() => startDateEdit(reminder)}>
+                    <ImportantDateRow reminder={reminder} color={snapshot.category.color} onEdit={() => startDateEdit(reminder)} />
                   </SwipeRow>
                 )}
               </div>
-            )) : reminderEditor?.id !== 'new' ? <EmptyRow icon="⏱" title="No reminders yet" subtitle="Add renewals, services and follow-ups here." /> : null}
+            )) : dateEditor?.id !== 'new' ? <EmptyRow title="No important dates yet" subtitle="Add renewals, maintenance, payments and follow-ups here." /> : null}
           </div>
         </Section>
+
+        {recordEditor ? <RecordEditorSheet editor={recordEditor} saving={saving} color={snapshot.category.color} onChange={setRecordEditor} onSave={() => { void saveRecordEdit() }} onDelete={() => { void deleteRecord() }} onClose={() => setRecordEditor(null)} /> : null}
 
       </div>
     </ScreenShell>
@@ -735,6 +913,7 @@ export function LifeEntityPage() {
 function FieldRow({
   field,
   index,
+  color,
   editing,
   draft,
   onEdit,
@@ -745,6 +924,7 @@ function FieldRow({
 }: {
   field: RecordField
   index: number
+  color: string
   editing: boolean
   draft: { label: string; value: string } | null
   onEdit: () => void
@@ -757,13 +937,15 @@ function FieldRow({
     return (
       <div className={`p-3 ${index > 0 ? 'border-t border-border' : ''}`}>
         <div className="flex items-center gap-2">
-          <input autoFocus value={draft.label} onChange={event => onDraft({ label: event.target.value })} placeholder="Label" className="w-[38%] rounded-xl bg-surface-2 px-3 py-2.5 text-[14px] text-text-2 outline-none placeholder:text-text-3" />
-          <input value={draft.value} onChange={event => onDraft({ value: event.target.value })} placeholder="Value" className="min-w-0 flex-1 rounded-xl bg-surface-2 px-3 py-2.5 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
+          <input value={draft.label} onChange={event => onDraft({ label: event.target.value })} placeholder="Label" className="w-[38%] rounded-[9px] bg-surface-2 px-3 py-2.5 text-[14px] text-text-2 outline-none placeholder:text-text-3" />
+          <input autoFocus value={draft.value} onChange={event => onDraft({ value: event.target.value })} placeholder="Value" className="min-w-0 flex-1 rounded-[9px] bg-surface-2 px-3 py-2.5 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
         </div>
-        <div className="mt-2 flex gap-2">
-          <button type="button" onClick={onSave} className="h-9 flex-1 rounded-xl bg-accent text-[14px] font-semibold text-white">Save</button>
-          <button type="button" onClick={onCancel} className="h-9 rounded-xl bg-surface-2 px-4 text-[14px] font-semibold text-text-2">Cancel</button>
-          <button type="button" onClick={onDelete} className="h-9 rounded-xl bg-red px-4 text-[14px] font-semibold text-white">Delete</button>
+        <div className="mt-2 flex items-center justify-between">
+          <button type="button" onClick={onDelete} className="inline-flex h-9 w-9 items-center justify-center text-text-3 active:text-red" aria-label="Remove fact" title="Remove fact"><Trash2 className="h-4 w-4" /></button>
+          <div className="flex gap-3">
+            <button type="button" onClick={onCancel} className="text-[14px] font-semibold text-text-2">Cancel</button>
+            <button type="button" onClick={onSave} className="text-[14px] font-semibold text-accent">Save</button>
+          </div>
         </div>
       </div>
     )
@@ -771,37 +953,150 @@ function FieldRow({
 
   return (
     <button type="button" onClick={onEdit} className={`flex w-full items-baseline justify-between gap-4 px-4 py-3 text-left active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-      <p className="shrink-0 text-[13.5px] text-text-2">{field.label || 'Detail'}</p>
+      <p className="shrink-0 text-[13.5px]" style={{ color }}>{field.label || 'Detail'}</p>
       <p className="break-words text-right text-[14.5px] font-medium text-text-1">{field.value || 'Not set'}</p>
     </button>
   )
 }
 
-function ReminderEditor({ editor, saving, fallbackTitle, onDraft, onSave, onCancel }: {
-  editor: { message: string; date: string; time: string }
+function ImportantDateRow({ reminder, color, onEdit }: { reminder: VaultReminder; color: string; onEdit: () => void }) {
+  const meta = kindMeta(reminder.kind)
+  const repeat = repeatLabel(reminder.repeatInterval)
+  const due = reminder.dueAt ?? reminder.triggerAt
+  const overdue = dateValue(reminder) < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
+  return (
+    <button type="button" onClick={onEdit} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2">
+      <span className="h-9 w-[3px] shrink-0 rounded-full" style={{ background: overdue ? 'var(--red)' : color }} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[14.5px] font-semibold text-text-1">{reminder.message || meta.label}</p>
+        <p className="mt-0.5 truncate text-[12px] text-text-2">
+          {meta.label} · Due {formatRenewal(due)}
+          {' · '}
+          Remind {leadLabel(reminder.leadDays)} at {new Date(reminder.triggerAt).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' })}
+          {repeat ? ` · ${repeat}` : ''}
+        </p>
+      </div>
+      <div className={`shrink-0 text-right ${overdue ? 'text-red' : 'text-text-2'}`}>
+        <p className="text-[12px] font-semibold">{formatRelativeDue(due)}</p>
+      </div>
+    </button>
+  )
+}
+
+function ImportantDateEditor({ editor, saving, onDraft, onSave, onCancel }: {
+  editor: ImportantDateDraft
   saving: boolean
-  fallbackTitle: string
-  onDraft: (patch: Partial<{ message: string; date: string; time: string }>) => void
+  onDraft: (patch: Partial<ImportantDateDraft>) => void
   onSave: () => void
   onCancel: () => void
 }) {
   return (
     <div className="p-4">
       <div className="flex flex-col gap-3">
-        <input value={editor.message} onChange={event => onDraft({ message: event.target.value })} placeholder={`Remind me about ${fallbackTitle}`} className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
+        <div className="grid grid-cols-2 gap-2">
+          {IMPORTANT_DATE_KINDS.filter(option => option.kind !== 'general').map(option => {
+            const Icon = option.icon
+            return (
+              <button
+                key={option.kind}
+                type="button"
+                onClick={() => onDraft({ kind: option.kind, leadDays: editor.leadDays || (option.kind === 'follow_up' ? 0 : 7), repeatInterval: option.kind === 'renewal' ? 'yearly' : editor.repeatInterval })}
+                className={`flex h-10 items-center justify-center gap-2 rounded-xl text-[13px] font-bold ${editor.kind === option.kind ? 'bg-accent text-white' : 'bg-surface-2 text-text-2'}`}
+              >
+                <Icon className="h-4 w-4" strokeWidth={2.2} />
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+        <input value={editor.message} onChange={event => onDraft({ message: event.target.value })} placeholder="Label, e.g. Home insurance renewal" className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
         <div className="overflow-hidden rounded-xl bg-surface-2">
           <label className="flex items-center justify-between gap-3 px-3 py-2">
-            <span className="shrink-0 text-[13px] font-semibold text-text-2">Date</span>
-            <input type="date" required value={editor.date} onChange={event => onDraft({ date: event.target.value })} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+            <span className="shrink-0 text-[13px] font-semibold text-text-2">Due date</span>
+            <input type="date" required value={editor.dueDate} onChange={event => onDraft({ dueDate: event.target.value })} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
           </label>
           <label className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
-            <span className="shrink-0 text-[13px] font-semibold text-text-2">Time</span>
-            <input type="time" value={editor.time} onChange={event => onDraft({ time: event.target.value })} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+            <span className="shrink-0 text-[13px] font-semibold text-text-2">Reminder</span>
+            <select value={editor.leadDays} onChange={event => onDraft({ leadDays: Number(event.target.value) })} className="bg-transparent text-right text-[15px] font-medium text-text-1 outline-none">
+              {LEAD_DAY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+            <span className="shrink-0 text-[13px] font-semibold text-text-2">Reminder time</span>
+            <input type="time" value={editor.remindTime} onChange={event => onDraft({ remindTime: event.target.value })} className="bg-transparent text-right text-[15px] text-text-1 outline-none" />
+          </label>
+          <label className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+            <span className="shrink-0 text-[13px] font-semibold text-text-2">Repeat</span>
+            <select value={editor.repeatInterval} onChange={event => onDraft({ repeatInterval: event.target.value as RepeatInterval | '' })} className="bg-transparent text-right text-[15px] font-medium text-text-1 outline-none">
+              {REPEAT_OPTIONS.map(option => <option key={option.value || 'none'} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={onSave} disabled={!editor.date || saving} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Save reminder</button>
+          <button type="button" onClick={onSave} disabled={!editor.dueDate || saving} className="h-11 flex-1 rounded-xl bg-accent text-[15px] font-bold text-white disabled:opacity-50">Save date</button>
           <button type="button" onClick={onCancel} className="h-11 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RecordEditorSheet({ editor, saving, color, onChange, onSave, onDelete, onClose }: {
+  editor: RecordEditorDraft
+  saving: boolean
+  color: string
+  onChange: (next: RecordEditorDraft) => void
+  onSave: () => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="safe-bottom flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] bg-bg shadow-2xl" onClick={event => event.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3.5">
+          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full text-text-2 active:bg-surface-2" aria-label="Close editor" title="Close editor">
+            <X className="h-5 w-5" />
+          </button>
+          <h2 className="text-[17px] font-semibold text-text-1">Edit record</h2>
+          <button type="button" onClick={onSave} disabled={!editor.title.trim() || saving} className="px-1 text-[15px] font-semibold text-accent disabled:opacity-40">{saving ? 'Saving...' : 'Save'}</button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5">
+          <section>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="h-3.5 w-[3px] rounded-full" style={{ background: color }} />
+              <p className="text-[14px] font-semibold text-text-1">Record</p>
+            </div>
+            <div className="overflow-hidden rounded-[14px] border border-border bg-surface">
+              <label className="block px-4 py-3">
+                <span className="mb-1 block text-[12px] font-medium text-text-2">Name</span>
+                <input value={editor.title} onChange={event => onChange({ ...editor, title: event.target.value })} placeholder="Name" className="w-full bg-transparent text-[17px] font-medium text-text-1 outline-none placeholder:text-text-3" />
+              </label>
+              <label className="block border-t border-border px-4 py-3">
+                <span className="mb-1 block text-[12px] font-medium text-text-2">Description</span>
+                <input value={editor.subtitle} onChange={event => onChange({ ...editor, subtitle: event.target.value })} placeholder="Optional description" className="w-full bg-transparent text-[15px] text-text-1 outline-none placeholder:text-text-3" />
+              </label>
+            </div>
+          </section>
+
+          <section className="mt-7 border-t border-border pt-4">
+            {deleteConfirm ? (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[14px] font-semibold text-text-1">Delete this record?</p>
+                  <p className="mt-0.5 text-[12px] text-text-2">This cannot be undone.</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <button type="button" onClick={() => setDeleteConfirm(false)} className="text-[13px] font-semibold text-text-2">Cancel</button>
+                  <button type="button" onClick={onDelete} disabled={saving} className="text-[13px] font-semibold text-red disabled:opacity-40">Delete</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setDeleteConfirm(true)} className="inline-flex items-center gap-2 text-[13px] font-semibold text-red"><Trash2 className="h-4 w-4" /> Delete record</button>
+            )}
+          </section>
         </div>
       </div>
     </div>

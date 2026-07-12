@@ -114,6 +114,7 @@ function RootLayout() {
 
   return (
     <div className="min-h-dvh bg-bg text-text-1">
+      <div aria-hidden="true" className="pwa-status-surface" />
       {syncState !== 'idle' && !syncCollapsed ? (
         <div className="fixed inset-x-0 top-0 z-50 pointer-events-none pt-[calc(env(safe-area-inset-top)+8px)]">
           <div className="mx-auto max-w-lg px-4">

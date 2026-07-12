@@ -1,73 +1,65 @@
 @import "tailwindcss";
 
 /* ============================================================
-   DESIGN TOKENS — iOS system palette
+   DESIGN TOKENS
    ============================================================ */
 
 :root {
-  /* Backgrounds */
-  --bg:         #F2F2F7;   /* iOS grouped background */
-  --surface:    #FFFFFF;   /* cards / list cells */
-  --surface-2:  #E5E5EA;   /* pressed / secondary fill */
+  --bg:         #F6F8FB;
+  --surface:    #FFFFFF;
+  --surface-2:  #EEF2F6;
 
-  /* Borders / separators */
-  --border:     #C6C6C8;   /* iOS separator */
+  --border:     #E1E6ED;
 
-  /* Text — iOS label colours */
-  --text-1:     #000000;                  /* label */
-  --text-2:     rgba(60,60,67,0.60);      /* secondary label */
-  --text-3:     rgba(60,60,67,0.30);      /* tertiary / placeholder */
+  --text-1:     #19212C;
+  --text-2:     #697586;
+  --text-3:     #98A2B3;
 
-  /* Accent — iOS system blue */
-  --accent:         #007AFF;
-  --accent-bg:      rgba(0,122,255,0.10);
-  --accent-border:  rgba(0,122,255,0.20);
+  --accent:         #2563EB;
+  --accent-bg:      rgba(37,99,235,0.10);
+  --accent-border:  rgba(37,99,235,0.20);
 
-  /* Green — completion, positive (iOS green) */
-  --sage:       #34C759;
-  --sage-bg:    rgba(52,199,89,0.12);
+  --sage:       #169C62;
+  --sage-bg:    rgba(22,156,98,0.12);
 
-  /* Orange — warnings, bins (iOS orange) */
-  --amber:        #FF9500;
-  --amber-bg:     rgba(255,149,0,0.12);
-  --amber-border: rgba(255,149,0,0.22);
+  --amber:        #D97706;
+  --amber-bg:     rgba(217,119,6,0.12);
+  --amber-border: rgba(217,119,6,0.22);
 
-  /* Red — urgent (iOS red) */
-  --red:      #FF3B30;
-  --red-bg:   rgba(255,59,48,0.10);
+  --red:      #DC3B42;
+  --red-bg:   rgba(220,59,66,0.10);
 
-  /* Surfaces */
-  --nav-bg:   rgba(249,249,249,0.94);   /* iOS tab/nav bar with blur */
-  --film-bg:  #1C1C1E;
+  --nav-bg:   rgba(255,255,255,0.94);
+  --film-bg:  #171C22;
 }
 
 .dark {
-  --bg:        #000000;
-  --surface:   #1C1C1E;
-  --surface-2: #2C2C2E;
+  --bg:        #11161D;
+  --surface:   #1A212A;
+  --surface-2: #252E39;
 
-  --border:    #38383A;
+  --border:    #303B48;
 
-  --text-1:    #FFFFFF;
-  --text-2:    rgba(235,235,245,0.60);
-  --text-3:    rgba(235,235,245,0.30);
+  --text-1:    #F4F7FA;
+  --text-2:    #A8B3C2;
+  --text-3:    #748195;
 
-  --accent:        #0A84FF;
-  --accent-bg:     rgba(10,132,255,0.16);
-  --accent-border: rgba(10,132,255,0.28);
+  --accent:        #5B8CFF;
+  --accent-bg:     rgba(91,140,255,0.16);
+  --accent-border: rgba(91,140,255,0.28);
 
-  --sage:      #30D158;
-  --sage-bg:   rgba(48,209,88,0.16);
+  --sage:      #4DCC91;
+  --sage-bg:   rgba(77,204,145,0.16);
 
-  --amber:        #FF9F0A;
-  --amber-bg:     rgba(255,159,10,0.14);
-  --amber-border: rgba(255,159,10,0.26);
+  --amber:        #F0A542;
+  --amber-bg:     rgba(240,165,66,0.14);
+  --amber-border: rgba(240,165,66,0.26);
 
-  --red:      #FF453A;
-  --red-bg:   rgba(255,69,58,0.16);
+  --red:      #F06A72;
+  --red-bg:   rgba(240,106,114,0.16);
 
-  --nav-bg:   rgba(28,28,30,0.94);
-  --film-bg:  #0E0C08;
+  --nav-bg:   rgba(26,33,42,0.94);
+  --film-bg:  #0D1117;
 }
 
 /* ============================================================
@@ -103,11 +95,10 @@
   --color-nav-bg:  var(--nav-bg);
   --color-film-bg: var(--film-bg);
 
-  /* iOS corner radii */
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 14px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
 }
 
 /* ============================================================
@@ -162,7 +153,7 @@ body {
   color: var(--text-1);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
   overscroll-behavior: none;
-  letter-spacing: -0.01em;   /* iOS SF tracking */
+  letter-spacing: 0;
 }
 
 #root {
@@ -187,6 +178,28 @@ select {
 /* Safe area insets for iPhone notch / home indicator */
 .safe-top    { padding-top:    env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Standalone iOS exposes the status-bar safe area to the web app. Keep that
+   area solid so app content never appears as a frosted layer behind the clock. */
+.pwa-status-surface { display: none; }
+@media (display-mode: standalone) {
+  .pwa-status-surface {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 40;
+    height: env(safe-area-inset-top);
+    background: var(--bg);
+    pointer-events: none;
+  }
+
+  .safe-top.backdrop-blur,
+  .safe-top.backdrop-blur-xl {
+    background: var(--bg) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
 
 
 /* Scrollbar hide */

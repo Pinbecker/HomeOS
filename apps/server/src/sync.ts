@@ -1325,12 +1325,21 @@ async function upsertReminder(userId: string, mutation: SyncMutation) {
   const now = new Date()
   const existing = await db.query.reminders.findFirst({ where: eq(reminders.id, mutation.entityId) })
   const triggerAt = payload.triggerAt ? new Date(payload.triggerAt as string | number) : existing?.triggerAt ?? now
+  const dueAt = payload.dueAt
+    ? new Date(payload.dueAt as string | number)
+    : payload.dueAt === null
+      ? null
+      : existing?.dueAt ?? triggerAt
 
   if (existing) {
     await db.update(reminders).set({
       entityType: (payload.entityType as string | undefined) ?? existing.entityType,
       entityId: (payload.entityId as string | undefined) ?? existing.entityId,
       message: payload.message === undefined ? existing.message : (payload.message as string | null),
+      kind: (payload.kind as typeof existing.kind | undefined) ?? existing.kind,
+      dueAt,
+      leadDays: payload.leadDays === undefined ? existing.leadDays : (payload.leadDays as number | null),
+      repeatInterval: payload.repeatInterval === undefined ? existing.repeatInterval : (payload.repeatInterval as typeof existing.repeatInterval | null),
       triggerAt,
       dispatchedAt: payload.dispatchedAt === undefined
         ? existing.dispatchedAt
@@ -1347,6 +1356,10 @@ async function upsertReminder(userId: string, mutation: SyncMutation) {
       entityType: (payload.entityType as string | undefined) ?? 'record',
       entityId: (payload.entityId as string | undefined) ?? '',
       message: (payload.message as string | null | undefined) ?? null,
+      kind: (payload.kind as typeof reminders.$inferInsert.kind | undefined) ?? 'general',
+      dueAt,
+      leadDays: (payload.leadDays as number | null | undefined) ?? null,
+      repeatInterval: (payload.repeatInterval as typeof reminders.$inferInsert.repeatInterval | null | undefined) ?? null,
       triggerAt,
       dispatchedAt: payload.dispatchedAt ? new Date(payload.dispatchedAt as string | number) : null,
       dismissedAt: payload.dismissedAt ? new Date(payload.dismissedAt as string | number) : null,

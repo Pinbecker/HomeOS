@@ -78,6 +78,10 @@ type ReminderRow = {
   entityType: string
   entityId: string
   message?: string | null
+  kind?: 'general' | 'renewal' | 'expiry' | 'maintenance' | 'payment' | 'follow_up' | 'mot' | 'service'
+  dueAt?: string | number | Date | null
+  leadDays?: number | null
+  repeatInterval?: 'monthly' | 'quarterly' | 'yearly' | null
   triggerAt: string | number | Date
   dispatchedAt?: string | number | Date | null
   dismissedAt?: string | number | Date | null

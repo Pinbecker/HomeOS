@@ -919,10 +919,6 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
 function PinnedBoardLite({ pins }: { pins: Array<{ id: string; title: string; body?: string | null }> }) {
   return (
     <section className="mx-4 mb-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold" style={{ color: '#F5A623', letterSpacing: '-0.01em' }}>Pinned</h2>
-        {pins.length > 0 ? <a href="/notes" className="text-[13px] font-semibold text-accent">Add pin</a> : null}
-      </div>
       {pins.length === 0 ? (
         <a href="/notes" className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-surface px-4 py-3.5 active:bg-surface-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent">
@@ -1086,28 +1082,27 @@ function ScheduleDayWeather({ weather, prominent }: { weather: ScheduleWeatherDa
   )
 }
 
-function GroupedTimeline({ groups, doneIds, onToggle, onDelete, weatherByDate }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void; weatherByDate: Map<string, ScheduleWeatherDay> }) {
+function GroupedTimeline({ groups, doneIds, onToggle, onDelete, weatherByDate, embedded = false }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void; weatherByDate: Map<string, ScheduleWeatherDay>; embedded?: boolean }) {
+  const content = groups.map((group, groupIndex) => {
+    const weather = group.dateKey ? weatherByDate.get(group.dateKey) : null
+    return (
+      <div key={group.key}>
+        <div
+          className={`flex min-h-[36px] items-stretch overflow-hidden ${groupIndex > 0 ? 'border-t' : ''}`}
+          style={{
+            borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
+            background: group.isOverdue ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))' : group.isToday ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))' : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
+          }}
+        >
+          <p className={`flex min-w-0 flex-1 items-center truncate px-4 text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
+          {weather ? <ScheduleDayWeather weather={weather} prominent={group.isToday} /> : null}
+        </div>
+        {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
+      </div>
+    )
+  })
   return (
-    <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-      {groups.map((group, groupIndex) => {
-        const weather = group.dateKey ? weatherByDate.get(group.dateKey) : null
-        return (
-          <div key={group.key}>
-            <div
-              className={`flex min-h-[36px] items-stretch overflow-hidden ${groupIndex > 0 ? 'border-t' : ''}`}
-              style={{
-                borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
-                background: group.isOverdue ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))' : group.isToday ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))' : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
-              }}
-            >
-              <p className={`flex min-w-0 flex-1 items-center truncate px-4 text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
-              {weather ? <ScheduleDayWeather weather={weather} prominent={group.isToday} /> : null}
-            </div>
-            {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
-          </div>
-        )
-      })}
-    </div>
+    embedded ? <>{content}</> : <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>{content}</div>
   )
 }
 
@@ -1197,41 +1192,41 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now, weatherByDate }: 
 
   return (
     <section className="mx-4 mb-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold" style={{ color: '#007AFF', letterSpacing: '-0.01em' }}>Schedule</h2>
-      </div>
-      <div className="mb-2.5 flex items-center gap-2">
-        <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
-          {RANGE_OPTIONS.map(option => (
-            <button key={option.days} onClick={() => setRangeDays(option.days)} className={`whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold transition-colors ${rangeDays === option.days ? 'bg-accent text-white' : 'border border-border bg-surface text-text-2'}`}>
-              {option.label}
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <p className="shrink-0 text-[14px] font-semibold text-text-1">Schedule</p>
+          <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+            {RANGE_OPTIONS.map(option => (
+              <button key={option.days} onClick={() => setRangeDays(option.days)} className={`whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold transition-colors ${rangeDays === option.days ? 'bg-accent text-white' : 'bg-surface-2 text-text-2'}`}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex shrink-0 rounded-lg bg-surface-2 p-0.5">
+            <button onClick={() => setMode('combined')} aria-label="Combined view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'combined' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="h-4 w-4"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="10" x2="16" y2="10" /><line x1="4" y1="14" x2="16" y2="14" /></svg>
             </button>
-          ))}
+            <button onClick={() => setMode('separate')} aria-label="Separate view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'separate' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><rect x="3" y="3.5" width="14" height="5" rx="1.5" /><rect x="3" y="11.5" width="14" height="5" rx="1.5" /></svg>
+            </button>
+          </div>
         </div>
-        <div className="flex shrink-0 rounded-lg bg-surface-2 p-0.5">
-          <button onClick={() => setMode('combined')} aria-label="Combined view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'combined' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="h-4 w-4"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="10" x2="16" y2="10" /><line x1="4" y1="14" x2="16" y2="14" /></svg>
-          </button>
-          <button onClick={() => setMode('separate')} aria-label="Separate view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'separate' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><rect x="3" y="3.5" width="14" height="5" rx="1.5" /><rect x="3" y="11.5" width="14" height="5" rx="1.5" /></svg>
-          </button>
-        </div>
+        {empty ? (
+          <a href="/calendar" className="flex items-center gap-3 px-4 py-3 active:bg-bg">
+            <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent/15"><div className="h-[7px] w-[7px] rounded-full bg-accent" /></div>
+            <span className="flex-1 text-[13.5px] text-text-2">Nothing scheduled in this range</span>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
+          </a>
+        ) : mode === 'combined' ? (
+          <GroupedTimeline embedded groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} />
+        ) : (
+          <div className="divide-y divide-border">
+            {eventGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline embedded groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
+            {taskGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline embedded groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
+            {renewalGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline embedded groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
+          </div>
+        )}
       </div>
-      {empty ? (
-        <a href="/calendar" className="flex items-center gap-3 rounded-2xl px-4 py-3 active:bg-bg" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-          <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent/15"><div className="h-[7px] w-[7px] rounded-full bg-accent" /></div>
-          <span className="flex-1 text-[13.5px] text-text-2">Nothing scheduled in this range</span>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
-        </a>
-      ) : mode === 'combined' ? (
-        <GroupedTimeline groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} />
-      ) : (
-        <div className="flex flex-col gap-4">
-          {eventGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-          {taskGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-          {renewalGroups.length > 0 ? <div><p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-        </div>
-      )}
     </section>
   )
 }
@@ -1239,11 +1234,11 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now, weatherByDate }: 
 function OnTonightCard({ shows }: { shows: Array<{ title: string; channel: string; airtime: string; channelId: string; atMs: number }> }) {
   return (
     <section className="mx-4 mb-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold" style={{ color: '#AF52DE', letterSpacing: '-0.01em' }}>On Tonight</h2>
-        <a href="/watch" className="text-[13px] font-semibold text-accent">TV Guide</a>
-      </div>
       <div className="overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(ellipse at 15% 80%, rgba(139,92,246,0.55) 0%, transparent 52%), radial-gradient(ellipse at 88% 15%, rgba(6,182,212,0.38) 0%, transparent 50%), radial-gradient(ellipse at 52% 52%, rgba(99,102,241,0.22) 0%, transparent 48%), #070c1e', boxShadow: '0 2px 32px rgba(139,92,246,0.18), 0 1px 0 rgba(255,255,255,0.04) inset' }}>
+        <div className="flex items-center justify-between border-b border-white/[0.10] px-4 py-3">
+          <h2 className="text-[14px] font-semibold text-white">On tonight</h2>
+          <a href="/watch" className="text-[12px] font-semibold text-white/70">TV Guide</a>
+        </div>
         {shows.map((show, index) => (
           <a key={show.title} href={`/watch?channel=${encodeURIComponent(show.channelId)}&at=${show.atMs}`} className={`flex items-center gap-3.5 px-4 py-4 transition-colors active:bg-white/5 ${index > 0 ? 'border-t border-white/[0.08]' : ''}`}>
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', backdropFilter: 'blur(8px)' }}>
@@ -1411,12 +1406,12 @@ function DropzoneBoardCard() {
 
   return (
     <section className="mx-4 mb-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold" style={{ color: '#00A3A3', letterSpacing: '-0.01em' }}>Dropzone</h2>
-        <a href="/drop" className="text-[13px] font-semibold text-accent">Drop</a>
-      </div>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <div className="p-3">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <h2 className="text-[14px] font-semibold text-text-1">Dropzone</h2>
+            <a href="/drop" className="text-[12px] font-semibold text-accent">Open</a>
+          </div>
           <textarea
             ref={textAreaRef}
             value={text}
@@ -1476,17 +1471,18 @@ function DropzoneBoardCard() {
 function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total: number }) {
   return (
     <section className="mx-4 mb-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold" style={{ color: '#34C759', letterSpacing: '-0.01em' }}>Shopping</h2>
-        <a href="/household/shopping" className="text-[13px] font-semibold text-accent">Full list</a>
-      </div>
-      {total === 0 ? (
-        <a href="/household/shopping" className="flex items-center gap-3 rounded-2xl px-4 py-3" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
-          <div className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border opacity-40" />
-          <span className="text-[13.5px] text-text-3">Add shopping items</span>
-        </a>
-      ) : (
-        <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="text-[14px] font-semibold text-text-1">Shopping</h2>
+          <a href="/household/shopping" className="text-[12px] font-semibold text-accent">Full list</a>
+        </div>
+        {total === 0 ? (
+          <a href="/household/shopping" className="flex items-center gap-3 px-4 py-3 active:bg-bg">
+            <div className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border opacity-40" />
+            <span className="text-[13.5px] text-text-3">Add shopping items</span>
+          </a>
+        ) : (
+          <div>
           {groups.map((group, index) => (
             <a key={group.id} href={group.href} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}>
               <div className="h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/20" style={{ background: group.color }} />
@@ -1500,8 +1496,9 @@ function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
             </a>
           ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
@@ -1632,12 +1629,27 @@ export function DashboardPage() {
         cycleKind: item.kind,
       }))
       .filter(event => event.startsAt >= startToday && event.startsAt <= scheduleWindow)
-    const renewals = state.data.records
-      .flatMap(record => {
+    const recordById = new Map(state.data.records.map(record => [record.id, record]))
+    const typedRenewals = state.data.reminders
+      .flatMap(reminder => {
+        if (reminder.dismissedAt || reminder.entityType !== 'record') return []
+        const kind = reminder.kind ?? 'general'
+        if (kind === 'general') return []
+        const record = recordById.get(reminder.entityId)
+        const renewalDate = toDate(reminder.dueAt ?? reminder.triggerAt)
+        if (!record || !renewalDate || renewalDate > renewalWindow) return []
+        return [{ id: reminder.id, title: record.title, label: reminder.message ?? kind.replace('_', ' '), date: renewalDate, href: `/life/admin/${record.id}` }]
+      })
+    const recordsWithTypedDates = new Set(typedRenewals.map(renewal => renewal.href))
+    const renewals = [
+      ...typedRenewals,
+      ...state.data.records.flatMap(record => {
+        if (recordsWithTypedDates.has(`/life/admin/${record.id}`)) return []
         const renewalDate = toDate(record.renewalDate)
         if (!renewalDate || renewalDate > renewalWindow) return []
-        return [{ id: record.id, title: record.title, label: record.renewalLabel ?? null, date: renewalDate, href: `/life/admin/${record.id}` }]
-      })
+        return [{ id: `legacy-renewal-${record.id}`, title: record.title, label: record.renewalLabel ?? null, date: renewalDate, href: `/life/admin/${record.id}` }]
+      }),
+    ]
       .sort((a, b) => a.date.getTime() - b.date.getTime())
     const bins = STATIC_BIN_SCHEDULES.map(bin => ({
       id: bin.id,
@@ -1827,10 +1839,10 @@ export function DashboardPage() {
       case 'headsUp':
         return snapshot.homeScreenSettings.headsUp && hasAlerts ? (
           <section className="mx-4 mb-4">
-            <div className="mb-3 flex items-center">
-              <h2 className="text-[19px] font-bold" style={{ color: '#FF9500', letterSpacing: '-0.01em' }}>Heads up</h2>
-            </div>
             <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="text-[14px] font-semibold text-text-1">Heads up</h2>
+              </div>
               {snapshot.bins.map((bin, index) => {
                 const dot = BIN_DOT[bin.colour] ?? '#6B7280'
                 return (

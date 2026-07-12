@@ -165,6 +165,15 @@ function formatAirtime(date: Date) {
   return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
 }
 
+function reminderKindLabel(kind: string | null | undefined) {
+  if (kind === 'maintenance' || kind === 'mot' || kind === 'service') return 'Maintenance due'
+  if (kind === 'payment') return 'Payment due'
+  if (kind === 'expiry') return 'Expiry due'
+  if (kind === 'renewal') return 'Renewal due'
+  if (kind === 'follow_up') return 'Follow-up'
+  return 'Reminder'
+}
+
 async function recordNotificationForUser(userId: string, title: string, body: string | undefined, entityType: string, entityId: string) {
   const existing = await db.query.notifications.findFirst({
     where: and(eq(notifications.userId, userId), eq(notifications.entityType, entityType), eq(notifications.entityId, entityId)),
@@ -204,8 +213,9 @@ export async function dispatchReminders(recordChange: ChangeRecorder) {
     const prefs = await notificationPreferences(reminder.createdById)
     if (!prefs.reminders.enabled) continue
     const entityTitle = recordMap.get(reminder.entityId) ?? null
-    const title = reminder.message || (entityTitle ? `Reminder: ${entityTitle}` : 'HomeOS Reminder')
-    const body = entityTitle && reminder.message ? entityTitle : undefined
+    const kindLabel = reminderKindLabel(reminder.kind)
+    const title = reminder.message || (entityTitle ? `${kindLabel}: ${entityTitle}` : `HomeOS ${kindLabel}`)
+    const body = entityTitle && reminder.message ? `${kindLabel} - ${entityTitle}` : undefined
     const url = reminder.entityType === 'record' ? `/life/admin/${reminder.entityId}` : '/'
 
     await sendPushToUser(reminder.createdById, { title, body, url })
