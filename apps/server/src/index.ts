@@ -240,7 +240,7 @@ app.get('/api/watch/initial', async (request, reply) => {
   const feedIds = getMainChannelDefs().map(channel => channel.feedId)
   const [channels, tonight, initialGrid] = await Promise.all([
     getOnNow(now),
-    getTodayMatches(followedShows.map(watchFollowFromItem), now),
+    getTodayMatches(followedShows.map(watchFollowFromItem), now, { includeRepeats: true }),
     getDayGrid(feedIds, now),
   ])
 
@@ -263,7 +263,7 @@ app.get('/api/watch/tonight', async (request, reply) => {
     where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
     columns: { title: true, metadata: true },
   })
-  const tonight = await getTodayMatches(followedShows.map(watchFollowFromItem), new Date())
+  const tonight = await getTodayMatches(followedShows.map(watchFollowFromItem), new Date(), { includeRepeats: true })
 
   return reply.send(tonight.map(programme => ({
     title: programme.title,
@@ -810,11 +810,14 @@ async function getDayGrid(feedIds: string[], date: Date): Promise<GridChannel[]>
   }))
 }
 
-async function getTodayMatches(follows: FollowedTvShow[], from: Date): Promise<Programme[]> {
+async function getTodayMatches(follows: FollowedTvShow[], from: Date, options: { includeRepeats?: boolean } = {}): Promise<Programme[]> {
   if (follows.length === 0) return []
   const dayEnd = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 23, 59, 59)
   const rows = await db.select().from(tvProgrammes)
     .where(and(gt(tvProgrammes.endsAt, from), lte(tvProgrammes.startsAt, dayEnd)))
     .orderBy(asc(tvProgrammes.startsAt))
-  return filterFollowedProgrammesWithTvmaze(follows, rows, channelName)
+  const matchFollows = options.includeRepeats
+    ? follows.map(follow => ({ ...follow, matchMode: 'all_airings' }))
+    : follows
+  return filterFollowedProgrammesWithTvmaze(matchFollows, rows, channelName)
 }

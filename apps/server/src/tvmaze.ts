@@ -82,6 +82,22 @@ function normalizeTitle(value: string) {
   return value.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+function normalizeComparableTitle(value: string) {
+  return normalizeTitle(value).replace(/^(new|brand new)\s+/, '').trim()
+}
+
+function titleMatchesFollow(followTitle: string, programmeTitle: string) {
+  const follow = normalizeComparableTitle(followTitle)
+  const programme = normalizeComparableTitle(programmeTitle)
+  if (!follow || !programme) return false
+  if (follow === programme) return true
+
+  const followWords = follow.split(' ')
+  if (followWords.length < 3) return false
+
+  return programme.startsWith(`${follow} `)
+}
+
 function countryCode(show: TvmazeShow) {
   return show.network?.country?.code ?? show.webChannel?.country?.code ?? null
 }
@@ -197,7 +213,7 @@ async function resolvedFollowId(follow: FollowedTvShow) {
 }
 
 function followAllowsProgramme(follow: FollowedTvShow, programme: ProgrammeLike, channelName: (channelId: string) => string) {
-  if (normalizeTitle(follow.title) !== normalizeTitle(programme.title)) return false
+  if (!titleMatchesFollow(follow.title, programme.title)) return false
   const preferred = follow.channel?.trim()
   return !preferred || preferred === channelName(programme.channelId)
 }

@@ -55,7 +55,9 @@ HOURLY_COUNT=$(find "$HOURLY_DIR" -name "*.db" | wc -l)
 echo "$LOG_PREFIX Hourly backups retained: $HOURLY_COUNT"
 
 # --- Prune old daily backups ---
-find "$DAILY_DIR" -name "*.db" -mtime "+$RETENTION_DAYS" -delete
+find "$DAILY_DIR" -name "*.db" -type f | sort -r | awk "NR > $RETENTION_DAYS" | while IFS= read -r old_backup; do
+    rm -f "$old_backup"
+done
 DAILY_COUNT=$(find "$DAILY_DIR" -name "*.db" | wc -l)
 echo "$LOG_PREFIX Daily backups retained: $DAILY_COUNT"
 
