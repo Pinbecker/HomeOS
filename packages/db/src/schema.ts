@@ -151,9 +151,23 @@ export const listItems = sqliteTable('list_items', {
   checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
   checkedAt: integer('checked_at', { mode: 'timestamp' }),
   checkedById: text('checked_by_id').references(() => users.id),
+  // Origin metadata for optional planner features; ordinary shopping items remain unchanged.
+  source: text('source'),
+  sourceDetail: text('source_detail'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp' }),
+})
+
+// Durable, per-shop debounce queue for low-cost AI categorisation.
+export const shoppingCategoryJobs = sqliteTable('shopping_category_jobs', {
+  listId: text('list_id').primaryKey().references(() => lists.id, { onDelete: 'cascade' }),
+  householdId: text('household_id').notNull().references(() => household.id),
+  dueAt: integer('due_at', { mode: 'timestamp' }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
 
 // ============================================================

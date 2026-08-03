@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib'
 import { inArray, lt, max } from 'drizzle-orm'
 import { db } from '@homeos/db'
 import { tvChannels, tvProgrammes } from '@homeos/db/schema'
+import { addLondonDays, londonDayBounds, londonDateKey, normalizeTvChannelName } from './tv-guide-time'
 
 type XmltvChannel = {
   sourceId: string
@@ -33,12 +34,17 @@ export type EpgRefreshResult = {
 
 const DEFAULT_EPG_URL = 'https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz'
 const EPG_REFRESH_INTERVAL_MS = Number(process.env.TV_EPG_REFRESH_INTERVAL_MS ?? 12 * 60 * 60 * 1000)
-const EPG_MIN_LOOKAHEAD_MS = Number(process.env.TV_EPG_MIN_LOOKAHEAD_MS ?? 12 * 60 * 60 * 1000)
+const EPG_REQUIRED_DAYS = Math.max(2, Number(process.env.TV_EPG_REQUIRED_DAYS ?? 7))
+const EPG_MIN_LOOKAHEAD_MS = Number(process.env.TV_EPG_MIN_LOOKAHEAD_MS ?? EPG_REQUIRED_DAYS * 24 * 60 * 60 * 1000)
+const EPG_IMPORT_MIN_LOOKAHEAD_MS = Number(process.env.TV_EPG_IMPORT_MIN_LOOKAHEAD_MS ?? 24 * 60 * 60 * 1000)
 const EPG_HTTP_TIMEOUT_MS = Number(process.env.TV_EPG_HTTP_TIMEOUT_MS ?? 30_000)
 const BATCH_SIZE = 500
 
 let refreshInFlight: Promise<EpgRefreshResult> | null = null
 let lastRefreshAttempt = 0
+let lastRefreshSuccess: Date | null = null
+let lastRefreshError: string | null = null
+let lastRefreshSource: string | null = null
 
 const REGION = process.env.TV_REGION ?? 'south_west'
 const BBC_ONE_BY_REGION: Record<string, string> = {
@@ -111,9 +117,17 @@ export async function ensureTvGuideFresh(force = false) {
   if (refreshInFlight) return refreshInFlight
 
   if (!force) {
-    const latest = await db.select({ value: max(tvProgrammes.endsAt) }).from(tvProgrammes)
-    const latestEnd = dateFromDb(latest[0]?.value ?? null)
-    const hasLookahead = Boolean(latestEnd && latestEnd.getTime() >= Date.now() + EPG_MIN_LOOKAHEAD_MS)
+    const coreIds = coreChannelIds()
+    const latest = await db.select({ channelId: tvProgrammes.channelId, value: max(tvProgrammes.endsAt) })
+      .from(tvProgrammes)
+      .where(inArray(tvProgrammes.channelId, coreIds))
+      .groupBy(tvProgrammes.channelId)
+    const requiredEnd = Date.now() + EPG_MIN_LOOKAHEAD_MS
+    const coveredChannels = latest.filter(row => {
+      const latestEnd = dateFromDb(row.value)
+      return latestEnd && latestEnd.getTime() >= requiredEnd
+    }).length
+    const hasLookahead = coveredChannels / coreIds.length >= 0.9
     const attemptedRecently = Date.now() - lastRefreshAttempt < EPG_REFRESH_INTERVAL_MS
     if (hasLookahead || attemptedRecently) return null
   }
@@ -126,18 +140,43 @@ export async function ensureTvGuideFresh(force = false) {
 }
 
 export async function refreshTvGuide(): Promise<EpgRefreshResult> {
-  const sourceUrl = process.env.TV_EPG_URL ?? DEFAULT_EPG_URL
-  const xml = await fetchXmltv(sourceUrl)
-  const { channels, programmes, startsAt, endsAt } = parseXmltv(xml)
+  const configuredSources = process.env.TV_EPG_URLS?.trim() || process.env.TV_EPG_URL?.trim() || DEFAULT_EPG_URL
+  const sourceUrls = configuredSources
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+  const failures: string[] = []
+  let selected: (ReturnType<typeof parseXmltv> & { sourceUrl: string; coverageEnd: number }) | null = null
+  const requiredLastDay = addLondonDays(londonDateKey(), EPG_REQUIRED_DAYS - 1)
+  const requiredCoverageEnd = londonDayBounds(requiredLastDay).end.getTime()
 
-  if (channels.length === 0 || programmes.length === 0) {
-    throw new Error(`TV guide import produced no usable listings from ${sourceUrl}`)
+  for (const sourceUrl of sourceUrls) {
+    try {
+      const xml = await fetchXmltv(sourceUrl)
+      const parsed = parseXmltv(xml)
+      const coverageEnd = validateImport(sourceUrl, parsed)
+      if (!selected || coverageEnd > selected.coverageEnd) {
+        selected = { ...parsed, sourceUrl, coverageEnd }
+      }
+      // Sources are ordered by preference. A complete local seven-day source
+      // makes fallback requests unnecessary and avoids consuming their quotas.
+      if (coverageEnd >= requiredCoverageEnd) break
+    } catch (error) {
+      failures.push(`${sourceUrl}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
+  if (!selected) {
+    lastRefreshError = failures.join('; ') || 'No TV guide sources were configured'
+    throw new Error(lastRefreshError)
+  }
+
+  const { sourceUrl, channels, programmes, startsAt, endsAt } = selected
   db.transaction(tx => {
-    const canonicalIds = channels.map(channel => channel.canonicalId)
-    tx.delete(tvProgrammes).where(inArray(tvProgrammes.channelId, canonicalIds)).run()
-    tx.delete(tvChannels).where(inArray(tvChannels.id, canonicalIds)).run()
+    // A validated import is a complete snapshot. Replacing both tables prevents
+    // programmes from removed or renamed source channels lingering indefinitely.
+    tx.delete(tvProgrammes).run()
+    tx.delete(tvChannels).run()
 
     tx.insert(tvChannels).values(channels.map(channel => ({
       id: channel.canonicalId,
@@ -151,7 +190,21 @@ export async function refreshTvGuide(): Promise<EpgRefreshResult> {
     }
   })
 
+  lastRefreshSuccess = new Date()
+  lastRefreshError = null
+  lastRefreshSource = sourceUrl
   return { sourceUrl, channels: channels.length, programmes: programmes.length, startsAt, endsAt }
+}
+
+export function tvGuideRefreshState() {
+  return {
+    requiredDays: EPG_REQUIRED_DAYS,
+    lastAttemptAt: lastRefreshAttempt ? new Date(lastRefreshAttempt) : null,
+    lastSuccessAt: lastRefreshSuccess,
+    lastError: lastRefreshError,
+    sourceUrl: lastRefreshSource,
+    refreshing: Boolean(refreshInFlight),
+  }
 }
 
 export async function pruneOldTvGuide(cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000)) {
@@ -159,6 +212,13 @@ export async function pruneOldTvGuide(cutoff = new Date(Date.now() - 24 * 60 * 6
 }
 
 async function fetchXmltv(sourceUrl: string) {
+  if (sourceUrl.startsWith('file://')) {
+    const { readFile } = await import('node:fs/promises')
+    const bytes = await readFile(new URL(sourceUrl))
+    const body = isGzip(sourceUrl, bytes) ? gunzipSync(bytes) : bytes
+    return body.toString('utf8')
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), EPG_HTTP_TIMEOUT_MS)
   try {
@@ -174,6 +234,55 @@ async function fetchXmltv(sourceUrl: string) {
   } finally {
     clearTimeout(timeout)
   }
+}
+
+function validateImport(sourceUrl: string, parsed: ReturnType<typeof parseXmltv>) {
+  if (parsed.channels.length === 0 || parsed.programmes.length === 0) {
+    throw new Error(`TV guide import produced no usable listings from ${sourceUrl}`)
+  }
+  const today = londonDateKey()
+  const { end: tomorrowEnd } = londonDayBounds(today)
+  const minimumEnd = new Date(Math.max(Date.now() + EPG_IMPORT_MIN_LOOKAHEAD_MS, tomorrowEnd.getTime()))
+  if (!parsed.endsAt || parsed.endsAt < minimumEnd) {
+    throw new Error(`TV guide ends too soon (${parsed.endsAt?.toISOString() ?? 'unknown'})`)
+  }
+  const coreChannels = coreChannelIds()
+  const latestByChannel = new Map<string, Date>()
+  for (const programme of parsed.programmes) {
+    const latest = latestByChannel.get(programme.channelId)
+    if (!latest || programme.endsAt > latest) latestByChannel.set(programme.channelId, programme.endsAt)
+  }
+  const coreEnds = coreChannels
+    .map(channelId => latestByChannel.get(channelId)?.getTime() ?? 0)
+    .sort((a, b) => b - a)
+  const minimumCoveredChannels = Math.ceil(coreChannels.length * 0.75)
+  const coverageEnd = coreEnds[minimumCoveredChannels - 1] ?? 0
+  const coreCoverage = coreEnds.filter(value => value >= minimumEnd.getTime()).length
+  if (coreCoverage / coreChannels.length < 0.75) {
+    throw new Error(`TV guide contains only ${coreCoverage}/${coreChannels.length} core channels`)
+  }
+  return coverageEnd
+}
+
+function coreChannelIds() {
+  return [
+    regional(BBC_ONE_BY_REGION),
+    'BBCTwoHD.uk',
+    regional(ITV1_BY_REGION),
+    regional(CHANNEL4_BY_REGION),
+    '5.uk',
+    'ITV2.uk',
+    'BBCThreeHD.uk',
+    'BBCFourHD.uk',
+    'ITV3.uk',
+    'ITV4.uk',
+    'E4.uk',
+    'More4.uk',
+    'Film4.uk',
+    'SkyMix.uk',
+    '5USA.uk',
+    'UAndDave.uk',
+  ]
 }
 
 function parseXmltv(xml: string) {
@@ -241,11 +350,46 @@ function canonicalChannelId(sourceId: string, names: string[]) {
   const exact = CHANNEL_ALIASES[sourceId]
   if (exact) return exact
 
-  const normalizedNames = names.map(normalizeName)
+  const normalizedNames = names.map(normalizeTvChannelName)
+  if (normalizedNames.some(name => name === 'bbc one' || name === 'bbc one hd' || name.startsWith('bbc one '))) return regional(BBC_ONE_BY_REGION)
   if (normalizedNames.includes('bbc two hd')) return 'BBCTwoHD.uk'
-  if (normalizedNames.includes('itv1 hd')) return regional(ITV1_BY_REGION)
-  if (normalizedNames.includes('channel 4 hd')) return regional(CHANNEL4_BY_REGION)
+  if (normalizedNames.some(name => name === 'itv1 hd' || name.startsWith('itv1 '))) return regional(ITV1_BY_REGION)
+  if (normalizedNames.some(name => name === 'channel 4 hd' || name.startsWith('channel 4 '))) return regional(CHANNEL4_BY_REGION)
   if (normalizedNames.includes('channel 5 hd') || normalizedNames.includes('channel 5')) return '5.uk'
+  const nameAliases: Record<string, string> = {
+    'bbc two': 'BBCTwoHD.uk',
+    'bbc three': 'BBCThreeHD.uk',
+    'bbc three hd': 'BBCThreeHD.uk',
+    'bbc four': 'BBCFourHD.uk',
+    'bbc four hd': 'BBCFourHD.uk',
+    itv1: regional(ITV1_BY_REGION),
+    itv2: 'ITV2.uk',
+    'itv2 hd': 'ITV2.uk',
+    itv3: 'ITV3.uk',
+    'itv3 hd': 'ITV3.uk',
+    itv4: 'ITV4.uk',
+    'itv4 hd': 'ITV4.uk',
+    'channel 4': regional(CHANNEL4_BY_REGION),
+    '5': '5.uk',
+    e4: 'E4.uk',
+    'e4 hd': 'E4.uk',
+    more4: 'More4.uk',
+    'more 4': 'More4.uk',
+    'more4 hd': 'More4.uk',
+    film4: 'Film4.uk',
+    'film4 hd': 'Film4.uk',
+    'sky mix': 'SkyMix.uk',
+    'sky mix hd': 'SkyMix.uk',
+    '5usa': '5USA.uk',
+    '5 usa': '5USA.uk',
+    'u and dave': 'UAndDave.uk',
+    uanddave: 'UAndDave.uk',
+    'u&dave': 'UAndDave.uk',
+    dave: 'UAndDave.uk',
+  }
+  for (const name of normalizedNames) {
+    if (nameAliases[name]) return nameAliases[name]
+  }
   return null
 }
 
@@ -332,10 +476,6 @@ function minDate(current: Date | null, next: Date) {
 
 function maxDate(current: Date | null, next: Date) {
   return !current || next.getTime() > current.getTime() ? next : current
-}
-
-function normalizeName(value: string) {
-  return cleanText(value).toLowerCase().replace(/&/g, 'and')
 }
 
 function programmeId(channelId: string, start: Date, stop: Date, title: string) {

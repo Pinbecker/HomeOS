@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowDownUp,
@@ -14,10 +14,11 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { navigateInApp } from '../lib/navigation'
 import { useSessionState } from '../lib/session-store'
 import { SwipeRow } from '../components/swipe-row'
 import { VaultDueContent } from './reminders'
-import { ScreenShell } from './shell'
+import { FamilySubHeader, ScreenShell } from './shell'
 
 type CategoryMeta = {
   key: string
@@ -103,7 +104,7 @@ const BASE_CATEGORIES: CategoryMeta[] = [
 const IMPORTANT_DATE_KINDS: Array<{ kind: ReminderKind; label: string; icon: LucideIcon }> = [
   { kind: 'renewal', label: 'Renewal', icon: CalendarClock },
   { kind: 'expiry', label: 'Expiry', icon: Clock3 },
-  { kind: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { kind: 'maintenance', label: 'Service', icon: Wrench },
   { kind: 'payment', label: 'Payment', icon: CircleDollarSign },
   { kind: 'follow_up', label: 'Follow-up', icon: Bell },
   { kind: 'general', label: 'Reminder', icon: Bell },
@@ -311,21 +312,13 @@ function Chevron() {
   )
 }
 
-function BackChevron() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-      <path d="M10 3L5 8l5 5" />
-    </svg>
-  )
-}
-
 function Section({ title, color, action, children }: { title: string; color?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="mx-4 mb-5">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {color ? <span className="h-3.5 w-[3px] rounded-full" style={{ background: color }} /> : null}
-          <p className="text-[14px] font-semibold text-text-1">{title}</p>
+    <section className="vault-detail-section mx-4 mb-5">
+      <div className="vault-section-heading">
+        <div>
+          {color ? <span style={{ background: color }} /> : null}
+          <p>{title}</p>
         </div>
         {action}
       </div>
@@ -427,18 +420,14 @@ export function LifeOverviewPage() {
 
   return (
     <ScreenShell title="Vault">
-      <div className="px-4">
-        <div className="mb-4 rounded-3xl bg-surface px-5 py-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[24px] font-bold text-text-1">Household records</p>
-              <p className="mt-1 text-[14px] text-text-2">Life admin, policies, IDs, vehicles, utilities, and reference details.</p>
-            </div>
-            <button type="button" onClick={() => setAdminOpen(true)} className="shrink-0 rounded-full bg-surface-2 px-3 py-1.5 text-[13px] font-semibold text-accent active:opacity-70">Manage</button>
-          </div>
+      <div className="vault-family-page px-4 pt-4">
+        <div className="vault-family-hero">
+          <span className="vault-hero-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M8 3v18M12 10h4M12 14h3" /></svg></span>
+          <div className="vault-hero-copy"><small>HOUSEHOLD VAULT</small><strong>{snapshot.records.length} {snapshot.records.length === 1 ? 'record' : 'records'}</strong><span>Important details, policies and life admin in one private place.</span></div>
+          <button type="button" onClick={() => setAdminOpen(true)} className="vault-manage-button active:opacity-70">Manage</button>
         </div>
 
-        <div className="mb-4 grid grid-cols-2 rounded-xl bg-surface-2 p-1">
+        <div className="vault-tabs">
           {([
             ['records', 'Records'],
             ['due', 'Due'],
@@ -455,23 +444,20 @@ export function LifeOverviewPage() {
         </div>
 
         {tab === 'records' ? (
-          <div className="overflow-hidden rounded-2xl bg-surface">
-            {snapshot.categories.map((category, index) => {
+          <div className="vault-category-grid">
+            {snapshot.categories.map(category => {
               const count = snapshot.records.filter(record => record.category === category.key).length
               return (
-                <a key={category.key} href={`/life/${category.key}`} className={`flex items-center gap-3.5 px-4 py-3.5 active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-[22px]" style={{ background: `${category.color}1F` }}>{category.icon}</div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[16px] font-semibold text-text-1">{category.label}</p>
-                    <p className="truncate text-[12.5px] text-text-2">{category.desc}</p>
-                  </div>
-                  <span className="flex h-[26px] min-w-[26px] shrink-0 items-center justify-center rounded-full px-2 text-[13px] font-bold" style={{ background: `${category.color}1F`, color: category.color }}>{count}</span>
-                  <Chevron />
+                <a key={category.key} href={`/life/${category.key}`} className="vault-category-card" style={{ '--vault-color': category.color } as CSSProperties}>
+                  <span className="vault-category-card-top"><i>{category.icon}</i><b>{count}</b></span>
+                  <small>VAULT CATEGORY</small>
+                  <strong>{category.label}</strong>
+                  <span className="vault-category-desc">{category.desc}</span>
                 </a>
               )
             })}
           </div>
-        ) : <VaultDueContent inset={false} />}
+        ) : <div className="vault-due-panel"><VaultDueContent inset={false} /></div>}
       </div>
 
       {adminOpen && snapshot.household ? (
@@ -504,7 +490,7 @@ export function LifeCategoryPage() {
     if (!newTitle.trim() || saving) return
     setSaving(true)
     const id = await createRecord(snapshot.category, newTitle)
-    window.location.href = `/life/admin/${id}`
+    navigateInApp(`/life/admin/${id}`)
   }
 
   async function moveRecord(recordId: string, direction: -1 | 1) {
@@ -521,40 +507,16 @@ export function LifeCategoryPage() {
   }
 
   return (
-    <ScreenShell title={snapshot.category.label} showHeader={false}>
-      <div className="safe-top sticky top-0 z-20 border-b border-border bg-bg/95 px-3 pb-2 pt-3 backdrop-blur">
-        <div className="flex items-center justify-between">
-          <a href="/life/admin" className="flex items-center gap-1 text-accent active:opacity-60">
-            <BackChevron />
-            <span className="text-[16px]">Vault</span>
-          </a>
-          <p className="max-w-[44%] truncate text-center text-[15px] font-semibold text-text-1">{snapshot.category.label}</p>
-          <div className="flex items-center gap-3">
-            {reordering ? (
-              <button type="button" onClick={() => setReordering(false)} className="text-[15px] font-semibold text-accent active:opacity-60">Done</button>
-            ) : (
-              <>
-                <button type="button" onClick={() => setReordering(true)} className="flex h-8 w-8 items-center justify-center text-text-2 active:opacity-60" aria-label="Reorder items" title="Reorder items"><ArrowDownUp className="h-[18px] w-[18px]" /></button>
-                <button type="button" onClick={() => setAdding(true)} className="text-[16px] font-medium text-accent active:opacity-60">Add</button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 pt-4">
-        <div className="mb-4 rounded-2xl bg-surface px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-[11px] text-[22px]" style={{ background: `${snapshot.category.color}1F` }}>{snapshot.category.icon}</div>
-            <div className="min-w-0">
-              <p className="truncate text-[22px] font-bold tracking-tight text-text-1">{snapshot.category.label}</p>
-              <p className="truncate text-[13px] text-text-2">{snapshot.category.desc}</p>
-            </div>
-          </div>
+    <ScreenShell title={snapshot.category.label} showHeader={false} topContent={<FamilySubHeader title={snapshot.category.label} backHref="/life/admin" backLabel="Vault" action={reordering ? <button type="button" onClick={() => setReordering(false)}>Done</button> : <><button type="button" onClick={() => setReordering(true)} aria-label="Reorder items" title="Reorder items"><ArrowDownUp className="h-[16px] w-[16px]" /></button><button type="button" onClick={() => setAdding(true)}>Add</button></>} />}>
+      <div className="vault-category-page px-4 pt-4" style={{ '--vault-color': snapshot.category.color } as CSSProperties}>
+        <div className="vault-category-hero">
+          <span className="vault-category-hero-icon">{snapshot.category.icon}</span>
+          <div className="vault-category-hero-copy"><small>VAULT CATEGORY</small><strong>{snapshot.category.label}</strong><span>{snapshot.category.desc}</span></div>
+          <span className="vault-category-total"><b>{snapshot.records.length}</b><small>{snapshot.records.length === 1 ? 'record' : 'records'}</small></span>
         </div>
 
         {adding ? (
-          <div className="mb-3 rounded-2xl bg-surface p-3">
+          <div className="vault-add-record mb-3">
             <input
               autoFocus
               value={newTitle}
@@ -564,19 +526,19 @@ export function LifeCategoryPage() {
               className="h-11 w-full rounded-xl bg-surface-2 px-3 text-[16px] font-semibold text-text-1 outline-none placeholder:text-text-3"
             />
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => { void addRecord() }} disabled={!newTitle.trim() || saving} className="h-10 flex-1 rounded-xl bg-accent text-[15px] font-semibold text-white disabled:opacity-40">Create</button>
+              <button type="button" onClick={() => { void addRecord() }} disabled={!newTitle.trim() || saving} className="vault-primary-button h-10 flex-1 rounded-xl text-[15px] font-semibold text-white disabled:opacity-40">Create</button>
               <button type="button" onClick={() => { setAdding(false); setNewTitle('') }} className="h-10 rounded-xl bg-surface-2 px-4 text-[15px] font-semibold text-text-2">Cancel</button>
             </div>
           </div>
         ) : null}
 
         {snapshot.records.length === 0 ? (
-          <div className="rounded-2xl bg-surface px-4 py-8 text-center">
+          <div className="vault-empty-state">
             <p className="mb-3 text-[14px] text-text-2">Nothing here yet</p>
             <button type="button" onClick={() => setAdding(true)} className="text-[15px] font-medium text-accent active:opacity-60">Add the first one</button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="vault-record-list">
             {snapshot.records.map(record => {
               const valuedFields = (record.fields ?? []).filter(field => field.value)
               const typedDates = snapshot.reminders
@@ -593,21 +555,19 @@ export function LifeCategoryPage() {
                   key={record.id}
                   role={reordering ? undefined : 'link'}
                   tabIndex={reordering ? undefined : 0}
-                  onClick={() => { if (!reordering) window.location.href = `/life/admin/${record.id}` }}
+                  onClick={() => { if (!reordering) navigateInApp(`/life/admin/${record.id}`) }}
                   onKeyDown={event => {
                     if (!reordering && (event.key === 'Enter' || event.key === ' ')) {
                       event.preventDefault()
-                      window.location.href = `/life/admin/${record.id}`
+                      navigateInApp(`/life/admin/${record.id}`)
                     }
                   }}
-                  className={`block overflow-hidden rounded-[14px] border border-t-[3px] border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition ${reordering ? '' : 'cursor-pointer active:bg-surface-2'}`}
-                  style={{ borderTopColor: snapshot.category.color }}
+                  className={`vault-record-card ${reordering ? '' : 'cursor-pointer active:bg-surface-2'}`}
                 >
                   <div className="flex h-full min-w-0 flex-col">
-                    <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3">
+                    <div className="vault-record-card-heading">
                       <div className="min-w-0">
-                        <p className="truncate text-[16px] font-semibold leading-5 text-text-1">{record.title}</p>
-                        <p className="mt-0.5 truncate text-[12.5px] leading-4 text-text-2">{record.subtitle || snapshot.category.label}</p>
+                        <small>RECORD</small><p>{record.title}</p><span>{record.subtitle || snapshot.category.label}</span>
                       </div>
                       {reordering ? (
                         <div className="flex shrink-0 items-center gap-1">
@@ -618,22 +578,20 @@ export function LifeCategoryPage() {
                     </div>
 
                     {valuedFields.length > 0 ? (
-                      <div className="mx-4 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-border py-2.5">
+                      <div className="vault-record-card-facts">
                         {valuedFields.map(field => (
                           <div key={`${record.id}-${field.label}-${field.value}`} className="min-w-0">
-                            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: snapshot.category.color }}>{field.label || 'Detail'}</p>
-                            <p className="mt-0.5 truncate text-[13px] font-medium leading-4 text-text-1">{field.value}</p>
+                            <small>{field.label || 'Detail'}</small><span>{field.value}</span>
                           </div>
                         ))}
                       </div>
                     ) : null}
 
                     {nextDate ? (
-                      <div className="flex min-w-0 items-center gap-3 border-t border-border px-4 py-2.5">
-                        <span className="h-5 w-[3px] shrink-0 rounded-full" style={{ background: snapshot.category.color }} />
+                      <div className="vault-record-card-date">
+                        <i />
                         <div className="min-w-0 flex-1">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3">Next important date</p>
-                          <p className="truncate text-[13px] font-medium text-text-1">{nextDate.label} due {formatRelativeDue(nextDate.dueAt)}</p>
+                          <small>NEXT IMPORTANT DATE</small><span>{nextDate.label} due {formatRelativeDue(nextDate.dueAt)}</span>
                         </div>
                       </div>
                     ) : null}
@@ -814,42 +772,26 @@ export function LifeEntityPage() {
       operation: 'delete',
       payload: null,
     }, prev => ({ ...prev, data: { ...prev.data, records: prev.data.records.filter(row => row.id !== record.id) } }))
-    window.location.href = `/life/${record.category}`
+    navigateInApp(`/life/${record.category}`)
   }
 
   return (
-    <ScreenShell title="Vault" showHeader={false}>
-      <div className="mx-auto flex max-w-lg flex-col pb-4">
-        <div className="safe-top sticky top-0 z-20 border-b border-border bg-bg/95 px-3 pb-2 pt-3 backdrop-blur">
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={() => window.history.back()} className="-ml-1 flex items-center gap-1 text-accent active:opacity-60">
-              <BackChevron />
-              <span className="text-[16px]">Back</span>
-            </button>
-            <p className="max-w-[44%] truncate text-center text-[15px] font-semibold text-text-1">{record.title}</p>
-            <button type="button" onClick={startRecordEdit} className="px-1 text-[15px] font-semibold text-accent active:opacity-60">Edit</button>
-          </div>
-        </div>
-
-        <header className="px-5 pb-6 pt-5">
-          <div className="border-l-[3px] pl-3.5" style={{ borderLeftColor: snapshot.category.color }}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: snapshot.category.color }}>{snapshot.category.label}</p>
-            <h1 className="mt-1.5 text-[32px] font-bold leading-[1.06] text-text-1">{record.title}</h1>
-            {record.subtitle ? <p className="mt-2.5 text-[15px] leading-5 text-text-2">{record.subtitle}</p> : null}
-          </div>
+    <ScreenShell title="Vault" showHeader={false} topContent={<FamilySubHeader title={record.title} backHref={`/life/${record.category}`} backLabel={snapshot.category.label} action={<button type="button" onClick={startRecordEdit}>Edit</button>} />}>
+      <div className="vault-record-page mx-auto flex max-w-lg flex-col pb-4" style={{ '--vault-color': snapshot.category.color } as CSSProperties}>
+        <header className="vault-record-hero">
+          <div className="vault-record-hero-main"><span>{snapshot.category.icon}</span><div><small>{snapshot.category.label.toUpperCase()} · RECORD</small><h1>{record.title}</h1>{record.subtitle ? <p>{record.subtitle}</p> : null}</div></div>
           {nextDate ? (
-            <div className="mt-5 flex items-center gap-3 border-y border-border py-3">
-              <span className="h-8 w-[3px] shrink-0 rounded-full" style={{ background: snapshot.category.color }} />
+            <div className="vault-record-next-date">
+              <span />
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3">Next important date</p>
-                <p className="mt-0.5 truncate text-[14px] font-medium text-text-1">{nextDate.message || kindMeta(nextDate.kind).label} due {formatRelativeDue(nextDate.dueAt ?? nextDate.triggerAt)}</p>
+                <small>NEXT IMPORTANT DATE</small><p>{nextDate.message || kindMeta(nextDate.kind).label} due {formatRelativeDue(nextDate.dueAt ?? nextDate.triggerAt)}</p>
               </div>
             </div>
           ) : null}
         </header>
 
         <Section title="Key facts" color={snapshot.category.color}>
-          <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)]">
+          <div className="vault-detail-card">
             {visibleFields.length > 0 ? visibleFields.map(({ field, index }) => (
               <FieldRow
                 key={`${field.label}-${field.value}-${index}`}
@@ -887,7 +829,7 @@ export function LifeEntityPage() {
         </Section>
 
         <Section title="Important dates" color={snapshot.category.color} action={<button type="button" onClick={() => startDateEdit()} className="inline-flex items-center gap-1 text-[13px] font-semibold text-accent"><Plus className="h-3.5 w-3.5" /> Add date</button>}>
-          <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_1px_1px_rgba(0,0,0,0.03)]">
+          <div className="vault-detail-card">
             {dateEditor?.id === 'new' ? <ImportantDateEditor editor={dateEditor} saving={saving} onDraft={patch => setDateEditor(prev => prev ? { ...prev, ...patch } : prev)} onSave={() => { void addOrUpdateImportantDate() }} onCancel={() => setDateEditor(null)} /> : null}
             {snapshot.importantDates.length > 0 ? snapshot.importantDates.map((reminder, index) => (
               <div key={reminder.id} className={(index > 0 || dateEditor?.id === 'new') ? 'border-t border-border' : ''}>
@@ -899,7 +841,7 @@ export function LifeEntityPage() {
                   </SwipeRow>
                 )}
               </div>
-            )) : dateEditor?.id !== 'new' ? <EmptyRow title="No important dates yet" subtitle="Add renewals, maintenance, payments and follow-ups here." /> : null}
+            )) : dateEditor?.id !== 'new' ? <EmptyRow title="No important dates yet" subtitle="Add renewals, services, payments and follow-ups here." /> : null}
           </div>
         </Section>
 
@@ -935,7 +877,7 @@ function FieldRow({
 }) {
   if (editing && draft) {
     return (
-      <div className={`p-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+      <div className={`vault-field-editor p-3 ${index > 0 ? 'border-t border-border' : ''}`}>
         <div className="flex items-center gap-2">
           <input value={draft.label} onChange={event => onDraft({ label: event.target.value })} placeholder="Label" className="w-[38%] rounded-[9px] bg-surface-2 px-3 py-2.5 text-[14px] text-text-2 outline-none placeholder:text-text-3" />
           <input autoFocus value={draft.value} onChange={event => onDraft({ value: event.target.value })} placeholder="Value" className="min-w-0 flex-1 rounded-[9px] bg-surface-2 px-3 py-2.5 text-[15px] text-text-1 outline-none placeholder:text-text-3" />
@@ -952,9 +894,8 @@ function FieldRow({
   }
 
   return (
-    <button type="button" onClick={onEdit} className={`flex w-full items-baseline justify-between gap-4 px-4 py-3 text-left active:bg-surface-2 ${index > 0 ? 'border-t border-border' : ''}`}>
-      <p className="shrink-0 text-[13.5px]" style={{ color }}>{field.label || 'Detail'}</p>
-      <p className="break-words text-right text-[14.5px] font-medium text-text-1">{field.value || 'Not set'}</p>
+    <button type="button" onClick={onEdit} className={`vault-field-row ${index > 0 ? 'border-t border-border' : ''}`}>
+      <p style={{ color }}>{field.label || 'Detail'}</p><span>{field.value || 'Not set'}</span>
     </button>
   )
 }
@@ -965,8 +906,8 @@ function ImportantDateRow({ reminder, color, onEdit }: { reminder: VaultReminder
   const due = reminder.dueAt ?? reminder.triggerAt
   const overdue = dateValue(reminder) < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime()
   return (
-    <button type="button" onClick={onEdit} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-surface-2">
-      <span className="h-9 w-[3px] shrink-0 rounded-full" style={{ background: overdue ? 'var(--red)' : color }} />
+    <button type="button" onClick={onEdit} className="vault-important-date-row">
+      <span style={{ background: overdue ? 'var(--red)' : color }} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14.5px] font-semibold text-text-1">{reminder.message || meta.label}</p>
         <p className="mt-0.5 truncate text-[12px] text-text-2">
@@ -993,6 +934,12 @@ function ImportantDateEditor({ editor, saving, onDraft, onSave, onCancel }: {
   return (
     <div className="p-4">
       <div className="flex flex-col gap-3">
+        <input
+          value={editor.message}
+          onChange={event => onDraft({ message: event.target.value })}
+          placeholder="Label (for example Annual boiler service)"
+          className="h-11 w-full rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none placeholder:text-text-3"
+        />
         <div className="grid grid-cols-2 gap-2">
           {IMPORTANT_DATE_KINDS.filter(option => option.kind !== 'general').map(option => {
             const Icon = option.icon
@@ -1009,7 +956,6 @@ function ImportantDateEditor({ editor, saving, onDraft, onSave, onCancel }: {
             )
           })}
         </div>
-        <input value={editor.message} onChange={event => onDraft({ message: event.target.value })} placeholder="Label, e.g. Home insurance renewal" className="h-11 rounded-xl bg-surface-2 px-3 text-[15px] text-text-1 outline-none" />
         <div className="overflow-hidden rounded-xl bg-surface-2">
           <label className="flex items-center justify-between gap-3 px-3 py-2">
             <span className="shrink-0 text-[13px] font-semibold text-text-2">Due date</span>
@@ -1054,8 +1000,8 @@ function RecordEditorSheet({ editor, saving, color, onChange, onSave, onDelete, 
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40" onClick={onClose}>
-      <div className="safe-bottom flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] bg-bg shadow-2xl" onClick={event => event.stopPropagation()}>
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3.5">
+      <div className="vault-editor-sheet safe-bottom flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] bg-bg shadow-2xl" style={{ '--vault-color': color } as CSSProperties} onClick={event => event.stopPropagation()}>
+        <div className="vault-editor-header flex shrink-0 items-center justify-between border-b border-border px-5 py-3.5">
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full text-text-2 active:bg-surface-2" aria-label="Close editor" title="Close editor">
             <X className="h-5 w-5" />
           </button>
@@ -1196,8 +1142,8 @@ function CategoryAdminSheet({ household, categories, records, onClose }: { house
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45" onClick={onClose}>
-      <div className="safe-bottom flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-[28px] bg-bg shadow-2xl" onClick={event => event.stopPropagation()}>
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 pb-3 pt-4">
+      <div className="vault-admin-sheet safe-bottom flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-[28px] bg-bg shadow-2xl" onClick={event => event.stopPropagation()}>
+        <div className="vault-editor-header flex shrink-0 items-center justify-between border-b border-border px-5 pb-3 pt-4">
           <button type="button" onClick={onClose} className="text-[15px] font-semibold text-text-2">Close</button>
           <h2 className="text-[18px] font-bold text-text-1">Manage categories</h2>
           <button type="button" onClick={() => beginEdit('new')} className="text-[15px] font-semibold text-accent">New</button>

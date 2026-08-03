@@ -36,7 +36,7 @@ export function LoginPage() {
               <path d="M10 21v-5a2 2 0 0 1 4 0v5" />
             </svg>
           </div>
-          <h1 className="text-2xl font-extrabold text-text-1 tracking-tight">HomeOS</h1>
+          <h1 className="text-2xl font-extrabold text-text-1 tracking-tight">HOME•OS</h1>
           <p className="text-sm text-text-2 mt-1">Your shared home</p>
         </div>
 

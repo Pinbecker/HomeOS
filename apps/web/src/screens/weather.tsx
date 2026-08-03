@@ -147,26 +147,6 @@ export function WeatherPage() {
     }
   }, [settingsOpen])
 
-  useEffect(() => {
-    const meta = document.querySelector('meta[name="theme-color"]')
-    const previousTheme = meta?.getAttribute('content') ?? null
-    const previousHtmlBg = document.documentElement.style.backgroundColor
-    const previousBodyBg = document.body.style.backgroundColor
-    const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()
-
-    if (appBg) {
-      meta?.setAttribute('content', appBg)
-      document.documentElement.style.backgroundColor = appBg
-      document.body.style.backgroundColor = appBg
-    }
-
-    return () => {
-      if (previousTheme != null) meta?.setAttribute('content', previousTheme)
-      document.documentElement.style.backgroundColor = previousHtmlBg
-      document.body.style.backgroundColor = previousBodyBg
-    }
-  }, [])
-
   function refresh() {
     if (!selectedRef) return
     setLoad(prev => ({ ...prev, loading: true, error: null }))
@@ -178,11 +158,13 @@ export function WeatherPage() {
   const snapshot = load.snapshot
 
   return (
-    <ScreenShell title="Weather" showHeader={false} contentClassName="flex-1 pb-0">
-      <div className="bg-bg text-text-1">
-        <div className="sticky top-0 z-30 border-b border-border bg-bg px-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
-          <div className="flex items-center justify-between pb-2 pt-[calc(env(safe-area-inset-top)+8px)]">
-              <a href="/" className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Back">
+    <ScreenShell
+      title="Weather"
+      showHeader={false}
+      topContent={(
+        <div className="weather-topbar border-b border-border bg-bg px-[17px] shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+          <div className="weather-topbar-row items-center pb-2 pt-3">
+              <a href="/" className="family-header-control text-text-1 active:bg-surface-2" aria-label="Back">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
               </a>
               <div className="min-w-0 px-3 text-center">
@@ -190,13 +172,13 @@ export function WeatherPage() {
                 <p className="mt-0.5 truncate text-[12px] font-semibold text-text-2">{snapshot?.location.name ?? 'Forecast'}</p>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={refresh} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Refresh">
+                <button onClick={refresh} className="family-header-control text-text-1 active:bg-surface-2" aria-label="Refresh">
                   <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 ${load.loading ? 'animate-spin' : ''}`}><path d="M15 6a6 6 0 1 0 1 4" /><path d="M15 2v4h-4" /></svg>
                 </button>
-                <button onClick={() => setLocationsOpen(open => !open)} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Locations" aria-expanded={locationsOpen}>
+                <button onClick={() => setLocationsOpen(open => !open)} className="family-header-control text-text-1 active:bg-surface-2" aria-label="Locations" aria-expanded={locationsOpen}>
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 18s6-5.2 6-10A6 6 0 1 0 4 8c0 4.8 6 10 6 10Z" /><circle cx="10" cy="8" r="2" /></svg>
                 </button>
-                <button onClick={() => setSettingsOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-text-1 active:bg-surface-2" aria-label="Settings">
+                <button onClick={() => setSettingsOpen(true)} className="family-header-control text-text-1 active:bg-surface-2" aria-label="Settings">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 0 1-2.83 2.83l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.05a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 0 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 0 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 0 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.05A1.7 1.7 0 0 0 19.4 15Z" /></svg>
                 </button>
               </div>
@@ -220,6 +202,10 @@ export function WeatherPage() {
             </div>
           ) : null}
         </div>
+      )}
+      contentClassName="min-h-0 flex-1 overflow-y-auto overscroll-auto pb-28"
+    >
+      <div className="weather-page family-scroll-contents bg-bg text-text-1">
 
         {!shared.home ? (
           <EmptyWeatherSetup onOpenSettings={() => setSettingsOpen(true)} />
@@ -272,7 +258,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
 
   return (
     <>
-      <section className="relative h-[176px] overflow-hidden border-b border-accent-border px-5 pt-3 text-text-1" style={{ background: 'linear-gradient(145deg, color-mix(in srgb, var(--accent) 16%, var(--surface) 84%) 0%, color-mix(in srgb, var(--accent) 8%, var(--surface) 92%) 58%, var(--surface) 100%)' }}>
+      <section className="weather-current-hero relative overflow-hidden border-b border-accent-border px-5 pt-4 text-text-1" style={weatherHeroStyle(current.conditionTone)}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-[22px] font-bold leading-tight">{snapshot.location.name}</h1>
@@ -280,7 +266,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           </div>
         </div>
 
-        <div className="absolute right-5 top-10 flex h-[70px] w-[70px] items-center justify-center">
+        <div className="weather-current-icon absolute right-5 top-10 flex h-[70px] w-[70px] items-center justify-center">
           <WeatherGlyph icon={icon} className="h-[68px] w-[68px]" eager />
         </div>
 
@@ -298,14 +284,19 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
             ) : null}
           </div>
         </div>
+        <div className="weather-current-stats">
+          <div><span>Feels like</span><strong>{temperature(current.apparentTemperature)}</strong></div>
+          <div><span>Wind</span><strong>{current.windMph ?? '--'} mph</strong></div>
+          <div><span>Humidity</span><strong>{current.humidity ?? '--'}%</strong></div>
+        </div>
       </section>
 
-      <main className="px-0 pb-0 text-text-1">
-        <section className="border-b border-border bg-surface">
+      <main className="weather-forecast px-0 pb-0 text-text-1">
+        <section className="weather-forecast-panel border-b border-border bg-surface">
           <div className="px-5 pb-1.5 pt-3">
             <h2 className="text-[19px] font-bold">10 day forecast</h2>
           </div>
-          <div className="no-scrollbar flex overflow-x-auto px-4">
+          <div className="weather-day-strip no-scrollbar flex overflow-x-auto px-4">
             {snapshot.daily10.map((day, index) => (
               <button
                 key={day.date}
@@ -313,7 +304,7 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
                 onClick={() => {
                   setSelectedDay(index)
                 }}
-                className={`relative flex min-h-[104px] w-[78px] shrink-0 flex-col items-center justify-start border-b-4 px-2 pb-2 pt-1.5 active:bg-accent-bg ${selectedDay === index ? 'border-accent bg-accent-bg' : 'border-transparent'}`}
+                className={`weather-day-button relative flex min-h-[104px] w-[78px] shrink-0 flex-col items-center justify-start border-b-4 px-2 pb-2 pt-1.5 active:bg-accent-bg ${selectedDay === index ? 'weather-day-button--selected border-accent bg-accent-bg' : 'border-transparent'}`}
               >
                 <span className="text-[13px] font-bold text-text-1">{index === 0 ? 'Today' : weekday(day.date)}</span>
                 <span className="mt-0.5 text-[11px] font-semibold text-text-2">{shortDate(day.date)}</span>
@@ -326,12 +317,13 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           </div>
 
           {selectedHours.length > 0 ? (
-            <div className="border-t border-accent-border bg-accent-bg">
+            <div className="weather-hourly-section border-t border-accent-border bg-accent-bg">
               <div className="flex items-center justify-between gap-3 px-5 pb-1.5 pt-2.5">
-                <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-text-2">Hourly</p>
+                <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-text-2">Hourly forecast</p>
+                <p className="weather-selected-day text-right">{selectedDayLabel(selectedDay, pickedDay?.date)}</p>
               </div>
               <div ref={hourlyScrollRef} className="no-scrollbar overflow-x-auto px-4 pb-3">
-                <div className="flex min-w-max overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_1px_0_rgba(255,255,255,0.45)_inset]">
+                <div className="weather-hourly-card flex min-w-max overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_1px_0_rgba(255,255,255,0.45)_inset]">
                   {selectedHours.map((hour, index) => {
                     const showDayBreak = pickedDay ? dateKey(hour.time) !== pickedDay.date && (index === 0 || dateKey(selectedHours[index - 1]?.time) === pickedDay.date) : false
                     return (
@@ -367,9 +359,39 @@ function WeatherForecastView({ snapshot, loading, error }: { snapshot: WeatherSn
           )}
         </section>
 
+        {pickedDay ? <WeatherDayDetail day={pickedDay} selectedDay={selectedDay} /> : null}
+
       </main>
     </>
   )
+}
+
+function WeatherDayDetail({ day, selectedDay }: { day: WeatherSnapshot['daily10'][number]; selectedDay: number }) {
+  const sunLabel = day.sunrise && day.sunset
+    ? `${timeLabel24(day.sunrise)} – ${timeLabel24(day.sunset)}`
+    : '--'
+
+  return (
+    <section className="weather-day-detail px-4 pb-2 pt-4">
+      <div className="mb-2 flex items-center justify-between px-1">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-text-3">Day at a glance</p>
+          <h2>{selectedDayLabel(selectedDay, day.date)}</h2>
+        </div>
+        <WeatherGlyph icon={weatherIcon(day.conditionCode, true)} className="h-9 w-9" />
+      </div>
+      <div className="weather-day-detail-grid">
+        <WeatherMetric label="Rain chance" value={formatPercent(day.rainChance)} />
+        <WeatherMetric label="Wind" value={`${day.windMph ?? '--'} mph`} />
+        <WeatherMetric label="UV index" value={day.uvIndex == null ? '--' : String(day.uvIndex)} />
+        <WeatherMetric label="Daylight" value={sunLabel} />
+      </div>
+    </section>
+  )
+}
+
+function WeatherMetric({ label, value }: { label: string; value: string }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>
 }
 
 function HourlyColumn({ hour, label, isDay, isFirst, selected, onSelect }: { hour: WeatherSnapshot['hourly24'][number]; label: string; isDay: boolean; isFirst: boolean; selected: boolean; onSelect: (element: HTMLButtonElement) => void }) {
@@ -378,7 +400,7 @@ function HourlyColumn({ hour, label, isDay, isFirst, selected, onSelect }: { hou
       <button
         type="button"
         onClick={event => onSelect(event.currentTarget)}
-        className={`flex w-[74px] shrink-0 flex-col items-center px-2 py-2.5 text-center ${isFirst ? '' : 'border-l border-border'} ${selected ? 'bg-accent-bg' : 'bg-surface active:bg-bg'}`}
+        className={`weather-hour-column flex w-[74px] shrink-0 flex-col items-center px-2 py-2.5 text-center ${isFirst ? '' : 'border-l border-border'} ${selected ? 'bg-accent-bg' : 'bg-surface active:bg-bg'}`}
         aria-pressed={selected}
       >
         <span className="h-5 text-[12px] font-bold text-text-1">{label}</span>
@@ -567,6 +589,13 @@ function tinyWeatherStyle(tone?: string): CSSProperties {
     background: `color-mix(in srgb, ${base[0]} 12%, var(--surface))`,
     borderColor: `color-mix(in srgb, ${base[1]} 18%, transparent)`,
     color: base[1],
+  }
+}
+
+function weatherHeroStyle(tone?: string): CSSProperties {
+  const [base, ink] = toneColors(tone)
+  return {
+    background: `radial-gradient(circle at 88% 16%, color-mix(in srgb, ${base} 40%, #fff 60%) 0%, transparent 29%), radial-gradient(circle at -5% 120%, color-mix(in srgb, ${ink} 23%, transparent) 0%, transparent 47%), linear-gradient(143deg, color-mix(in srgb, ${base} 28%, var(--surface) 72%) 0%, color-mix(in srgb, ${base} 12%, var(--surface) 88%) 57%, var(--surface) 100%)`,
   }
 }
 

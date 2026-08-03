@@ -2,21 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { SwipeRow } from '../components/swipe-row'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
+import { displayTvTitle, formatAirtime, formatDuration, formatGuideDate, normalizeTvFollowTitle, stableTvFollowId, tvFollowKey } from '../lib/tv-guide'
 import { ScreenShell } from './shell'
 
-const WATCH_CACHE_KEY = 'homeos:watch-cache:v1'
-const PX_PER_MIN = 3
-const CHANNEL_COL = 56
-const ROW_H = 56
-const HEADER_H = 28
-const DAY_MIN = 1440
-const TRACK_W = DAY_MIN * PX_PER_MIN
-const MIN_BLOCK_W = 14
+const WATCH_CACHE_KEY = 'homeos:watch-cache:v4'
+const LEGACY_WATCH_CACHE_KEYS = ['homeos:watch-cache:v2', 'homeos:watch-cache:v3']
+const PX_PER_MIN = 1.5
+const CHANNEL_COL = 72
+const ROW_H = 64
+const HEADER_H = 34
 
 type FollowedShow = {
   id: string
   title: string
   metadata?: Record<string, unknown> | null
+  updatedAt?: string | number | Date
 }
 type Programme = {
   id: string
@@ -64,10 +64,32 @@ type WatchPayload = {
   tonight: Programme[]
   initialGrid: GridChannel[]
   today: string
+  coverage: GuideCoverage
 }
-type WatchCache = WatchPayload & {
+type GuideDayCoverage = {
+  date: string
+  dayStartMs: number
+  dayEndMs: number
+  programmeCount: number
+  channelCount: number
+  channelTotal: number
+  available: boolean
+  complete: boolean
+}
+type GuideCoverage = {
+  requiredDays: number
+  lastAttemptAt: string | null
+  lastSuccessAt: string | null
+  lastError: string | null
+  sourceUrl: string | null
+  refreshing: boolean
+  availableThrough: string | null
+  days: GuideDayCoverage[]
+}
+type WatchCache = Omit<WatchPayload, 'initialGrid'> & {
   grids: Record<string, GridChannel[]>
   channelDays: Record<string, Programme[]>
+  fetchedAt: number
 }
 type Tab = 'guide' | 'following'
 type GuideView = 'grid' | 'now'
@@ -96,32 +118,6 @@ function normalizeGrid(grid: GridChannel[]): GridChannelView[] {
   }))
 }
 
-function ymd(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function dayLabel(date: Date, index: number) {
-  if (index === 0) return 'Today'
-  if (index === 1) return 'Tomorrow'
-  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })
-}
-
-function hourLabel(hour: number) {
-  const period = hour < 12 ? 'am' : 'pm'
-  const h12 = hour % 12 === 0 ? 12 : hour % 12
-  return `${h12}${period}`
-}
-
-function formatAirtime(value: string | number | Date) {
-  const date = value instanceof Date ? value : new Date(value)
-  return date.toLocaleTimeString('en-GB', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hourCycle: 'h12',
-    timeZone: 'Europe/London',
-  }).replace(':00', '').replace(' ', '')
-}
-
 function channelName(feedId: string) {
   const found = CHANNEL_NAMES.get(feedId)
   return found ?? feedId
@@ -130,19 +126,46 @@ function channelName(feedId: string) {
 function loadWatchCache(): WatchCache | null {
   if (typeof window === 'undefined') return null
   try {
+    for (const key of LEGACY_WATCH_CACHE_KEYS) localStorage.removeItem(key)
     const raw = localStorage.getItem(WATCH_CACHE_KEY)
-    return raw ? JSON.parse(raw) as WatchCache : null
+    if (!raw) return null
+    return JSON.parse(raw) as WatchCache
   } catch {
     return null
   }
 }
 
 function saveWatchCache(cache: WatchCache) {
-  localStorage.setItem(WATCH_CACHE_KEY, JSON.stringify(cache))
+  // Keep only today's grid on disk. Other days stay in memory for the current
+  // session; persisting seven full grids exceeds mobile localStorage quotas.
+  const todayGrid = cache.grids[cache.today]
+  const persistentCache: WatchCache = {
+    ...cache,
+    grids: todayGrid ? { [cache.today]: todayGrid } : {},
+    channelDays: {},
+  }
+  try {
+    localStorage.setItem(WATCH_CACHE_KEY, JSON.stringify(persistentCache))
+  } catch {
+    // Cache writes must never turn a successful network refresh into a UI error.
+    localStorage.removeItem(WATCH_CACHE_KEY)
+  }
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { credentials: 'include', cache: 'no-store' })
+  if (!response.ok) throw new Error(`Request failed with ${response.status}`)
+  return response.json() as Promise<T>
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
   if (!response.ok) throw new Error(`Request failed with ${response.status}`)
   return response.json() as Promise<T>
 }
@@ -165,56 +188,94 @@ function TelevisionIcon({ className = 'h-4 w-4' }: { className?: string }) {
   )
 }
 
+const CHANNEL_BRAND_COLOURS: Record<string, string> = {
+  'BBC One': '#d41446',
+  'BBC Two': '#087f78',
+  ITV1: '#0067a7',
+  'Channel 4': '#1d2228',
+  'Channel 5': '#e51b3e',
+  ITV2: '#d5007f',
+  'BBC Three': '#de1684',
+  'BBC Four': '#65408f',
+  ITV3: '#8a6a3f',
+  ITV4: '#00748d',
+  E4: '#6c247a',
+  More4: '#23864b',
+  Film4: '#d71920',
+  'Sky Mix': '#0756a5',
+  '5USA': '#c51f5d',
+  'U&Dave': '#007ea8',
+}
+
 function ChannelLogo({ logo, name, compact = false }: { logo: string | null; name: string; compact?: boolean }) {
-  if (logo) {
+  if (!logo) {
     return (
-      <div className={`${compact ? 'h-7 w-7 rounded' : 'h-9 w-9 rounded-lg'} flex shrink-0 items-center justify-center overflow-hidden border border-border bg-white`}>
-        <img src={logo} alt={name} loading="lazy" className={compact ? 'h-6 w-6 object-contain' : 'h-8 w-8 object-contain'} />
+      <div className={`${compact ? 'h-7 w-10 rounded' : 'h-9 w-11 rounded-lg'} flex shrink-0 items-center justify-center bg-surface-2`}>
+        <span className="text-[9px] font-extrabold uppercase tracking-tight text-text-2">{name.slice(0, 4)}</span>
       </div>
     )
   }
+
   return (
-    <div className={`${compact ? 'h-7 w-7 rounded' : 'h-9 w-9 rounded-lg'} flex shrink-0 items-center justify-center bg-surface-2`}>
-      <span className="text-[10px] font-bold text-text-2">{name.slice(0, 3)}</span>
+    <div
+      className={`${compact ? 'h-7 w-10 rounded' : 'h-9 w-11 rounded-lg'} flex shrink-0 items-center justify-center overflow-hidden`}
+      style={{ backgroundColor: CHANNEL_BRAND_COLOURS[name] ?? '#26313d' }}
+    >
+      <img src={logo} alt={name} loading="lazy" className="h-full w-full object-contain p-0.5" />
     </div>
   )
 }
 
 export function WatchPage() {
   const currentUser = useSessionState(state => state.user)
-  const stateFollowed = useAppState(state => state.data.items
+  const followedRows = useAppState(state => state.data.items
     .filter(item => item.type === 'watchlist_tv' && item.status === 'active' && !item.deletedAt)
     .sort((a, b) => a.title.localeCompare(b.title)) as FollowedShow[])
-  const users = useAppState(state => state.data.users)
+  const stateFollowed = useMemo(() => {
+    const chosen = new Map<string, FollowedShow>()
+    for (const show of followedRows) {
+      const key = tvFollowKey(show)
+      const existing = chosen.get(key)
+      if (!existing || new Date(show.updatedAt ?? 0).getTime() > new Date(existing.updatedAt ?? 0).getTime()) chosen.set(key, show)
+    }
+    return [...chosen.values()].sort((a, b) => a.title.localeCompare(b.title))
+  }, [followedRows])
   const householdId = useAppState(state => state.data.household[0]?.id ?? 'default')
   const [tab, setTab] = useState<Tab>('guide')
-  const [guideView, setGuideView] = useState<GuideView>('grid')
+  const [guideView, setGuideView] = useState<GuideView>('now')
   const [cache, setCache] = useState<WatchCache | null>(() => loadWatchCache())
   const [loading, setLoading] = useState(!cache)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [followError, setFollowError] = useState<string | null>(null)
+  const pendingFollowKeys = useRef(new Set<string>())
 
   useEffect(() => {
     let cancelled = false
     setLoading(!cache)
+    setLoadError(null)
     fetchJson<WatchPayload>('/api/watch/initial')
       .then(payload => {
         if (cancelled) return
+        const { initialGrid, ...payloadWithoutInitialGrid } = payload
         const next: WatchCache = {
-          ...payload,
+          ...payloadWithoutInitialGrid,
           grids: {
-            ...(cache?.grids ?? {}),
-            [payload.today]: payload.initialGrid,
+            [payload.today]: initialGrid,
           },
           channelDays: cache?.channelDays ?? {},
+          fetchedAt: Date.now(),
         }
         setCache(next)
         saveWatchCache(next)
       })
-      .catch(() => undefined)
+      .catch(error => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : 'The TV guide could not be refreshed')
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [])
 
-  const followedTitles = useMemo(() => new Set(stateFollowed.map(show => show.title.toLowerCase())), [stateFollowed])
+  const followedTitles = useMemo(() => new Set(stateFollowed.map(show => tvFollowKey(show))), [stateFollowed])
   const tabs = [
     { id: 'guide' as const, label: 'TV Guide' },
     { id: 'following' as const, label: `Following${stateFollowed.length > 0 ? ` (${stateFollowed.length})` : ''}` },
@@ -223,65 +284,149 @@ export function WatchPage() {
   async function toggleFollow(title: string, channel: string, posterUrl: string | null) {
     const cleanTitle = title.trim()
     if (!cleanTitle) return
-    const existing = getCurrentState().data.items.filter(item => item.type === 'watchlist_tv' && item.title.toLowerCase() === cleanTitle.toLowerCase() && !item.deletedAt)
+    const followKey = normalizeTvFollowTitle(cleanTitle)
+    if (!followKey || pendingFollowKeys.current.has(followKey)) return
+    pendingFollowKeys.current.add(followKey)
+    setFollowError(null)
 
-    if (existing.length > 0) {
-      const now = new Date().toISOString()
-      for (const item of existing) {
-        const payload = { ...item, deletedAt: now, updatedAt: now }
-        await enqueueMutation({
-          id: makeId('mutation'),
-          name: 'watch.delete',
-          entityType: 'item',
-          entityId: item.id,
-          operation: 'delete',
-          payload: null,
-        }, prev => ({
-          ...prev,
-          data: { ...prev.data, items: prev.data.items.map(row => row.id === item.id ? { ...row, ...payload } : row) },
-        }))
+    try {
+      const matching = getCurrentState().data.items.filter(item => item.type === 'watchlist_tv' && tvFollowKey(item) === followKey)
+      const active = matching.filter(item => !item.deletedAt)
+
+      if (active.length > 0) {
+        const now = new Date().toISOString()
+        for (const item of active) {
+          const payload = { ...item, deletedAt: now, updatedAt: now }
+          await enqueueMutation({
+            id: makeId('mutation'),
+            name: 'watch.delete',
+            entityType: 'item',
+            entityId: item.id,
+            operation: 'delete',
+            payload: null,
+          }, prev => ({
+            ...prev,
+            data: { ...prev.data, items: prev.data.items.map(row => row.id === item.id ? { ...row, ...payload } : row) },
+          }))
+        }
+        return
       }
-      return
-    }
 
-    const id = makeId('watch')
-    const now = new Date().toISOString()
-    const tvmazeShow = await resolveWatchShow(cleanTitle)
-    const payload = {
-      id,
-      householdId,
-      createdById: currentUser?.id ?? 'system',
-      type: 'watchlist_tv',
-      title: cleanTitle,
-      status: 'active',
-      metadata: {
-        showName: tvmazeShow?.name ?? cleanTitle,
-        channel,
-        posterUrl,
-        following: true,
-        matchMode: 'new_only',
-        tvmazeId: tvmazeShow?.id ?? null,
-      },
-      createdAt: now,
-      updatedAt: now,
+      const reusable = matching
+        .filter(item => item.deletedAt)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+      const id = reusable?.id ?? stableTvFollowId(householdId, followKey)
+      const now = new Date().toISOString()
+      const canonicalTitle = displayTvTitle(cleanTitle)
+      const payload = {
+        ...(reusable ?? {}),
+        id,
+        householdId,
+        createdById: reusable?.createdById ?? currentUser?.id ?? 'system',
+        type: 'watchlist_tv',
+        title: canonicalTitle,
+        status: 'active',
+        metadata: {
+          ...(reusable?.metadata ?? {}),
+          metadataVersion: 2,
+          followKey,
+          canonicalTitle,
+          showName: canonicalTitle,
+          channel,
+          channelMode: 'any_channel',
+          posterUrl,
+          following: true,
+          matchMode: 'all_airings',
+          tvmazeId: typeof reusable?.metadata?.tvmazeId === 'number' ? reusable.metadata.tvmazeId : null,
+        },
+        deletedAt: null,
+        createdAt: reusable?.createdAt ?? now,
+        updatedAt: now,
+      }
+      await enqueueMutation({
+        id: makeId('mutation'),
+        name: 'watch.upsert',
+        entityType: 'item',
+        entityId: id,
+        operation: 'upsert',
+        payload,
+      }, prev => ({
+        ...prev,
+        data: {
+          ...prev.data,
+          items: prev.data.items.some(row => row.id === id)
+            ? prev.data.items.map(row => row.id === id ? { ...row, ...payload } : row)
+            : [...prev.data.items, payload],
+        },
+      }))
+
+      const tvmazeShow = await resolveWatchShow(canonicalTitle)
+      const current = getCurrentState().data.items.find(item => item.id === id && !item.deletedAt)
+      if (!tvmazeShow || !current) return
+      const enriched = {
+        ...current,
+        metadata: {
+          ...(current.metadata ?? {}),
+          canonicalTitle: tvmazeShow.name,
+          showName: tvmazeShow.name,
+          tvmazeId: tvmazeShow.id,
+        },
+        updatedAt: new Date().toISOString(),
+      }
+      await enqueueMutation({
+        id: makeId('mutation'),
+        name: 'watch.upsert',
+        entityType: 'item',
+        entityId: id,
+        operation: 'upsert',
+        payload: enriched,
+      }, prev => ({
+        ...prev,
+        data: { ...prev.data, items: prev.data.items.map(row => row.id === id ? { ...row, ...enriched } : row) },
+      }))
+    } catch (error) {
+      setFollowError(error instanceof Error ? error.message : 'Following did not save')
+    } finally {
+      pendingFollowKeys.current.delete(followKey)
     }
-    await enqueueMutation({
-      id: makeId('mutation'),
-      name: 'watch.upsert',
-      entityType: 'item',
-      entityId: id,
-      operation: 'upsert',
-      payload,
-    }, prev => ({ ...prev, data: { ...prev.data, items: [...prev.data.items, payload] } }))
+  }
+
+  async function updateFollowSettings(show: FollowedShow, changes: Record<string, unknown>) {
+    const current = getCurrentState().data.items.find(item => item.id === show.id && !item.deletedAt)
+    if (!current) return
+    const payload = {
+      ...current,
+      metadata: { ...(current.metadata ?? {}), ...changes, metadataVersion: 2, followKey: tvFollowKey(current) },
+      updatedAt: new Date().toISOString(),
+    }
+    try {
+      await enqueueMutation({
+        id: makeId('mutation'),
+        name: 'watch.upsert',
+        entityType: 'item',
+        entityId: current.id,
+        operation: 'upsert',
+        payload,
+      }, prev => ({
+        ...prev,
+        data: { ...prev.data, items: prev.data.items.map(item => item.id === current.id ? { ...item, ...payload } : item) },
+      }))
+    } catch (error) {
+      setFollowError(error instanceof Error ? error.message : 'Follow settings did not save')
+    }
   }
 
   return (
     <ScreenShell title="Watch" showHeader={false}>
       <div className="mx-auto flex max-w-lg flex-col pb-4">
-        <header className="px-5 pt-5 pb-4">
+        <header className="family-specialty-header px-5 pt-3 pb-3">
           <h1 className="text-[22px] font-extrabold tracking-tight text-text-1">Watch</h1>
-          <p className="mt-0.5 text-[13px] text-text-2">UK Freeview · what's on now</p>
+          <p className="mt-0.5 text-[13px] text-text-2">UK Freeview · now, tonight and next</p>
+          {cache?.coverage.availableThrough ? <p className="mt-1 text-[10.5px] text-text-3">Listings through {new Date(cache.coverage.availableThrough).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p> : null}
         </header>
+
+        {followError ? <div className="mx-4 mb-3 rounded-xl border border-red-500/25 bg-red-500/8 px-3 py-2 text-[12px] text-red-600">{followError}</div> : null}
+        {loadError ? <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-[12px] text-amber-700"><span>{cache ? 'Showing saved listings; refresh failed.' : 'The TV guide could not be loaded.'}</span><button onClick={() => window.location.reload()} className="font-bold">Retry</button></div> : null}
 
         <div className="mb-4 flex gap-2 px-4">
           {tabs.map(item => (
@@ -301,11 +446,11 @@ export function WatchPage() {
               <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
                 <button onClick={() => setGuideView('grid')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors ${guideView === 'grid' ? 'bg-accent text-white' : 'text-text-2'}`}>
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5"><rect x="1.5" y="2.5" width="13" height="4" rx="1" /><rect x="1.5" y="9.5" width="13" height="4" rx="1" /></svg>
-                  Grid
+                  Timeline
                 </button>
                 <button onClick={() => setGuideView('now')} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors ${guideView === 'now' ? 'bg-accent text-white' : 'text-text-2'}`}>
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="h-3.5 w-3.5"><path d="M3 4h10M3 8h10M3 12h10" /></svg>
-                  Now
+                  On now
                 </button>
               </div>
             </div>
@@ -313,11 +458,11 @@ export function WatchPage() {
             {guideView === 'grid' ? (
               <TvGrid cache={cache} setCache={setCache} followedTitles={followedTitles} onToggleFollow={toggleFollow} loading={loading} />
             ) : (
-              <TvGuide channels={normalizeChannels(cache?.channels ?? [])} followedTitles={followedTitles} onToggleFollow={toggleFollow} loading={loading} />
+              <TvGuide channels={normalizeChannels(cache?.channels ?? [])} todayGrid={normalizeGrid(cache?.grids?.[cache?.today ?? ''] ?? [])} followedTitles={followedTitles} onToggleFollow={toggleFollow} loading={loading} />
             )}
           </>
         ) : (
-          <FollowingList followedShows={stateFollowed} tonight={(cache?.tonight ?? []).map(programme => toProgramme(programme)).filter(Boolean) as ProgrammeView[]} onUnfollow={title => toggleFollow(title, '', null)} />
+          <FollowingList followedShows={stateFollowed} onUnfollow={title => toggleFollow(title, '', null)} onUpdateSettings={updateFollowSettings} />
         )}
       </div>
     </ScreenShell>
@@ -325,131 +470,178 @@ export function WatchPage() {
 }
 
 function TvGrid({ cache, setCache, followedTitles, onToggleFollow, loading }: { cache: WatchCache | null; setCache: (value: WatchCache) => void; followedTitles: Set<string>; onToggleFollow: (title: string, channel: string, posterUrl: string | null) => void; loading: boolean }) {
-  const today = cache?.today ?? ymd(new Date())
-  const days = useMemo(() => {
-    const base = new Date()
-    base.setHours(0, 0, 0, 0)
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(base)
-      date.setDate(base.getDate() + index)
-      return date
-    })
-  }, [])
+  const today = cache?.today ?? ''
+  const days = cache?.coverage.days ?? []
   const [selected, setSelected] = useState(today)
   const [sheet, setSheet] = useState<{ programme: ProgrammeView; channel: string } | null>(null)
   const [loadingDay, setLoadingDay] = useState(false)
+  const [dayError, setDayError] = useState<string | null>(null)
+  const [clock, setClock] = useState(() => Date.now())
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { setSelected(today) }, [today])
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!cache || cache.grids[selected]) return
     let cancelled = false
     setLoadingDay(true)
+    setDayError(null)
     fetchJson<GridChannel[]>(`/api/watch/grid/${selected}`)
       .then(grid => {
         if (cancelled) return
-        const next = { ...cache, grids: { ...cache.grids, [selected]: grid } }
+        const next = {
+          ...cache,
+          fetchedAt: Date.now(),
+          grids: {
+            ...(cache.grids[cache.today] ? { [cache.today]: cache.grids[cache.today] } : {}),
+            [selected]: grid,
+          },
+        }
         setCache(next)
         saveWatchCache(next)
       })
-      .catch(() => undefined)
+      .catch(error => { if (!cancelled) setDayError(error instanceof Error ? error.message : 'Listings could not be loaded') })
       .finally(() => { if (!cancelled) setLoadingDay(false) })
     return () => { cancelled = true }
   }, [selected, cache, setCache])
 
   const channels = normalizeGrid(cache?.grids?.[selected] ?? [])
-  const dayStart = useMemo(() => {
-    const [year, month, day] = selected.split('-').map(Number)
-    return new Date(year, month - 1, day)
-  }, [selected])
+  const day = days.find(value => value.date === selected)
+  const dayStartMs = day?.dayStartMs ?? 0
+  const dayEndMs = day?.dayEndMs ?? dayStartMs + 24 * 60 * 60 * 1000
+  const dayMinutes = Math.max(1, (dayEndMs - dayStartMs) / 60_000)
+  const trackWidth = dayMinutes * PX_PER_MIN
   const isToday = selected === today
-  const now = new Date()
-  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const nowMin = (clock - dayStartMs) / 60_000
   const nowOffset = nowMin * PX_PER_MIN
   const rowsH = channels.length * ROW_H
+  const hourCount = Math.ceil(dayMinutes / 60)
+
+  function jumpToMinute(minute: number) {
+    const element = scrollRef.current
+    if (!element) return
+    element.scrollTo({ left: Math.max(0, minute * PX_PER_MIN - 120), behavior: 'smooth' })
+  }
 
   useEffect(() => {
-    const element = scrollRef.current
-    if (!element || !channels.length || !isToday) return
-    element.scrollLeft = Math.max(0, nowMin * PX_PER_MIN - 60)
-  }, [channels.length, isToday, nowMin])
+    if (!scrollRef.current || !channels.length) return
+    const initialMinute = isToday ? nowMin : 18 * 60
+    scrollRef.current.scrollLeft = Math.max(0, initialMinute * PX_PER_MIN - 120)
+  }, [channels.length, isToday, selected])
 
   return (
     <div className="px-4 pb-6">
       <div className="no-scrollbar flex gap-2 overflow-x-auto pb-3">
-        {days.map((date, index) => {
-          const key = ymd(date)
-          const active = key === selected
+        {days.map(value => {
+          const active = value.date === selected
+          const label = formatGuideDate(value.date, today)
           return (
-            <button key={key} onClick={() => setSelected(key)} className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${active ? 'bg-accent text-white' : 'border border-border bg-surface text-text-2'}`}>
-              {dayLabel(date, index)}
+            <button
+              key={value.date}
+              onClick={() => setSelected(value.date)}
+              disabled={!value.available}
+              className={`relative shrink-0 rounded-xl px-3 py-2 text-[12.5px] font-semibold transition-colors ${active ? 'bg-accent text-white' : 'border border-border bg-surface text-text-2'} disabled:opacity-35`}
+            >
+              {label.short}
+              {value.available && !value.complete ? <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" /> : null}
             </button>
           )
         })}
       </div>
 
-      <div ref={scrollRef} className="relative h-[68vh] overflow-auto rounded-2xl border border-border bg-bg">
-        <div className="relative" style={{ width: CHANNEL_COL + TRACK_W }}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[13px] font-bold text-text-1">{selected ? formatGuideDate(selected, today).long : 'Guide'}</p>
+          <p className="text-[10.5px] text-text-3">{day?.complete ? `${day.channelCount} channels` : day?.available ? `Partial listings · ${day.channelCount} channels` : 'Listings unavailable'}</p>
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => jumpToMinute(isToday ? nowMin : 18 * 60)} className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-text-2">{isToday ? 'Now' : '6pm'}</button>
+          <button onClick={() => jumpToMinute(20 * 60)} className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-text-2">8pm</button>
+        </div>
+      </div>
+
+      {cache?.coverage.lastError ? <div className="mb-2 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2 text-[11px] leading-4 text-amber-700">Using the last valid guide. The latest source refresh was incomplete.</div> : null}
+      {dayError ? <div className="mb-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2 text-[11px] text-red-600">{dayError}</div> : null}
+
+      <div ref={scrollRef} className="relative h-[64vh] overflow-auto overscroll-contain rounded-2xl border border-border bg-bg">
+        <div className="relative" style={{ width: CHANNEL_COL + trackWidth }}>
           <div className="sticky top-0 z-30 flex" style={{ height: HEADER_H }}>
             <div className="sticky left-0 z-40 border-r border-b border-border bg-surface" style={{ width: CHANNEL_COL }} />
-            <div className="relative border-b border-border bg-surface" style={{ width: TRACK_W, height: HEADER_H }}>
-              {Array.from({ length: 24 }, (_, hour) => (
-                <span key={hour} className="absolute top-0 pl-1 text-[10.5px] font-bold leading-[28px] text-text-3" style={{ left: hour * 60 * PX_PER_MIN }}>{hourLabel(hour)}</span>
+            <div className="relative border-b border-border bg-surface" style={{ width: trackWidth, height: HEADER_H }}>
+              {Array.from({ length: hourCount }, (_, hour) => (
+                <span key={hour} className="absolute top-0 border-l border-border/60 pl-1.5 text-[10.5px] font-bold leading-[34px] text-text-3" style={{ left: hour * 60 * PX_PER_MIN }}>
+                  {formatAirtime(new Date(dayStartMs + hour * 60 * 60 * 1000))}
+                </span>
               ))}
             </div>
           </div>
 
-          {isToday ? <div className="absolute z-[15] bg-accent" style={{ left: CHANNEL_COL + nowOffset, top: HEADER_H, height: rowsH, width: 2 }} /> : null}
+          {isToday && nowMin >= 0 && nowMin <= dayMinutes ? (
+            <div className="pointer-events-none absolute z-[15] bg-accent" style={{ left: CHANNEL_COL + nowOffset, top: HEADER_H, height: rowsH, width: 2 }}>
+              <span className="absolute -left-[14px] -top-4 rounded bg-accent px-1 py-0.5 text-[8px] font-bold text-white">NOW</span>
+            </div>
+          ) : null}
 
           {channels.map(channel => (
-            <div key={channel.feedId} className="flex border-b border-border" style={{ height: ROW_H }}>
-              <div className="sticky left-0 z-20 flex flex-col items-center justify-center gap-0.5 border-r border-border bg-surface px-1" style={{ width: CHANNEL_COL }}>
+            <div
+              key={channel.feedId}
+              className="flex border-b border-border bg-surface"
+              style={{ height: ROW_H }}
+            >
+              <div className="sticky left-0 z-20 flex flex-col items-center justify-center gap-1 border-r border-border bg-surface px-1" style={{ width: CHANNEL_COL }}>
                 <ChannelLogo logo={channel.logo} name={channel.name} compact />
-                <span className="line-clamp-1 text-center text-[8.5px] font-bold leading-none text-text-2">{channel.name}</span>
+                <span className="line-clamp-1 text-center text-[8px] font-bold leading-none text-text-2">{channel.name}</span>
               </div>
-              <div className="relative bg-surface" style={{ width: TRACK_W, height: ROW_H }}>
+              <div className="relative overflow-hidden bg-transparent" style={{ width: trackWidth, height: ROW_H }}>
                 {channel.programmes.map(programme => {
-                  const startMin = (programme.startsAt.getTime() - dayStart.getTime()) / 60000
-                  const endMin = (programme.endsAt.getTime() - dayStart.getTime()) / 60000
-                  const left = Math.max(0, startMin) * PX_PER_MIN
-                  const right = Math.min(DAY_MIN, endMin) * PX_PER_MIN
-                  const width = Math.max(right - left, MIN_BLOCK_W)
-                  const following = followedTitles.has(programme.title.toLowerCase())
+                  const startMin = (programme.startsAt.getTime() - dayStartMs) / 60000
+                  const endMin = (programme.endsAt.getTime() - dayStartMs) / 60000
+                  const clippedStart = Math.max(0, startMin)
+                  const clippedEnd = Math.min(dayMinutes, endMin)
+                  const left = clippedStart * PX_PER_MIN
+                  const width = Math.max(0, (clippedEnd - clippedStart) * PX_PER_MIN)
+                  if (width <= 0) return null
+                  const following = followedTitles.has(normalizeTvFollowTitle(programme.title))
                   const isPast = isToday && endMin <= nowMin
                   const isNow = isToday && startMin <= nowMin && endMin > nowMin
                   return (
                     <button
                       key={programme.id}
                       onClick={() => setSheet({ programme, channel: channel.name })}
-                      className={`absolute inset-y-0 overflow-hidden border-r border-b border-border px-1.5 py-1 text-left active:bg-bg ${following ? 'bg-sage/12' : isNow ? 'bg-accent/8' : 'bg-surface'} ${isPast ? 'opacity-45' : ''}`}
+                      className={`absolute inset-y-0 min-w-[1px] overflow-hidden border-r border-border px-1.5 py-1.5 text-left active:bg-bg ${following ? 'bg-sage/18' : isNow ? 'bg-accent/12' : 'bg-surface'} ${isPast ? 'opacity-45' : ''}`}
                       style={{ left, width }}
+                      aria-label={`${programme.title}, ${formatAirtime(programme.startsAt)} to ${formatAirtime(programme.endsAt)}`}
                     >
                       {following ? <span className="absolute inset-y-0 left-0 w-[2px] bg-sage" /> : null}
-                      {width >= 50 ? <p className="mb-0.5 text-[9px] leading-none text-text-3">{formatAirtime(programme.startsAt)}</p> : null}
-                      {width >= 26 ? <p className="line-clamp-2 text-[11px] font-semibold leading-[1.15] text-text-1">{programme.title}</p> : null}
+                      {width >= 48 ? <p className="mb-1 text-[9px] leading-none text-text-3">{formatAirtime(programme.startsAt)}</p> : null}
+                      {width >= 24 ? <p className="line-clamp-2 text-[11px] font-semibold leading-[1.15] text-text-1">{displayTvTitle(programme.title)}</p> : null}
                     </button>
                   )
                 })}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-px bg-border" />
               </div>
             </div>
           ))}
 
           {channels.length === 0 ? (
             <div className="px-4 py-10 text-center text-[13px] text-text-3">
-              {loading || loadingDay ? 'Loading listings...' : 'No listings for this day'}
+              {loading || loadingDay ? 'Loading listings…' : 'No listings are available for this day'}
             </div>
           ) : null}
         </div>
       </div>
 
-      {loadingDay && channels.length > 0 ? <p className="mt-2 text-center text-[11px] text-text-3">Loading {selected}...</p> : null}
+      {loadingDay && channels.length > 0 ? <p className="mt-2 text-center text-[11px] text-text-3">Updating listings…</p> : null}
 
       {sheet ? (
         <ProgrammeSheet
           programme={sheet.programme}
           channelName={sheet.channel}
-          isFollowing={followedTitles.has(sheet.programme.title.toLowerCase())}
+          isFollowing={followedTitles.has(normalizeTvFollowTitle(sheet.programme.title))}
           onToggleFollow={() => {
             onToggleFollow(sheet.programme.title, sheet.channel, sheet.programme.iconUrl)
             setSheet(null)
@@ -461,23 +653,44 @@ function TvGrid({ cache, setCache, followedTitles, onToggleFollow, loading }: { 
   )
 }
 
-function TvGuide({ channels, followedTitles, onToggleFollow, loading }: { channels: ChannelView[]; followedTitles: Set<string>; onToggleFollow: (title: string, channel: string, posterUrl: string | null) => void; loading: boolean }) {
+function TvGuide({ channels, todayGrid, followedTitles, onToggleFollow, loading }: { channels: ChannelView[]; todayGrid: GridChannelView[]; followedTitles: Set<string>; onToggleFollow: (title: string, channel: string, posterUrl: string | null) => void; loading: boolean }) {
   const [openChannel, setOpenChannel] = useState<ChannelView | null>(null)
+  const [clock, setClock] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const liveChannels = todayGrid.length
+    ? todayGrid.map(channel => ({
+      feedId: channel.feedId,
+      name: channel.name,
+      logo: channel.logo,
+      now: channel.programmes.find(programme => programme.startsAt.getTime() <= clock && programme.endsAt.getTime() > clock) ?? null,
+      next: channel.programmes.find(programme => programme.startsAt.getTime() > clock) ?? null,
+    }))
+    : channels
   return (
     <>
       <div className="px-4 pb-6">
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-          {channels.map((channel, index) => {
-            const followingNow = channel.now ? followedTitles.has(channel.now.title.toLowerCase()) : false
+          {liveChannels.map((channel, index) => {
+            const followingNow = channel.now ? followedTitles.has(normalizeTvFollowTitle(channel.now.title)) : false
+            const progress = channel.now
+              ? Math.max(0, Math.min(100, ((clock - channel.now.startsAt.getTime()) / (channel.now.endsAt.getTime() - channel.now.startsAt.getTime())) * 100))
+              : 0
             return (
-              <button key={channel.feedId} onClick={() => setOpenChannel(channel)} className={`flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}>
+              <button key={channel.feedId} onClick={() => setOpenChannel(channel)} className={`flex w-full items-center gap-3 px-3 py-3 text-left active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}>
                 <ChannelLogo logo={channel.logo} name={channel.name} />
                 <div className="w-[58px] shrink-0"><p className="text-[12px] font-bold leading-tight text-text-1">{channel.name}</p></div>
                 <div className="min-w-0 flex-1">
                   {channel.now ? (
                     <>
-                      <p className="truncate text-[13px] font-semibold text-text-1">{channel.now.title}{followingNow ? <span className="ml-1.5 text-sage">●</span> : null}</p>
-                      <p className="truncate text-[11px] text-text-2">Now · {channel.next ? `then ${channel.next.title}` : `until ${formatAirtime(channel.now.endsAt)}`}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded bg-accent/10 px-1 py-0.5 text-[8.5px] font-bold uppercase text-accent">Now</span>
+                        <p className="truncate text-[13px] font-semibold text-text-1">{displayTvTitle(channel.now.title)}{followingNow ? <span className="ml-1.5 text-sage">●</span> : null}</p>
+                      </div>
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-2"><span className="block h-full rounded-full bg-accent/60" style={{ width: `${progress}%` }} /></div>
+                      <p className="mt-1 truncate text-[10.5px] text-text-2">{channel.next ? `${formatAirtime(channel.next.startsAt)} · ${displayTvTitle(channel.next.title)}` : `Until ${formatAirtime(channel.now.endsAt)}`}</p>
                     </>
                   ) : (
                     <p className="text-[12.5px] text-text-3">No listings</p>
@@ -487,7 +700,7 @@ function TvGuide({ channels, followedTitles, onToggleFollow, loading }: { channe
               </button>
             )
           })}
-          {channels.length === 0 ? <div className="px-4 py-10 text-center text-[13px] text-text-3">{loading ? 'Loading listings...' : 'No listings available'}</div> : null}
+          {liveChannels.length === 0 ? <div className="px-4 py-10 text-center text-[13px] text-text-3">{loading ? 'Loading listings...' : 'No listings available'}</div> : null}
         </div>
       </div>
       {openChannel ? <ChannelDaySheet channel={openChannel} followedTitles={followedTitles} onToggleFollow={onToggleFollow} onClose={() => setOpenChannel(null)} /> : null}
@@ -495,7 +708,39 @@ function TvGuide({ channels, followedTitles, onToggleFollow, loading }: { channe
   )
 }
 
-function FollowingList({ followedShows, tonight, onUnfollow }: { followedShows: FollowedShow[]; tonight: ProgrammeView[]; onUnfollow: (title: string) => void }) {
+function FollowingList({ followedShows, onUnfollow, onUpdateSettings }: { followedShows: FollowedShow[]; onUnfollow: (title: string) => void; onUpdateSettings: (show: FollowedShow, changes: Record<string, unknown>) => void }) {
+  const [upcoming, setUpcoming] = useState<ProgrammeView[]>([])
+  const [loadingUpcoming, setLoadingUpcoming] = useState(false)
+  const [upcomingError, setUpcomingError] = useState<string | null>(null)
+  const followSignature = followedShows.map(show => `${show.id}:${String(show.metadata?.tvmazeId ?? '')}:${String(show.updatedAt ?? '')}`).join('|')
+
+  useEffect(() => {
+    if (!followedShows.length) {
+      setUpcoming([])
+      return
+    }
+    let cancelled = false
+    setLoadingUpcoming(true)
+    setUpcomingError(null)
+    postJson<Programme[]>('/api/watch/upcoming', {
+      follows: followedShows.map(show => ({
+        title: show.title,
+        followKey: tvFollowKey(show),
+        channel: show.metadata?.channel,
+        channelMode: show.metadata?.channelMode,
+        tvmazeId: show.metadata?.tvmazeId,
+      })),
+    })
+      .then(rows => {
+        if (!cancelled) setUpcoming(rows.map(programme => toProgramme(programme)).filter(Boolean) as ProgrammeView[])
+      })
+      .catch(error => {
+        if (!cancelled) setUpcomingError(error instanceof Error ? error.message : 'Upcoming listings could not be loaded')
+      })
+      .finally(() => { if (!cancelled) setLoadingUpcoming(false) })
+    return () => { cancelled = true }
+  }, [followSignature])
+
   if (followedShows.length === 0) {
     return (
       <div className="mx-4 rounded-2xl border border-border bg-surface px-5 py-8 text-center">
@@ -504,30 +749,54 @@ function FollowingList({ followedShows, tonight, onUnfollow }: { followedShows: 
       </div>
     )
   }
-  const tonightByTitle = new Map<string, ProgrammeView>()
-  for (const programme of tonight) {
-    const key = programme.title.toLowerCase()
-    if (!tonightByTitle.has(key)) tonightByTitle.set(key, programme)
+  const upcomingByTitle = new Map<string, ProgrammeView>()
+  for (const programme of upcoming) {
+    const key = normalizeTvFollowTitle(programme.title)
+    if (!upcomingByTitle.has(key)) upcomingByTitle.set(key, programme)
   }
   return (
     <div className="px-4 pb-6">
+      <div className="mb-3 rounded-2xl border border-border bg-surface px-4 py-3">
+        <p className="text-[12px] font-bold text-text-1">Next airings</p>
+        <p className="mt-0.5 text-[11px] text-text-2">
+          {loadingUpcoming ? 'Checking the guide…' : upcomingError ? 'Could not update next airings' : upcoming.length ? `${upcoming.length} matching airing${upcoming.length === 1 ? '' : 's'} in the available guide` : 'Nothing scheduled in the available guide'}
+        </p>
+      </div>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         {followedShows.map((show, index) => {
           const meta = show.metadata ?? null
           const posterUrl = typeof meta?.posterUrl === 'string' ? meta.posterUrl : null
-          const channel = typeof meta?.channel === 'string' ? meta.channel : null
-          const onTonight = tonightByTitle.get(show.title.toLowerCase())
+          const title = typeof meta?.canonicalTitle === 'string' ? meta.canonicalTitle : show.title
+          const nextAiring = upcomingByTitle.get(tvFollowKey(show))
           return (
             <SwipeRow key={show.id} wrapClassName={index > 0 ? 'border-t border-border' : ''} onDelete={() => onUnfollow(show.title)} deleteLabel="Unfollow">
               <div className="flex items-center gap-3 px-3 py-3">
                 <div className="flex h-[42px] w-[28px] shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-2">
-                  {posterUrl ? <img src={posterUrl} alt={show.title} loading="lazy" className="h-full w-full object-cover" /> : <TelevisionIcon className="h-4 w-4 text-text-3" />}
+                  {posterUrl ? <img src={posterUrl} alt={title} loading="lazy" className="h-full w-full object-cover" /> : <TelevisionIcon className="h-4 w-4 text-text-3" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] font-semibold text-text-1">{show.title}</p>
-                  {channel ? <p className="text-[11.5px] text-text-2">{channel}</p> : null}
+                  <p className="truncate text-[13.5px] font-semibold text-text-1">{title}</p>
+                  <div className="mt-1 flex gap-1.5">
+                    <button
+                      onClick={() => onUpdateSettings(show, { matchMode: meta?.matchMode === 'all_airings' ? 'new_only' : 'all_airings' })}
+                      className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-text-2"
+                    >
+                      {meta?.matchMode === 'all_airings' ? 'All airings' : 'New episodes'}
+                    </button>
+                    <button
+                      onClick={() => onUpdateSettings(show, { channelMode: meta?.channelMode === 'selected_channel' ? 'any_channel' : 'selected_channel' })}
+                      className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9.5px] font-semibold text-text-2"
+                    >
+                      {meta?.channelMode === 'selected_channel' ? String(meta.channel ?? 'This channel') : 'Any channel'}
+                    </button>
+                  </div>
                 </div>
-                {onTonight ? <span className="shrink-0 rounded-lg bg-sage/15 px-2 py-0.5 text-[10.5px] font-bold text-sage">{formatAirtime(onTonight.startsAt)} · {channelName(onTonight.channelId)}</span> : null}
+                {nextAiring ? (
+                  <div className="shrink-0 text-right">
+                    <p className="text-[10.5px] font-bold text-sage">{formatAirtime(nextAiring.startsAt)}</p>
+                    <p className="max-w-[90px] truncate text-[9.5px] text-text-3">{nextAiring.startsAt.toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short' })} · {channelName(nextAiring.channelId)}</p>
+                  </div>
+                ) : null}
               </div>
             </SwipeRow>
           )
@@ -550,8 +819,9 @@ function ProgrammeSheet({ programme, channelName: name, isFollowing, onToggleFol
           </button>
         </div>
         <div className="px-5 pt-1 pb-2">
-          <h2 className="mb-1 text-[20px] font-extrabold leading-tight text-text-1">{programme.title}</h2>
-          <p className="mb-3 text-[13px] text-text-2">{name} · {formatAirtime(programme.startsAt)}-{formatAirtime(programme.endsAt)}{programme.episodeNum ? ` · ${programme.episodeNum}` : ''}</p>
+          <h2 className="mb-1 text-[20px] font-extrabold leading-tight text-text-1">{displayTvTitle(programme.title)}</h2>
+          <p className="mb-1 text-[13px] text-text-2">{name} · {formatAirtime(programme.startsAt)}–{formatAirtime(programme.endsAt)} · {formatDuration(programme.startsAt, programme.endsAt)}</p>
+          <p className="mb-3 text-[11px] text-text-3">{programme.startsAt.toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'long', day: 'numeric', month: 'long' })}{programme.episodeNum ? ` · ${programme.episodeNum}` : ''}</p>
           {programme.description ? <p className="mb-5 line-clamp-5 text-[13.5px] leading-relaxed text-text-2">{programme.description}</p> : <div className="mb-5" />}
         </div>
         <div className="px-5">
@@ -566,8 +836,8 @@ function ProgrammeSheet({ programme, channelName: name, isFollowing, onToggleFol
 
 function ChannelDaySheet({ channel, followedTitles, onToggleFollow, onClose }: { channel: ChannelView; followedTitles: Set<string>; onToggleFollow: (title: string, channel: string, posterUrl: string | null) => void; onClose: () => void }) {
   const [programmes, setProgrammes] = useState<ProgrammeView[] | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const nowRef = useRef<HTMLDivElement>(null)
-  const now = Date.now()
 
   useEffect(() => {
     let cancelled = false
@@ -576,6 +846,11 @@ function ChannelDaySheet({ channel, followedTitles, onToggleFollow, onClose }: {
       .catch(() => { if (!cancelled) setProgrammes([]) })
     return () => { cancelled = true }
   }, [channel.feedId])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (programmes && nowRef.current) nowRef.current.scrollIntoView({ block: 'center' })
@@ -598,7 +873,7 @@ function ChannelDaySheet({ channel, followedTitles, onToggleFollow, onClose }: {
           {programmes?.map(programme => {
             const isNow = programme.startsAt.getTime() <= now && programme.endsAt.getTime() > now
             const isPast = programme.endsAt.getTime() <= now
-            const following = followedTitles.has(programme.title.toLowerCase())
+            const following = followedTitles.has(normalizeTvFollowTitle(programme.title))
             return (
               <div key={programme.id} ref={isNow ? nowRef : undefined} className={`flex items-start gap-3 rounded-xl px-2 py-2.5 ${isNow ? 'bg-accent/8' : ''}`}>
                 <div className="w-[44px] shrink-0 pt-0.5">

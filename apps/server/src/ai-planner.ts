@@ -2,6 +2,7 @@ import { AI_PLAN_JSON_SCHEMA, aiPlanSchema, makeInboxPlan, type AiPlan } from '.
 import type { AiPlanningContext } from './ai-context'
 
 const TRIAGE_MODEL = process.env.AI_TRIAGE_MODEL || 'gpt-5.4-mini'
+const CALENDAR_TASK_MODEL = process.env.AI_CALENDAR_TASK_MODEL || TRIAGE_MODEL
 const TRANSCRIBE_MODEL = process.env.AI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe'
 
 const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
@@ -43,6 +44,125 @@ export type AiPlanningResult = {
   plan: AiPlan
   model: string
   rawModelOutput: string | null
+}
+
+export type ShoppingCategory = { title: string; category: string }
+
+export type CalendarTaskSuggestion = {
+  eventId: string
+  title: string
+  dueDate: string
+  reason: string
+}
+
+export async function extractCalendarTasks(events: Array<{ id: string; title: string; description?: string | null; location?: string | null; startsAt: Date }>): Promise<CalendarTaskSuggestion[]> {
+  const compactEvents = events.slice(0, 30).map(event => ({
+    id: event.id,
+    title: event.title.trim().slice(0, 140),
+    description: event.description?.trim().slice(0, 240) || null,
+    location: event.location?.trim().slice(0, 100) || null,
+    startsAt: event.startsAt.toISOString(),
+  }))
+  if (!compactEvents.length) return []
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured')
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CALENDAR_TASK_MODEL,
+      input: [
+        { role: 'system', content: 'Extract only concrete household follow-up actions explicitly implied by these upcoming calendar events. Do not create a task merely to attend an event. Keep titles short and actionable. Use the event start time as dueDate unless its text gives a clear earlier deadline. Return at most 8 suggestions.' },
+        { role: 'user', content: JSON.stringify(compactEvents) },
+      ],
+      reasoning: { effort: 'low' },
+      max_output_tokens: 700,
+      text: { format: { type: 'json_schema', name: 'calendar_task_suggestions', strict: true, schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['tasks'],
+        properties: {
+          tasks: {
+            type: 'array',
+            maxItems: 8,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['eventId', 'title', 'dueDate', 'reason'],
+              properties: {
+                eventId: { type: 'string' },
+                title: { type: 'string' },
+                dueDate: { type: 'string' },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      } } },
+    }),
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`OpenAI calendar extraction failed (${response.status}): ${detail.slice(0, 300)}`)
+  }
+
+  const outputText = extractResponseText(await response.json())
+  if (!outputText) throw new Error('OpenAI calendar extraction returned no text output')
+  const parsed = JSON.parse(outputText) as { tasks?: unknown }
+  const eventIds = new Set(compactEvents.map(event => event.id))
+  return Array.isArray(parsed.tasks) ? parsed.tasks.flatMap(row => {
+    if (!row || typeof row !== 'object') return []
+    const task = row as Record<string, unknown>
+    const eventId = typeof task.eventId === 'string' ? task.eventId.trim() : ''
+    const title = typeof task.title === 'string' ? task.title.trim().slice(0, 140) : ''
+    const reason = typeof task.reason === 'string' ? task.reason.trim().slice(0, 180) : ''
+    const dueDate = typeof task.dueDate === 'string' ? new Date(task.dueDate) : null
+    if (!eventIds.has(eventId) || !title || !dueDate || Number.isNaN(dueDate.getTime())) return []
+    return [{ eventId, title, reason, dueDate: dueDate.toISOString() }]
+  }).slice(0, 8) : []
+}
+
+export async function categorizeShoppingItems(items: string[]): Promise<ShoppingCategory[]> {
+  const cleanItems = [...new Set(items.map(item => item.trim()).filter(Boolean))]
+  if (!cleanItems.length) return []
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured')
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: TRIAGE_MODEL,
+      input: [
+        { role: 'system', content: 'You organise a UK household shopping list. Assign every supplied item to one short familiar supermarket category. Use only these consistent categories: Bakery, Chilled, Dairy & Eggs, Drinks, Fruit & Vegetables, Meat & Fish, Pantry, Snacks & Sweets, Frozen, Household, or Other. Use Other only when none of the other categories fits. Do not alter titles or add items.' },
+        { role: 'user', content: JSON.stringify({ items: cleanItems }) },
+      ],
+      reasoning: { effort: 'low' },
+      text: { format: { type: 'json_schema', name: 'shopping_categories', strict: true, schema: {
+        type: 'object', additionalProperties: false, required: ['items'], properties: {
+          items: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string' } } }, minItems: cleanItems.length, maxItems: cleanItems.length },
+        },
+      } } },
+    }),
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`OpenAI categorisation failed (${response.status}): ${detail.slice(0, 300)}`)
+  }
+  const outputText = extractResponseText(await response.json())
+  if (!outputText) throw new Error('OpenAI categorisation returned no text output')
+  const parsed = JSON.parse(outputText) as { items?: unknown }
+  const requested = new Map(cleanItems.map(item => [item.toLocaleLowerCase(), item]))
+  const result = Array.isArray(parsed.items) ? parsed.items.flatMap(row => {
+    if (!row || typeof row !== 'object') return []
+    const value = row as { title?: unknown; category?: unknown }
+    const title = typeof value.title === 'string' ? requested.get(value.title.trim().toLocaleLowerCase()) : null
+    const category = typeof value.category === 'string' ? value.category.trim().slice(0, 40) : ''
+    return title && category ? [{ title, category }] : []
+  }) : []
+  const categories = new Map(result.map(row => [row.title.toLocaleLowerCase(), row]))
+  return cleanItems.map(title => categories.get(title.toLocaleLowerCase()) ?? { title, category: 'Other' })
 }
 
 function normaliseMimeType(type: string) {

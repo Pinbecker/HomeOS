@@ -1,109 +1,79 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  Bell,
   CalendarDays,
-  Clapperboard,
+  ChevronLeft,
   CircleDot,
+  Clapperboard,
+  CloudSun,
   Droplet,
-  Grid3X3,
-  House,
+  FileText,
+  Grid2X2,
+  Home,
   Inbox,
   ListChecks,
-  ShieldCheck,
-  ShoppingBag,
+  NotebookPen,
+  PackageCheck,
+  ShoppingBasket,
+  Trash2,
   Tv,
   Users,
+  Utensils,
   X,
   type LucideIcon,
 } from 'lucide-react'
 
-type Tab = {
-  href: string
-  label: string
-  exact?: boolean
-  color: string
-  icon: LucideIcon
+type LinkItem = { href: string; label: string; color: string; icon: LucideIcon }
+
+const drawerGroups: Array<{ label: string; items: LinkItem[] }> = [
+  {
+    label: 'Everyday',
+    items: [
+      { href: '/', label: 'Home', color: '#2787D8', icon: Home },
+      { href: '/calendar', label: 'Calendar', color: '#2787D8', icon: CalendarDays },
+      { href: '/household/tasks', label: 'Tasks', color: '#EF9B2D', icon: ListChecks },
+      { href: '/household/shopping', label: 'Shopping', color: '#49A96F', icon: ShoppingBasket },
+      { href: '/household/shopping/meals', label: 'Meals', color: '#E36574', icon: Utensils },
+      { href: '/inbox', label: 'Capture', color: '#7D73D8', icon: Inbox },
+      { href: '/notes', label: 'Notes', color: '#D5A22D', icon: NotebookPen },
+    ],
+  },
+  {
+    label: 'Home & family',
+    items: [
+      { href: '/household', label: 'Household', color: '#2EA7A0', icon: Users },
+      { href: '/life/admin', label: 'Vault', color: '#6471C9', icon: FileText },
+      { href: '/reminders', label: 'Reminders', color: '#E17055', icon: Bell },
+      { href: '/household/bins', label: 'Bins', color: '#4D8E74', icon: Trash2 },
+      { href: '/household/plans', label: 'House plans', color: '#A26D45', icon: PackageCheck },
+      { href: '/more', label: 'More', color: '#2EA7A0', icon: Grid2X2 },
+    ],
+  },
+  {
+    label: 'Weather & entertainment',
+    items: [
+      { href: '/weather', label: 'Weather', color: '#47A5D9', icon: CloudSun },
+      { href: '/watch', label: 'Watch', color: '#DC3B42', icon: Tv },
+      { href: '/media', label: 'Media', color: '#AF52DE', icon: Clapperboard },
+    ],
+  },
+  {
+    label: 'Personal',
+    items: [
+      { href: '/cycle-tracker', label: 'Cycle', color: '#C04A7A', icon: Droplet },
+      { href: '/ulcer-tracker', label: 'Ulcers', color: '#E25555', icon: CircleDot },
+    ],
+  },
+]
+
+const drawerItems = drawerGroups.flatMap(group => group.items)
+
+function activeDrawerHref(pathname: string) {
+  if (pathname.startsWith('/life/')) return '/life/admin'
+  return drawerItems
+    .filter(item => item.href === '/' ? pathname === '/' : pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null
 }
-
-type MenuItem = { href: string; label: string; color: string; icon: LucideIcon }
-
-const leftTabs: Tab[] = [
-  {
-    href: '/',
-    label: 'Home',
-    exact: true,
-    color: '#007AFF',
-    icon: House,
-  },
-  {
-    href: '/household/shopping',
-    label: 'Shopping',
-    color: '#34C759',
-    icon: ShoppingBag,
-  },
-]
-
-const rightTabs: Tab[] = [
-  {
-    href: '/calendar',
-    label: 'Calendar',
-    color: '#32ADE6',
-    icon: CalendarDays,
-  },
-  {
-    href: '/household/tasks',
-    label: 'Tasks',
-    color: '#FF9500',
-    icon: ListChecks,
-  },
-]
-
-const menuItems: MenuItem[] = [
-  {
-    href: '/life/admin',
-    label: 'Vault',
-    color: '#5856D6',
-    icon: ShieldCheck,
-  },
-  {
-    href: '/watch',
-    label: 'Watch',
-    color: 'var(--red)',
-    icon: Tv,
-  },
-  {
-    href: '/media',
-    label: 'Media',
-    color: '#AF52DE',
-    icon: Clapperboard,
-  },
-  {
-    href: '/household',
-    label: 'Household',
-    color: 'var(--sage)',
-    icon: Users,
-  },
-  {
-    href: '/inbox',
-    label: 'Capture',
-    color: 'var(--accent)',
-    icon: Inbox,
-  },
-  {
-    href: '/cycle-tracker',
-    label: 'Cycle',
-    color: '#C04A7A',
-    icon: Droplet,
-  },
-  {
-    href: '/ulcer-tracker',
-    label: 'Ulcers',
-    color: '#E25555',
-    icon: CircleDot,
-  },
-]
-
-const SHEET_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
-const CLOSE_THRESHOLD = 90
 
 function isTextEntryElement(element: Element | null) {
   if (!element) return false
@@ -115,263 +85,87 @@ function isTextEntryElement(element: Element | null) {
 
 function useKeyboardNavHidden() {
   const [hidden, setHidden] = useState(false)
-
   useEffect(() => {
     const update = () => {
       const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
       const focusedTextEntry = isTextEntryElement(document.activeElement)
       const viewport = window.visualViewport
-      const keyboardCompressed = viewport ? viewport.height < window.innerHeight - 80 : false
-      setHidden(coarsePointer && focusedTextEntry && (keyboardCompressed || window.innerWidth < 768))
+      setHidden(coarsePointer && focusedTextEntry && Boolean(viewport && viewport.height < window.innerHeight - 80))
     }
-
     update()
     window.addEventListener('focusin', update)
     window.addEventListener('focusout', update)
     window.visualViewport?.addEventListener('resize', update)
-    window.visualViewport?.addEventListener('scroll', update)
     return () => {
       window.removeEventListener('focusin', update)
       window.removeEventListener('focusout', update)
       window.visualViewport?.removeEventListener('resize', update)
-      window.visualViewport?.removeEventListener('scroll', update)
     }
   }, [])
-
   return hidden
 }
 
-function NavTab({ tab, active, onClick }: { tab: Tab; active: boolean; onClick?: () => void }) {
-  const Icon = tab.icon
+function TabLink({ href, label, icon: Icon, active }: { href: string; label: string; icon: LucideIcon; active: boolean }) {
+  return <a href={href} className={`family-nav-tab ${active ? 'is-active' : ''}`} aria-current={active ? 'page' : undefined}><Icon /><span>{label}</span></a>
+}
 
-  return (
-    <a href={tab.href} onClick={onClick} aria-label={tab.label} className="flex-1 flex items-center justify-center py-[10px]">
-      <div
-        className="w-[54px] h-[54px] flex items-center justify-center rounded-[17px] transition-all duration-200"
-        style={{
-          background: `color-mix(in srgb, ${tab.color} ${active ? 18 : 0}%, transparent)`,
-          color: tab.color,
-          opacity: active ? 1 : 0.45,
-        }}
-      >
-        <Icon className="w-[26px] h-[26px]" strokeWidth={1.8} />
-      </div>
-    </a>
-  )
+function DrawerLink({ item, active, close }: { item: LinkItem; active: boolean; close: () => void }) {
+  const Icon = item.icon
+  return <a href={item.href} onClick={close} className={active ? 'is-active' : ''}><Icon style={{ color: item.color }} /><span>{item.label}</span>{active ? <i /> : null}</a>
 }
 
 export function BottomNav() {
   const pathname = typeof window === 'undefined' ? '/' : window.location.pathname
   const [open, setOpen] = useState(false)
-  const [dragY, setDragY] = useState(0)
-  const [dragging, setDragging] = useState(false)
-  const dragStartRef = useRef<number | null>(null)
-  const keyboardNavHidden = useKeyboardNavHidden()
-  const hideNav = keyboardNavHidden && !open
+  const keyboardHidden = useKeyboardNavHidden()
+  const mainRoute = pathname === '/' || pathname.startsWith('/calendar') || pathname.startsWith('/household/shopping')
+  const activeHref = activeDrawerHref(pathname)
 
-  function isActive(href: string, exact = false) {
-    if (exact) return pathname === href
-    return pathname.startsWith(href)
-  }
-
-  function close() {
-    setOpen(false)
-    setDragY(0)
-    setDragging(false)
-    dragStartRef.current = null
-  }
+  useEffect(() => {
+    const openMenu = () => setOpen(true)
+    window.addEventListener('homeos:open-menu', openMenu)
+    return () => window.removeEventListener('homeos:open-menu', openMenu)
+  }, [])
 
   useEffect(() => {
     if (!open) return
-    const prev = document.body.style.overflow
+    const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
     window.addEventListener('keydown', onKey)
-    return () => {
-      document.body.style.overflow = prev
-      window.removeEventListener('keydown', onKey)
-    }
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', onKey) }
   }, [open])
 
-  useEffect(() => {
-    if (!keyboardNavHidden || !open) return
-    close()
-  }, [keyboardNavHidden, open])
-
-  function onTouchStart(e: React.TouchEvent) {
-    dragStartRef.current = e.touches[0].clientY
-    setDragging(true)
-  }
-
-  function onTouchMove(e: React.TouchEvent) {
-    if (dragStartRef.current === null) return
-    const delta = e.touches[0].clientY - dragStartRef.current
-    setDragY(delta > 0 ? delta : delta * 0.25)
-  }
-
-  function onTouchEnd() {
-    if (dragY > CLOSE_THRESHOLD) close()
-    else {
-      setDragY(0)
-      setDragging(false)
-      dragStartRef.current = null
-    }
-  }
-
-  const menuLinks = useMemo(() => menuItems, [])
-  const renderMenu = open || dragging || dragY > 0
-
+  const close = () => setOpen(false)
   return (
     <>
-      {renderMenu ? (
-        <>
-          <div
-            className="fixed inset-x-0 bottom-0 z-40"
-            style={{
-              top: 'env(safe-area-inset-top)',
-              background: 'rgba(0,0,0,0.45)',
-              backdropFilter: 'blur(6px)',
-              WebkitBackdropFilter: 'blur(6px)',
-              opacity: Math.max(0, 1 - dragY / 320),
-              pointerEvents: open ? 'auto' : 'none',
-              transition: dragging ? 'none' : 'opacity 0.4s ease',
-            }}
-            onClick={close}
-          />
-
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Quick menu"
-            className="fixed inset-x-0 bottom-0 z-[60]"
-            style={{
-              transform: open ? `translateY(${dragY}px)` : 'translateY(110%)',
-              transition: dragging ? 'none' : `transform 0.46s ${SHEET_EASE}`,
-              pointerEvents: open ? 'auto' : 'none',
-              willChange: 'transform',
-            }}
-          >
-            <div
-              className="mx-auto max-w-md bg-surface border-t border-border"
-              style={{
-                borderTopLeftRadius: 26,
-                borderTopRightRadius: 26,
-                boxShadow: '0 -10px 40px rgba(0,0,0,0.18)',
-                paddingBottom: 'calc(env(safe-area-inset-bottom) + 22px)',
-              }}
-            >
-              <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ padding: '11px 0 4px', cursor: 'grab', touchAction: 'none' }}>
-                <div style={{ width: 38, height: 5, borderRadius: 3, background: 'var(--text-3)', opacity: 0.4, margin: '0 auto' }} />
-              </div>
-              <p className="text-center text-text-3" style={{ fontSize: 13, fontWeight: 600, margin: '6px 0 14px', letterSpacing: '0.01em' }}>Jump to</p>
-              <div className="grid grid-cols-3 gap-y-5 px-5" style={{ justifyItems: 'center' }}>
-                {menuLinks.map((item, idx) => {
-                  const Icon = item.icon
-
-                  return (
-                    <a
-                      key={item.href}
-                      href={item.href}
-                      onClick={close}
-                      aria-label={item.label}
-                      className="flex flex-col items-center gap-2 active:scale-90 transition-transform"
-                      style={{
-                        width: 84,
-                        opacity: open ? 1 : 0,
-                        transform: open ? 'translateY(0)' : 'translateY(14px)',
-                        transition: `transform 0.5s ${SHEET_EASE} ${idx * 35 + 60}ms, opacity 0.4s ease ${idx * 35 + 60}ms`,
-                      }}
-                    >
-                      <div style={{
-                        width: 64, height: 64, borderRadius: 19,
-                        background: `color-mix(in srgb, ${item.color} 14%, transparent)`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: item.color,
-                      }}>
-                        <Icon className="w-[26px] h-[26px]" strokeWidth={1.8} />
-                      </div>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-1)', letterSpacing: '0.01em' }}>{item.label}</span>
-                    </a>
-                  )
-                })}
-              </div>
-            </div>
+      <div className={`family-drawer-wrap ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+        <button type="button" className="family-drawer-scrim" onClick={close} aria-label="Close navigation" />
+        <aside className="family-drawer" aria-label="HOME•OS navigation">
+          <div className="family-drawer-family">
+            <button type="button" onClick={close} aria-label="Close navigation"><X /></button>
+            <span><Users /></span>
+            <div><strong>The Coakes Family</strong><small>Dan & Imogen</small></div>
           </div>
-        </>
-      ) : null}
-
-      <div
-        className="fixed bottom-0 inset-x-0 z-50"
-        style={{
-          background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
-          backdropFilter: 'blur(28px)',
-          WebkitBackdropFilter: 'blur(28px)',
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
-          boxShadow: '0 -4px 20px rgba(0,0,0,0.10)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-          opacity: hideNav ? 0 : 1,
-          pointerEvents: hideNav ? 'none' : 'auto',
-          transform: hideNav ? 'translateY(calc(100% + env(safe-area-inset-bottom) + 12px))' : 'translateY(0)',
-          transition: 'transform 0.22s ease, opacity 0.18s ease',
-        }}
-      >
-        <div className="flex items-center max-w-lg mx-auto" style={{ paddingLeft: 4, paddingRight: 4 }}>
-          {leftTabs.map(tab => (
-            <NavTab key={tab.href} tab={tab} active={isActive(tab.href, tab.exact)} onClick={close} />
+          <p className="family-drawer-brand">HOME•OS</p>
+          {drawerGroups.map(group => (
+            <section key={group.label} className="family-drawer-section">
+              <p className="family-drawer-label">{group.label}</p>
+              <nav className="family-drawer-links">{group.items.map(item => <DrawerLink key={item.href} item={item} active={item.href === activeHref} close={close} />)}</nav>
+            </section>
           ))}
-
-          <div className="flex-1 flex items-center justify-center py-[10px]">
-            <button
-              onClick={() => (open ? close() : setOpen(true))}
-              aria-label={open ? 'Close menu' : 'Open menu'}
-              aria-expanded={open}
-              className="active:scale-90 transition-transform"
-              style={{
-                width: 54,
-                height: 54,
-                borderRadius: '50%',
-                background: open ? `color-mix(in srgb, var(--accent) 20%, var(--surface))` : 'var(--accent)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: open ? 'none' : '0 3px 12px color-mix(in srgb, var(--accent) 18%, transparent)',
-                transition: 'background 0.22s ease, box-shadow 0.22s ease',
-              }}
-            >
-              <span style={{ position: 'relative', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Grid3X3
-                  color="white"
-                  size={20}
-                  strokeWidth={2.2}
-                  style={{
-                    position: 'absolute',
-                    opacity: open ? 0 : 1,
-                    transform: open ? 'scale(0.6) rotate(-45deg)' : 'scale(1) rotate(0deg)',
-                    transition: 'opacity 0.22s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  }}
-                />
-                <X
-                  color={open ? 'var(--accent)' : 'white'}
-                  size={20}
-                  strokeWidth={2.4}
-                  style={{
-                    position: 'absolute',
-                    opacity: open ? 1 : 0,
-                    transform: open ? 'scale(1) rotate(0deg)' : 'scale(0.6) rotate(45deg)',
-                    transition: 'opacity 0.22s ease, transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  }}
-                />
-              </span>
-            </button>
-          </div>
-
-          {rightTabs.map(tab => (
-            <NavTab key={tab.href} tab={tab} active={isActive(tab.href, tab.exact)} onClick={close} />
-          ))}
-        </div>
+          <a className="family-drawer-designs" href="/designs"><ChevronLeft /> Review original designs</a>
+        </aside>
       </div>
+
+      <nav className={`family-bottom-nav ${keyboardHidden ? 'is-hidden' : ''}`} aria-label="Primary navigation">
+        <div className="family-bottom-nav-inner">
+          <TabLink href="/" label="Home" icon={Home} active={pathname === '/'} />
+          <TabLink href="/calendar" label="Calendar" icon={CalendarDays} active={pathname.startsWith('/calendar')} />
+          <TabLink href="/household/shopping" label="Shopping" icon={ShoppingBasket} active={pathname.startsWith('/household/shopping')} />
+          <TabLink href="/more" label="More" icon={Grid2X2} active={!mainRoute} />
+        </div>
+      </nav>
     </>
   )
 }

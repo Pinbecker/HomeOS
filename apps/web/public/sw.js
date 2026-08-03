@@ -1,4 +1,4 @@
-const CACHE_NAME = 'homeos-web-shell-v38'
+const CACHE_NAME = 'homeos-web-shell-v67'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -160,7 +160,7 @@ self.addEventListener('push', event => {
     payload = {}
   }
 
-  const title = payload.title || 'HomeOS'
+  const title = payload.title || 'HOME•OS'
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body,
     icon: payload.icon || '/icons/icon-192.png',

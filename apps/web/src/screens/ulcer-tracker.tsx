@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent, ReactNode, TouchEvent } from 'react'
+import type { CSSProperties, PointerEvent, ReactNode } from 'react'
 import { Activity, CheckCircle2, Crosshair, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import {
   enqueueMutation,
@@ -326,9 +326,8 @@ export function UlcerTrackerPage() {
 
   return (
     <ScreenShell title="Ulcer Tracker" showHeader={false}>
-      <header className="safe-top px-5 pt-6 pb-4">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text-2">HomeOS</p>
-        <div className="mt-1 flex items-end justify-between gap-3">
+      <header className="family-specialty-header px-5 pt-3 pb-3">
+        <div className="flex items-end justify-between gap-3">
           <div>
             <h1 className="text-[32px] font-bold text-text-1">Ulcer Tracker</h1>
             <p className="mt-1 text-[13px] text-text-2">Track each ulcer as a timeline, then compare longer-term patterns.</p>
@@ -645,7 +644,8 @@ function EditorSheet({ draftPin, episode, report, draft, editingEventId, error, 
   const title = draftPin ? mouthRegionLabel(draftPin.mouthRegion) : episode ? mouthRegionLabel(episode.mouthRegion) : 'Ulcer'
   const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
-  const dragStartRef = useRef<number | null>(null)
+  const dragStartRef = useRef<{ y: number; time: number; pointerId: number } | null>(null)
+  const latestDragRef = useRef(0)
   const eventOptions = draftPin
     ? ['noticed'] as UlcerEventType[]
     : episode && !isActiveEpisode(episode)
@@ -660,25 +660,34 @@ function EditorSheet({ draftPin, episode, report, draft, editingEventId, error, 
     set(key, draft[key].includes(value) ? draft[key].filter(item => item !== value) : [...draft[key], value])
   }
 
-  function onTouchStart(event: TouchEvent) {
-    dragStartRef.current = event.touches[0].clientY
+  function onDragStart(event: PointerEvent<HTMLDivElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragStartRef.current = { y: event.clientY, time: Date.now(), pointerId: event.pointerId }
+    latestDragRef.current = 0
     setDragging(true)
   }
 
-  function onTouchMove(event: TouchEvent) {
-    if (dragStartRef.current === null) return
-    const delta = event.touches[0].clientY - dragStartRef.current
-    setDragY(delta > 0 ? delta : delta * 0.18)
+  function onDragMove(event: PointerEvent<HTMLDivElement>) {
+    const start = dragStartRef.current
+    if (!start || start.pointerId !== event.pointerId) return
+    const delta = Math.max(0, event.clientY - start.y)
+    latestDragRef.current = delta
+    setDragY(delta)
   }
 
-  function onTouchEnd() {
-    if (dragY > 86) {
+  function onDragEnd(event: PointerEvent<HTMLDivElement>) {
+    const start = dragStartRef.current
+    if (!start || start.pointerId !== event.pointerId) return
+    const distance = latestDragRef.current
+    const velocity = distance / Math.max(Date.now() - start.time, 1)
+    dragStartRef.current = null
+    latestDragRef.current = 0
+    if (distance > 86 || velocity > 0.45) {
       onClose()
       return
     }
     setDragY(0)
     setDragging(false)
-    dragStartRef.current = null
   }
 
   return (
@@ -693,10 +702,10 @@ function EditorSheet({ draftPin, episode, report, draft, editingEventId, error, 
           transition: dragging ? 'none' : 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
         }}
       >
-        <div className="flex h-10 shrink-0 touch-none items-center justify-center bg-bg" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+        <div className="flex h-10 shrink-0 touch-none items-center justify-center bg-bg" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
           <div className="h-1 w-10 rounded-full bg-text-3/40" />
         </div>
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-bg/95 px-4 pb-3 backdrop-blur" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-bg/95 px-4 pb-3 backdrop-blur" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
           <div className="min-w-0">
             <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text-3">{draftPin ? 'New ulcer' : episode ? ulcerStatusLabel(episode.status) : 'Ulcer'}</p>
             <h2 className="mt-1 truncate text-[22px] font-bold text-text-1">{title}</h2>

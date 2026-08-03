@@ -37,14 +37,6 @@ function Chevron() {
   )
 }
 
-function BackChevron() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-      <path d="M10 3L5 8l5 5" />
-    </svg>
-  )
-}
-
 function dateFromIsoDate(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -148,6 +140,11 @@ export function HouseholdPage() {
 
   return (
     <ScreenShell title="Household">
+      <div className="family-summary-card family-summary-household">
+        <div><small>OUR HOME</small><strong>Everything on track</strong><span>Plans, collections and home information.</span></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10M9 21v-7h6v7" /></svg>
+      </div>
+      <div className="family-content-label"><small>MANAGE OUR HOME</small><h2>Household</h2></div>
       <div className="mx-4 overflow-hidden rounded-2xl bg-surface">
         {sections.map((section, index) => (
           <a
@@ -176,19 +173,9 @@ export function BinsPage() {
     .sort((a, b) => a.next.getTime() - b.next.getTime())
 
   return (
-    <ScreenShell title="Bins" showHeader={false}>
+    <ScreenShell title="Bins">
       <div className="flex flex-col">
-        <div className="px-3 pt-3 pb-1">
-          <a href="/household" className="-ml-1 flex w-fit items-center gap-1 text-accent active:opacity-60">
-            <BackChevron />
-            <span className="text-[16px]">Household</span>
-          </a>
-        </div>
-
-        <header className="px-5 pt-1 pb-3">
-          <h1 className="text-[28px] font-bold tracking-tight text-text-1">Bins</h1>
-          <p className="text-[13px] text-text-2">Fixed collection schedule. Home reminders show the day before.</p>
-        </header>
+        <div className="family-content-label"><small>COLLECTION SCHEDULE</small><h2>Coming up</h2><p>Home reminders appear the day before.</p></div>
 
         <div className="mx-4 flex flex-col gap-3">
           {bins.map(bin => {
@@ -380,7 +367,7 @@ export function HousePlansPage() {
             </svg>
           </button>
         )}
-        <p className={`flex-1 truncate text-[16px] ${section === 'done' ? 'text-text-2 line-through' : 'text-text-1'}`}>{plan.title}</p>
+        <p className={`min-w-0 flex-1 break-words text-[16px] leading-5 ${section === 'done' ? 'text-text-2 line-through' : 'text-text-1'}`}>{plan.title}</p>
         <button onClick={() => { void removePlan(plan) }} className="text-[12px] font-semibold text-red active:opacity-60">Delete</button>
       </div>
     )
@@ -389,16 +376,7 @@ export function HousePlansPage() {
   return (
     <ScreenShell title="House Plans">
       <div className="px-4">
-        <div className="mb-3 px-1">
-          <a href="/household" className="flex w-fit items-center gap-1 text-accent active:opacity-60">
-            <BackChevron />
-            <span className="text-[16px]">Household</span>
-          </a>
-        </div>
-
-        <div className="mb-3 px-1">
-          <p className="text-[13px] text-text-2">Projects & improvements</p>
-        </div>
+        <div className="family-content-label !mx-0 mt-5"><small>PROJECTS & IMPROVEMENTS</small><h2>Active plans</h2></div>
 
         <div className="overflow-hidden rounded-2xl bg-surface">
           {snapshot.active.length === 0 ? (

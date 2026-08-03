@@ -6,19 +6,22 @@ import { fromNodeHeaders } from 'better-auth/node'
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import { auth } from '@homeos/auth'
 import { db } from '@homeos/db'
-import { calendarFeeds, items, pushSubscriptions, tvChannels, tvProgrammes } from '@homeos/db/schema'
+import { calendarEvents, calendarFeeds, items, pushSubscriptions, tvProgrammes } from '@homeos/db/schema'
 import { exchangeCode, isGoogleConfigured, saveConnection, consentUrl } from './google-oauth'
 import { syncGoogleCalendar } from './google-calendar'
 import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
 import { applyMutations, buildBootstrap, compactSyncHistory, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, sweepOrphanedRecordReminders, type SyncMutation } from './sync'
-import { transcribeAudio } from './ai-planner'
+import { categorizeShoppingItems, extractCalendarTasks, transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
-import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications } from './notification-jobs'
+import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications, ensureScheduledBinTasks } from './notification-jobs'
 import { registerWeatherRoutes } from './weather'
 import { registerMediaRoutes } from './media'
 import { registerDropzoneRoutes } from './dropzone'
 import { filterFollowedProgrammesWithTvmaze, resolveTvmazeShow, type FollowedTvShow } from './tvmaze'
-import { ensureTvGuideFresh } from './epg'
+import { ensureTvGuideFresh, tvGuideRefreshState } from './epg'
+import { processShoppingCategoryJobs } from './shopping-categories'
+import { addLondonDays, isLondonDateKey, londonDateKey, londonDateKeys, londonDayBounds } from './tv-guide-time'
+import { tvFollowChannel, tvFollowKey, tvFollowMetadata } from './tv-follow'
 
 const app = Fastify({
   logger: true,
@@ -28,6 +31,24 @@ const webDist = path.resolve(process.cwd(), 'apps/web/dist')
 const GOOGLE_SYNC_INTERVAL_MS = Number(process.env.GOOGLE_SYNC_INTERVAL_MS ?? 60_000)
 const TV_EPG_REFRESH_INTERVAL_MS = Number(process.env.TV_EPG_REFRESH_INTERVAL_MS ?? 12 * 60 * 60 * 1000)
 let googleSyncInFlight: Promise<number> | null = null
+let shoppingCategoryProcessing = false
+
+async function runShoppingCategoryWorker() {
+  if (shoppingCategoryProcessing) return
+  shoppingCategoryProcessing = true
+  try {
+    await processShoppingCategoryJobs(async row => {
+      await recordExternalChange({ entityType: 'household', entityId: row.id, operation: 'upsert', payload: row })
+    })
+  } catch (error) {
+    app.log.error(error, 'Shopping category worker failed')
+  } finally {
+    shoppingCategoryProcessing = false
+  }
+}
+
+void runShoppingCategoryWorker()
+setInterval(() => { void runShoppingCategoryWorker() }, 5_000)
 
 app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', process.env.VITE_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? '*')
@@ -233,15 +254,17 @@ app.get('/api/watch/initial', async (request, reply) => {
   await refreshTvGuideIfNeeded()
 
   const now = new Date()
+  const today = londonDateKey(now)
   const followedShows = await db.query.items.findMany({
     where: and(eq(items.type, 'watchlist_tv'), eq(items.status, 'active'), isNull(items.deletedAt)),
     columns: { id: true, title: true, metadata: true },
   })
   const feedIds = getMainChannelDefs().map(channel => channel.feedId)
-  const [channels, tonight, initialGrid] = await Promise.all([
+  const [channels, tonight, initialGrid, coverage] = await Promise.all([
     getOnNow(now),
     getTodayMatches(followedShows.map(watchFollowFromItem), now, { includeRepeats: true }),
-    getDayGrid(feedIds, now),
+    getDayGrid(feedIds, today),
+    getGuideCoverage(feedIds, today),
   ])
 
   return reply.send({
@@ -249,7 +272,8 @@ app.get('/api/watch/initial', async (request, reply) => {
     followedShows,
     tonight,
     initialGrid,
-    today: ymd(now),
+    today,
+    coverage,
   })
 })
 
@@ -281,10 +305,9 @@ app.get('/api/watch/grid/:date', async (request, reply) => {
   await refreshTvGuideIfNeeded()
 
   const dateParam = (request.params as { date?: string }).date ?? ''
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateParam)
-  const target = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date()
+  if (!isLondonDateKey(dateParam)) return reply.status(400).send({ error: 'Invalid guide date' })
   const feedIds = getMainChannelDefs().map(channel => channel.feedId)
-  return reply.send(await getDayGrid(feedIds, target))
+  return reply.send(await getDayGrid(feedIds, dateParam))
 })
 
 app.get('/api/watch/channel/:channelId', async (request, reply) => {
@@ -295,8 +318,43 @@ app.get('/api/watch/channel/:channelId', async (request, reply) => {
 
   const channelId = (request.params as { channelId?: string }).channelId ?? ''
   const dateParam = (request.query as { date?: string }).date
-  const date = dateParam ? new Date(dateParam) : new Date()
-  return reply.send(await getChannelDay(channelId, date))
+  const dateKey = dateParam ?? londonDateKey()
+  if (!isLondonDateKey(dateKey)) return reply.status(400).send({ error: 'Invalid guide date' })
+  return reply.send(await getChannelDay(channelId, dateKey))
+})
+
+app.post('/api/watch/upcoming', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+
+  await refreshTvGuideIfNeeded()
+  const body = (request.body ?? {}) as {
+    follows?: Array<{ title?: unknown; followKey?: unknown; channel?: unknown; channelMode?: unknown; tvmazeId?: unknown }>
+  }
+  const follows = (Array.isArray(body.follows) ? body.follows : [])
+    .slice(0, 100)
+    .flatMap(row => {
+      const title = typeof row.title === 'string' ? row.title.trim() : ''
+      if (!title) return []
+      const channel = row.channelMode === 'selected_channel' && typeof row.channel === 'string' ? row.channel : null
+      const tvmazeId = Number(row.tvmazeId)
+      return [{
+        title,
+        followKey: typeof row.followKey === 'string' ? row.followKey : null,
+        channel,
+        tvmazeId: Number.isFinite(tvmazeId) && tvmazeId > 0 ? tvmazeId : null,
+        matchMode: 'all_airings',
+      } satisfies FollowedTvShow]
+    })
+  if (!follows.length) return reply.send([])
+
+  const now = new Date()
+  const endKey = addLondonDays(londonDateKey(now), tvGuideRefreshState().requiredDays)
+  const { end } = londonDayBounds(endKey)
+  const rows = await db.select().from(tvProgrammes)
+    .where(and(gt(tvProgrammes.endsAt, now), lt(tvProgrammes.startsAt, end)))
+    .orderBy(asc(tvProgrammes.startsAt))
+  return reply.send(await filterFollowedProgrammesWithTvmaze(follows, rows, channelName))
 })
 
 app.get('/api/watch/resolve', async (request, reply) => {
@@ -368,6 +426,41 @@ app.post('/api/ai/capture', async (request, reply) => {
   } catch (error) {
     requestLog(error)
     return reply.status(500).send({ error: error instanceof Error ? error.message : 'AI capture failed' })
+  }
+})
+
+app.post('/api/ai/shopping/categorize', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+  const body = (request.body ?? {}) as { items?: unknown }
+  const items = Array.isArray(body.items) ? body.items.filter((item): item is string => typeof item === 'string').slice(0, 200) : []
+  if (!items.length) return reply.status(400).send({ error: 'No shopping items to categorise.' })
+  try {
+    return reply.send({ items: await categorizeShoppingItems(items) })
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'AI categorisation failed' })
+  }
+})
+
+app.post('/api/ai/calendar/tasks', async (request, reply) => {
+  const session = await getSession(request)
+  if (!session) return reply.status(401).send({ error: 'Unauthorized' })
+  const requestedDays = Number((request.body as { days?: unknown } | null)?.days ?? 14)
+  const days = Math.max(7, Math.min(21, Number.isFinite(requestedDays) ? Math.round(requestedDays) : 14))
+  const now = new Date()
+  const until = new Date(now.getTime() + days * 86_400_000)
+  try {
+    const events = await db.query.calendarEvents.findMany({
+      where: and(gte(calendarEvents.startsAt, now), lte(calendarEvents.startsAt, until)),
+      orderBy: [asc(calendarEvents.startsAt)],
+      columns: { id: true, title: true, description: true, location: true, startsAt: true },
+      limit: 30,
+    })
+    return reply.send({ tasks: await extractCalendarTasks(events), eventCount: events.length, days })
+  } catch (error) {
+    requestLog(error)
+    return reply.status(500).send({ error: error instanceof Error ? error.message : 'Calendar task extraction failed' })
   }
 })
 
@@ -516,6 +609,7 @@ setInterval(() => {
 }, 60_000)
 
 setInterval(() => {
+  ensureScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))
@@ -532,6 +626,7 @@ setTimeout(() => {
   refreshTvGuideIfNeeded().catch(error => app.log.error(error))
   dispatchReminders(recordExternalChange).catch(error => app.log.error(error))
   dispatchTaskDueNotifications(recordExternalChange).catch(error => app.log.error(error))
+  ensureScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))
@@ -736,24 +831,23 @@ function formatAirtime(date: Date) {
   return date.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: 'Europe/London' })
 }
 
-function ymd(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
 function watchFollowFromItem(show: { title: string; metadata?: Record<string, unknown> | null }): FollowedTvShow {
-  const metadata = show.metadata ?? {}
+  const metadata = tvFollowMetadata(show.metadata)
   const tvmazeId = Number(metadata.tvmazeId)
   return {
     title: show.title,
-    channel: typeof metadata.channel === 'string' ? metadata.channel : null,
+    followKey: tvFollowKey(show),
+    channel: tvFollowChannel(show),
     tvmazeId: Number.isFinite(tvmazeId) && tvmazeId > 0 ? tvmazeId : null,
     matchMode: typeof metadata.matchMode === 'string' ? metadata.matchMode : null,
   }
 }
 
 async function channelLogoMap() {
-  const rows = await db.select({ id: tvChannels.id, logo: tvChannels.logo }).from(tvChannels)
-  return new Map(rows.map(row => [row.id, row.logo]))
+  return new Map(getMainChannelDefs().map(channel => [
+    channel.feedId,
+    `/channel-logos/${encodeURIComponent(channel.feedId)}.png`,
+  ]))
 }
 
 async function getOnNow(at: Date): Promise<ChannelNowNext[]> {
@@ -768,7 +862,7 @@ async function getOnNow(at: Date): Promise<ChannelNowNext[]> {
     byChannel.set(row.channelId, list)
   }
   const logos = await channelLogoMap()
-  return channelDefs.map(channel => {
+  return getMainChannelDefs().map(channel => {
     const list = byChannel.get(channel.feedId) ?? []
     return {
       feedId: channel.feedId,
@@ -780,20 +874,18 @@ async function getOnNow(at: Date): Promise<ChannelNowNext[]> {
   })
 }
 
-async function getChannelDay(channelId: string, date: Date): Promise<Programme[]> {
-  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+async function getChannelDay(channelId: string, dateKey: string): Promise<Programme[]> {
+  const { start: dayStart, end: dayEnd } = londonDayBounds(dateKey)
   return db.select().from(tvProgrammes)
-    .where(and(eq(tvProgrammes.channelId, channelId), lt(tvProgrammes.startsAt, dayEnd), gte(tvProgrammes.endsAt, dayStart)))
+    .where(and(eq(tvProgrammes.channelId, channelId), lt(tvProgrammes.startsAt, dayEnd), gt(tvProgrammes.endsAt, dayStart)))
     .orderBy(asc(tvProgrammes.startsAt))
 }
 
-async function getDayGrid(feedIds: string[], date: Date): Promise<GridChannel[]> {
+async function getDayGrid(feedIds: string[], dateKey: string): Promise<GridChannel[]> {
   if (feedIds.length === 0) return []
-  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+  const { start: dayStart, end: dayEnd } = londonDayBounds(dateKey)
   const rows = await db.select().from(tvProgrammes)
-    .where(and(inArray(tvProgrammes.channelId, feedIds), lt(tvProgrammes.startsAt, dayEnd), gte(tvProgrammes.endsAt, dayStart)))
+    .where(and(inArray(tvProgrammes.channelId, feedIds), lt(tvProgrammes.startsAt, dayEnd), gt(tvProgrammes.endsAt, dayStart)))
     .orderBy(asc(tvProgrammes.startsAt))
   const byChannel = new Map<string, Programme[]>()
   for (const row of rows) {
@@ -810,11 +902,56 @@ async function getDayGrid(feedIds: string[], date: Date): Promise<GridChannel[]>
   }))
 }
 
+async function getGuideCoverage(feedIds: string[], fromDateKey: string) {
+  const refresh = tvGuideRefreshState()
+  const dateKeys = londonDateKeys(fromDateKey, refresh.requiredDays)
+  const bounds = dateKeys.map(date => ({ date, ...londonDayBounds(date) }))
+  const rows = feedIds.length
+    ? await db.select({
+      channelId: tvProgrammes.channelId,
+      startsAt: tvProgrammes.startsAt,
+      endsAt: tvProgrammes.endsAt,
+    }).from(tvProgrammes)
+      .where(and(
+        inArray(tvProgrammes.channelId, feedIds),
+        lt(tvProgrammes.startsAt, bounds.at(-1)?.end ?? new Date()),
+        gt(tvProgrammes.endsAt, bounds[0]?.start ?? new Date()),
+      ))
+    : []
+
+  const days = bounds.map(day => {
+    const programmes = rows.filter(row => row.startsAt < day.end && row.endsAt > day.start)
+    const channelCount = new Set(programmes.map(row => row.channelId)).size
+    return {
+      date: day.date,
+      dayStartMs: day.start.getTime(),
+      dayEndMs: day.end.getTime(),
+      programmeCount: programmes.length,
+      channelCount,
+      channelTotal: feedIds.length,
+      available: programmes.length > 0,
+      complete: feedIds.length > 0 && channelCount / feedIds.length >= 0.9,
+    }
+  })
+
+  const availableRows = rows.filter(row => row.endsAt > new Date())
+  const availableThrough = availableRows.reduce<Date | null>(
+    (latest, row) => !latest || row.endsAt > latest ? row.endsAt : latest,
+    null,
+  )
+
+  return {
+    ...refresh,
+    availableThrough,
+    days,
+  }
+}
+
 async function getTodayMatches(follows: FollowedTvShow[], from: Date, options: { includeRepeats?: boolean } = {}): Promise<Programme[]> {
   if (follows.length === 0) return []
-  const dayEnd = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 23, 59, 59)
+  const { end: dayEnd } = londonDayBounds(londonDateKey(from))
   const rows = await db.select().from(tvProgrammes)
-    .where(and(gt(tvProgrammes.endsAt, from), lte(tvProgrammes.startsAt, dayEnd)))
+    .where(and(gt(tvProgrammes.endsAt, from), lt(tvProgrammes.startsAt, dayEnd)))
     .orderBy(asc(tvProgrammes.startsAt))
   const matchFollows = options.includeRepeats
     ? follows.map(follow => ({ ...follow, matchMode: 'all_airings' }))

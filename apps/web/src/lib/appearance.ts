@@ -62,6 +62,7 @@ export function applyThemeMode(mode: ThemeMode) {
   } else {
     root.classList.toggle('dark', window.matchMedia('(prefers-color-scheme: dark)').matches)
   }
+  document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', root.classList.contains('dark') ? '#11161D' : '#F6F8FB')
 }
 
 export function currentThemeMode(): ThemeMode {
@@ -98,6 +99,7 @@ export function watchAutoTheme(onChange?: () => void) {
   const handle = () => {
     if (currentThemeMode() === 'auto') {
       document.documentElement.classList.toggle('dark', media.matches)
+      document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', media.matches ? '#11161D' : '#F6F8FB')
       onChange?.()
     }
   }

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { Calendar, Check, ChevronDown, ChevronRight, Circle, Clapperboard, Clock, Eye, ListPlus, Search, SlidersHorizontal, Star, ThumbsDown, ThumbsUp, Tv, Users, X } from 'lucide-react'
 import { BottomNav } from './bottom-nav'
 import { SwipeRow } from '../components/swipe-row'
+import { SheetGrabber } from '../components/sheet-grabber'
 import { enqueueMutation, getCurrentState, makeId, mergeMediaEpisodeProgress, useAppState, type AppState, type MediaEpisode, type MediaFamilyState, type MediaFamilyStatus, type MediaItem, type MediaUserState, type MediaUserStatus } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import { fetchMediaDetails, fetchMediaFeed, fetchProviders, fetchSeason, mediaLabel, posterUrl, recordMediaInteraction, searchMedia, setEpisodeWatched, setEpisodesWatched, setFamilyMediaSeen, setFamilyMediaState, setFamilyMediaWatchlist, setUserMediaSeen, setUserMediaState, setUserMediaWatchlist, syncMediaItem, type MediaProvider, type MediaSeasonPayload, yearLabel } from '../lib/media'
@@ -800,10 +801,9 @@ export function MediaPage() {
   return (
     <div className="media-page min-h-dvh bg-[var(--media-bg)] text-[var(--media-ink)]">
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col">
-        <header className="safe-top sticky top-0 z-20 border-b border-[var(--media-line)] bg-[color-mix(in_srgb,var(--media-bg)_90%,transparent)] px-4 pb-2 pt-2 backdrop-blur-xl">
+        <header className="sticky top-0 z-20 border-b border-[var(--media-line)] bg-[color-mix(in_srgb,var(--media-bg)_90%,transparent)] px-4 pb-2 pt-[calc(env(safe-area-inset-top)+12px)] backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--media-faint)]">HomeOS</p>
               <h1 className="text-[22px] font-bold text-[var(--media-ink)]">Media</h1>
             </div>
           </div>
@@ -2312,11 +2312,11 @@ function TvActionSheet({ item, action, onClose, onChoose }: { item: MediaItem | 
   if (!item || !action) return null
   return (
     <div className="fixed inset-0 z-[70] flex items-end bg-black/45" onClick={onClose}>
-      <div className="media-page relative mx-auto w-full max-w-lg rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-4" onClick={event => event.stopPropagation()}>
+      <div data-swipe-sheet className="media-page relative mx-auto w-full max-w-lg rounded-t-[24px] border-t border-[var(--media-line)] bg-[var(--media-panel)] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] pt-0" onClick={event => event.stopPropagation()}>
         <button type="button" onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--media-panel-2)] text-[var(--media-muted)]" aria-label="Cancel">
           <X className="h-4.5 w-4.5" strokeWidth={2.2} />
         </button>
-        <div className="mx-auto h-1.5 w-10 rounded-full bg-[var(--media-faint)]" />
+        <SheetGrabber onDismiss={onClose} className="-mx-5 flex h-10 items-center justify-center" barClassName="h-1.5 w-10 rounded-full bg-[var(--media-faint)]" />
         <h2 className="mt-5 pr-10 text-[22px] font-bold text-[var(--media-ink)]">{item.title}</h2>
         <p className="mt-1 text-[14px] text-[var(--media-muted)]">How much have you watched?</p>
         <div className="mt-5 grid gap-2">

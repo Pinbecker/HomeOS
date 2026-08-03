@@ -22,7 +22,7 @@ const sample = {
 export function MediaCardDesignsPage() {
   return (
     <div className="media-page min-h-dvh bg-[var(--media-bg)] pb-[calc(88px+env(safe-area-inset-bottom))] text-[var(--media-ink)]">
-      <header className="safe-top sticky top-0 z-30 border-b border-[var(--media-line)] bg-[var(--media-bg)]/92 px-4 pb-3 pt-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-[var(--media-line)] bg-[var(--media-bg)]/92 px-4 pb-3 pt-3 backdrop-blur-xl">
         <p className="text-[11px] font-bold uppercase text-[var(--media-faint)]">Media cards</p>
         <h1 className="text-[24px] font-bold leading-tight">Design options</h1>
         <p className="mt-1 text-[13px] font-medium leading-5 text-[var(--media-muted)]">Four alternate card treatments for choosing the next pass.</p>

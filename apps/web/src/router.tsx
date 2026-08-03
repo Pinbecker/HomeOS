@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react'
 import { PushManager } from './components/push-manager'
 import { ensureBootstrap, setAppUserContext, useAppState } from './lib/app-store'
 import { applySyncedAppearance, currentAccent, currentThemeMode, setAppearanceUserContext } from './lib/appearance'
+import { APP_MAIN_SCROLL_RESTORATION_ID } from './lib/scroll-restoration'
 import { ensureSession, useSessionState } from './lib/session-store'
 import { readUserSettings, saveUserSettings, settingObject } from './lib/user-preferences'
 import { DashboardPage } from './screens/dashboard'
+import { DesignDetailPage, DesignsPage } from './screens/designs'
 import { BottomNav } from './screens/bottom-nav'
 import { CalendarPage } from './screens/calendar'
 import { CycleTrackerPage } from './screens/cycle-tracker'
@@ -14,8 +16,11 @@ import { InboxCapturePage, InboxPage } from './screens/inbox'
 import { LifeCategoryPage, LifeEntityPage, LifeOverviewPage } from './screens/life'
 import { MediaCardDesignsPage } from './screens/media-card-designs'
 import { MediaPage } from './screens/media'
+import { MemberProfilePage } from './screens/member'
+import { MorePage } from './screens/more'
+import { NotesPage } from './screens/notes'
 import { RemindersPage } from './screens/reminders'
-import { ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
+import { BigShopPage, MealsPage, ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
 import { LoginPage } from './screens/shared'
 import { TaskDetailPage, TasksOverviewPage } from './screens/tasks'
 import { UlcerTrackerPage } from './screens/ulcer-tracker'
@@ -103,6 +108,16 @@ function RootLayout() {
   }, [navigate])
 
   useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const to = (event as CustomEvent<string>).detail
+      if (typeof to === 'string' && to.startsWith('/')) void navigate({ to })
+    }
+
+    window.addEventListener('homeos:navigate', handleNavigate)
+    return () => window.removeEventListener('homeos:navigate', handleNavigate)
+  }, [navigate])
+
+  useEffect(() => {
     if (syncState !== 'error') {
       setSyncCollapsed(false)
       return undefined
@@ -114,7 +129,6 @@ function RootLayout() {
 
   return (
     <div className="min-h-dvh bg-bg text-text-1">
-      <div aria-hidden="true" className="pwa-status-surface" />
       {syncState !== 'idle' && !syncCollapsed ? (
         <div className="fixed inset-x-0 top-0 z-50 pointer-events-none pt-[calc(env(safe-area-inset-top)+8px)]">
           <div className="mx-auto max-w-lg px-4">
@@ -151,9 +165,8 @@ function AppShell({ title }: { title: string }) {
   return (
     <div className="min-h-dvh bg-bg">
       <div className="mx-auto flex min-h-dvh max-w-lg flex-col">
-        <header className="safe-top px-5 pt-6 pb-4">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text-2">HomeOS</p>
-          <h1 className="mt-1 text-[32px] font-bold text-text-1">{title}</h1>
+        <header className="px-5 pt-3 pb-3">
+          <h1 className="text-[32px] font-bold text-text-1">{title}</h1>
         </header>
         <main className="flex-1 px-4 pb-28">
           <div className="rounded-2xl border border-border bg-surface px-5 py-6 shadow-sm">
@@ -251,6 +264,16 @@ const householdShoppingRoute = createRoute({
   path: '/household/shopping',
   component: ShoppingOverviewPage,
 })
+const householdBigShopRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/household/shopping/big-shop',
+  component: BigShopPage,
+})
+const householdMealsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/household/shopping/meals',
+  component: MealsPage,
+})
 const householdShoppingAllRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/household/shopping/all',
@@ -312,6 +335,36 @@ const remindersRoute = createRoute({
   component: RemindersPage,
 })
 
+const moreRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/more',
+  component: MorePage,
+})
+
+const memberRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/members/$userId',
+  component: function MemberRoute() {
+    const { userId } = memberRoute.useParams()
+    return <MemberProfilePage userId={userId} />
+  },
+})
+
+const designsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/designs',
+  component: DesignsPage,
+})
+
+const designDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/designs/$designId',
+  component: function DesignDetailRoute() {
+    const { designId } = designDetailRoute.useParams()
+    return <DesignDetailPage designId={designId} />
+  },
+})
+
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
@@ -321,7 +374,7 @@ const homeRoute = createRoute({
 const notesListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/notes',
-  component: () => <InboxPage initialTab="notes" />,
+  component: NotesPage,
 })
 const dropRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -342,6 +395,8 @@ const routeTree = rootRoute.addChildren([
   householdTasksRoute,
   householdTaskListRoute,
   householdShoppingRoute,
+  householdBigShopRoute,
+  householdMealsRoute,
   householdShoppingAllRoute,
   householdShoppingShopRoute,
   inboxRoute,
@@ -356,11 +411,19 @@ const routeTree = rootRoute.addChildren([
   mediaRoute,
   mediaCardDesignsRoute,
   remindersRoute,
+  moreRoute,
+  memberRoute,
+  designsRoute,
+  designDetailRoute,
 ])
 
 export const router = createRouter({
   routeTree,
   defaultPreload: 'intent',
+  scrollRestoration: true,
+  getScrollRestorationKey: location => location.state.__TSR_key
+    ?? `${location.state.__TSR_index ?? 'initial'}:${location.href}`,
+  scrollToTopSelectors: [`[data-scroll-restoration-id="${APP_MAIN_SCROLL_RESTORATION_ID}"]`],
 })
 
 declare module '@tanstack/react-router' {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AiCapture } from '../components/ai-capture'
 import { enqueueMutation, refreshAppState, makeId, useAppState } from '../lib/app-store'
+import { navigateInApp } from '../lib/navigation'
 import { useSessionState } from '../lib/session-store'
 import { DropzonePanel } from './dropzone-panel'
 import { NotesPanel } from './notes'
@@ -192,7 +193,7 @@ function InboxPanel() {
               <div className="flex items-center justify-between border-b border-border px-5 py-4">
                 <div className="min-w-0">
                   <p className="text-[16px] font-extrabold text-text-1">Help me sort this</p>
-                  <p className="truncate text-[12px] text-text-2">{triageItem.title}</p>
+                  <p className="line-clamp-2 break-words text-[12px] leading-4 text-text-2">{triageItem.title}</p>
                 </div>
                 <button onClick={() => setTriageItemId(null)} className="text-[14px] font-semibold text-accent">Done</button>
               </div>
@@ -243,7 +244,8 @@ export function InboxPage({ initialTab = 'inbox' }: { initialTab?: CaptureTab } 
 
   return (
     <ScreenShell title="Capture">
-      <div className="mx-4 mb-4 grid grid-cols-3 rounded-xl bg-surface-2 p-1">
+      <div className="family-capture-intro"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m12 3 1.3 4.2L17 9l-3.7 1.8L12 15l-1.3-4.2L7 9l3.7-1.8L12 3Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" /></svg></span><div><small>QUICK CAPTURE</small><strong>Put it here, sort it later</strong><p>Ideas, links, notes and files stay shared.</p></div></div>
+      <div className="family-segmented mx-4 mb-4 grid grid-cols-3 rounded-xl bg-surface-2 p-1">
         {([
           ['inbox', 'Inbox'],
           ['notes', 'Notes'],
@@ -286,7 +288,7 @@ export function InboxCapturePage() {
         return
       }
       await refreshAppState().catch(() => undefined)
-      window.location.href = '/inbox'
+      navigateInApp('/inbox')
     } catch {
       setError('I could not save that just now.')
     } finally {

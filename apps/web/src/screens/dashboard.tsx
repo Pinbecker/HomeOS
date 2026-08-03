@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { changePassword, signOut } from '@homeos/auth/client'
 import { AiCapture } from '../components/ai-capture'
 import { ColorPickerPanel, normalizeHex } from '../components/color-control'
@@ -6,12 +7,13 @@ import { SwipeRow } from '../components/swipe-row'
 import { WeatherGlyph } from '../components/weather-glyph'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, type CycleEntry, useAppState } from '../lib/app-store'
+import { navigateInApp } from '../lib/navigation'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
 import { calculateCycleInsights, cycleCalendarItems, cycleDate, findCurrentOpenCycleEntry, formatCycleDate, readCycleTrackerSettings } from '../lib/cycle-tracker'
 import { calculateUlcerInsights, formatUlcerDate, mouthRegionLabel } from '../lib/ulcer-tracker'
 import { dailyWeatherIcon, fetchWeatherSnapshot, loadCachedWeather, readSharedWeatherSettings, temperature, type WeatherSnapshot } from '../lib/weather'
-import { ScreenShell } from './shell'
+import { FamilyMenuButton, ScreenShell } from './shell'
 
 type ShoppingGroup = { id: string; name: string; color: string; count: number; preview: string[]; href: string }
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
@@ -22,11 +24,19 @@ type BinWithDate = { id: string; name: string; colour: string; nextCollection: D
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
 type DashboardWeatherState = { snapshot: WeatherSnapshot | null; loading: boolean; error: string | null }
-type HomeSectionKey = 'ai' | 'kitBoard' | 'cycleStatus' | 'ulcerStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
+type HomeSectionKey = 'features' | 'ai' | 'kitBoard' | 'cycleStatus' | 'ulcerStatus' | 'pinned' | 'headsUp' | 'tonight' | 'schedule' | 'shopping'
 type HomeScreenSettings = Record<HomeSectionKey, boolean>
-type HomeScreenPreferences = { enabled: HomeScreenSettings; order: HomeSectionKey[] }
+type HomeFeatureKey = 'calendar' | 'tasks' | 'shopping' | 'meals' | 'capture' | 'notes' | 'household' | 'vault'
+type HomeFeatureSettings = Record<HomeFeatureKey, boolean>
+type HomeScreenPreferences = {
+  enabled: HomeScreenSettings
+  order: HomeSectionKey[]
+  featureEnabled: HomeFeatureSettings
+  featureOrder: HomeFeatureKey[]
+}
 type CycleDueSoon = { predictedStart: Date; daysUntil: number }
 type ActiveUlcerSummary = { count: number; peakSeverity: number | null; topRegion: string | null; startedAt: Date | null }
+type HomeNextUp = { title: string; when: Date; label: string; sub: string | null; color: string; href: string; allDay?: boolean }
 type DropTextEntry = {
   id: string
   kind: 'text' | 'link' | 'file'
@@ -41,7 +51,7 @@ type TimelineEntry =
   | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
-type DayGroup = { key: string; label: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
+type DayGroup = { key: string; label: string; dateLabel: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
 
 const BIN_DOT: Record<string, string> = {
   grey: '#6B7280',
@@ -51,11 +61,7 @@ const BIN_DOT: Record<string, string> = {
   black: '#374151',
   pink: '#EC4899',
 }
-const RANGE_OPTIONS = [
-  { days: 1, label: 'Today' },
-  { days: 3, label: '3 days' },
-  { days: 7, label: '1 week' },
-]
+const TIMELINE_DAY_COLORS = ['#4F9D76', '#5B8FC7', '#9A76C4', '#DF8C4A', '#D76F7B', '#4F9FA2']
 const STATIC_BIN_SCHEDULES = [
   { id: 'black-bin', name: 'Black bin', colour: 'black', firstCollectionDate: '2026-05-27', intervalWeeks: 3 },
   { id: 'recycling-food', name: 'Recycling containers and food bin', colour: 'blue', firstCollectionDate: '2026-05-27', intervalWeeks: 1 },
@@ -64,6 +70,7 @@ const STATIC_BIN_SCHEDULES = [
 ]
 const TONIGHT_CACHE_KEY = 'homeos:dashboard-tonight:v1'
 const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> = [
+  { key: 'features', label: 'Everything together', sub: 'Family app shortcuts' },
   { key: 'ai', label: 'AI input', sub: 'Quick capture box' },
   { key: 'kitBoard', label: 'Dropzone', sub: 'Temporary text and links' },
   { key: 'cycleStatus', label: 'Cycle status', sub: 'Period day card when active' },
@@ -77,6 +84,7 @@ const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> 
 const HOME_SECTION_BY_KEY = new Map(HOME_SECTIONS.map(section => [section.key, section]))
 const DEFAULT_HOME_SECTION_ORDER = HOME_SECTIONS.map(section => section.key)
 const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
+  features: true,
   ai: true,
   kitBoard: true,
   cycleStatus: true,
@@ -87,6 +95,21 @@ const DEFAULT_HOME_SCREEN_SETTINGS: HomeScreenSettings = {
   schedule: true,
   shopping: true,
 }
+const HOME_FEATURES: Array<{ key: HomeFeatureKey; label: string }> = [
+  { key: 'calendar', label: 'Calendar' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'shopping', label: 'Shopping' },
+  { key: 'meals', label: 'Meals' },
+  { key: 'capture', label: 'Capture' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'household', label: 'Household' },
+  { key: 'vault', label: 'Vault' },
+]
+const DEFAULT_HOME_FEATURE_ORDER = HOME_FEATURES.map(feature => feature.key)
+const DEFAULT_HOME_FEATURE_SETTINGS = HOME_FEATURES.reduce<HomeFeatureSettings>((next, feature) => {
+  next[feature.key] = true
+  return next
+}, {} as HomeFeatureSettings)
 function toDate(value: string | number | Date | null | undefined) {
   if (!value) return null
   return value instanceof Date ? value : new Date(value)
@@ -186,14 +209,38 @@ function readHomeScreenPreferences(value: unknown): HomeScreenPreferences {
   const validKeys = new Set<HomeSectionKey>(DEFAULT_HOME_SECTION_ORDER)
   const order = rawOrder.filter((key): key is HomeSectionKey => typeof key === 'string' && validKeys.has(key as HomeSectionKey))
   const seen = new Set(order)
+  // Existing users already have an order saved from before this became an
+  // editable section. Keep it in the same top position they see today.
+  if (!seen.has('features')) {
+    order.unshift('features')
+    seen.add('features')
+  }
   for (const key of DEFAULT_HOME_SECTION_ORDER) {
     if (!seen.has(key)) order.push(key)
   }
-  return { enabled, order }
+  const rawFeatures = settingObject(raw.featureCards)
+  const featureEnabled = HOME_FEATURES.reduce<HomeFeatureSettings>((next, feature) => {
+    next[feature.key] = typeof rawFeatures[feature.key] === 'boolean'
+      ? rawFeatures[feature.key] as boolean
+      : DEFAULT_HOME_FEATURE_SETTINGS[feature.key]
+    return next
+  }, { ...DEFAULT_HOME_FEATURE_SETTINGS })
+  const rawFeatureOrder = Array.isArray(rawFeatures.order) ? rawFeatures.order : []
+  const validFeatureKeys = new Set<HomeFeatureKey>(DEFAULT_HOME_FEATURE_ORDER)
+  const featureOrder = rawFeatureOrder.filter((key): key is HomeFeatureKey => typeof key === 'string' && validFeatureKeys.has(key as HomeFeatureKey))
+  const seenFeatures = new Set(featureOrder)
+  for (const key of DEFAULT_HOME_FEATURE_ORDER) {
+    if (!seenFeatures.has(key)) featureOrder.push(key)
+  }
+  return { enabled, order, featureEnabled, featureOrder }
 }
 
 function homeScreenSettingsPayload(preferences: HomeScreenPreferences) {
-  return { ...preferences.enabled, order: preferences.order }
+  return {
+    ...preferences.enabled,
+    order: preferences.order,
+    featureCards: { ...preferences.featureEnabled, order: preferences.featureOrder },
+  }
 }
 
 function reorderHomeSections(order: HomeSectionKey[], key: HomeSectionKey, nextIndex: number) {
@@ -269,6 +316,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
     const diff = Math.round((itemDay.getTime() - today.getTime()) / 86_400_000)
     let key: string
     let label: string
+    let dateLabel = itemDay.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }).toUpperCase()
     let dateKey: string | null = forecastDateKey(itemDay)
     let isToday = false
     let isOverdue = false
@@ -276,6 +324,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
     if (diff < 0) {
       key = '__overdue'
       label = 'Overdue'
+      dateLabel = 'NEEDS ATTENTION'
       dateKey = null
       isOverdue = true
     } else if (diff === 0) {
@@ -287,10 +336,10 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       label = 'Tomorrow'
     } else {
       key = `${itemDay.getFullYear()}-${itemDay.getMonth()}-${itemDay.getDate()}`
-      label = itemDay.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+      label = itemDay.toLocaleDateString('en-GB', { weekday: 'long' })
     }
 
-    if (!groupMap.has(key)) groupMap.set(key, { key, label, dateKey, isToday, isOverdue, entries: [] })
+    if (!groupMap.has(key)) groupMap.set(key, { key, label, dateLabel, dateKey, isToday, isOverdue, entries: [] })
     groupMap.get(key)!.entries.push(entry)
   }
 
@@ -448,6 +497,8 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
   const syncedAppearance = settingObject(personalSettings.appearance)
   const homeScreenPreferences = readHomeScreenPreferences(personalSettings.homeScreen)
   const homeScreenSettings = homeScreenPreferences.enabled
+  const homeFeatureSettings = homeScreenPreferences.featureEnabled
+  const homeFeatureOrder = homeScreenPreferences.featureOrder
   const notificationPreferences = notificationPreferencesFromSettings(personalSettings.notificationPreferences as Record<string, unknown> | null | undefined)
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -561,6 +612,37 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
     })
   }
 
+  function updateHomeFeatureSetting(key: HomeFeatureKey, enabled: boolean) {
+    if (!currentUser) return
+    void saveUserSettings(currentUser.id, current => {
+      const preferences = readHomeScreenPreferences(current.homeScreen)
+      return {
+        ...current,
+        homeScreen: homeScreenSettingsPayload({
+          ...preferences,
+          featureEnabled: { ...preferences.featureEnabled, [key]: enabled },
+        }),
+      }
+    })
+  }
+
+  function moveHomeFeature(key: HomeFeatureKey, offset: -1 | 1) {
+    if (!currentUser) return
+    void saveUserSettings(currentUser.id, current => {
+      const preferences = readHomeScreenPreferences(current.homeScreen)
+      const index = preferences.featureOrder.indexOf(key)
+      const nextIndex = index + offset
+      if (index < 0 || nextIndex < 0 || nextIndex >= preferences.featureOrder.length) return current
+      const featureOrder = [...preferences.featureOrder]
+      const [item] = featureOrder.splice(index, 1)
+      featureOrder.splice(nextIndex, 0, item)
+      return {
+        ...current,
+        homeScreen: homeScreenSettingsPayload({ ...preferences, featureOrder }),
+      }
+    })
+  }
+
   function beginHomeSectionDrag(key: HomeSectionKey, event: React.PointerEvent<HTMLButtonElement>) {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -651,10 +733,10 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-white transition-transform active:scale-95" aria-label="Account menu">
-        {name.charAt(0).toUpperCase()}
+      <button onClick={() => setOpen(true)} className="home-settings-button" aria-label="Open settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.96 19.36a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z" /></svg>
       </button>
-      {open ? (
+      {open && typeof document !== 'undefined' ? createPortal((
         <div className="fixed inset-0 z-[70] mx-auto flex max-w-lg flex-col justify-end">
           <button className="absolute inset-0 bg-black/30" aria-label="Close" onClick={close} />
           <div className="relative flex max-h-[90dvh] flex-col rounded-t-3xl bg-bg">
@@ -742,6 +824,23 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
                             <p className="mt-0.5 text-[12px] text-text-2">{section.sub}</p>
                           </div>
                           <Switch checked={homeScreenSettings[section.key]} onChange={enabled => updateHomeScreenSetting(section.key, enabled)} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="mb-2 px-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-text-2">Everything together items</p>
+                  <div className="mb-3 overflow-hidden rounded-2xl bg-surface">
+                    {homeFeatureOrder.map((key, index) => {
+                      const feature = HOME_FEATURES.find(item => item.key === key)
+                      if (!feature) return null
+                      return (
+                        <div key={key} className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? 'border-t border-border' : ''}`}>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button type="button" disabled={index === 0} onClick={() => moveHomeFeature(key, -1)} className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-text-2 disabled:opacity-25" aria-label={`Move ${feature.label} up`}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m4 10 4-4 4 4" /></svg></button>
+                            <button type="button" disabled={index === homeFeatureOrder.length - 1} onClick={() => moveHomeFeature(key, 1)} className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-text-2 disabled:opacity-25" aria-label={`Move ${feature.label} down`}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m4 6 4 4 4-4" /></svg></button>
+                          </div>
+                          <span className="min-w-0 flex-1 text-[15px] font-semibold text-text-1">{feature.label}</span>
+                          <Switch checked={homeFeatureSettings[key]} onChange={enabled => updateHomeFeatureSetting(key, enabled)} />
                         </div>
                       )
                     })}
@@ -911,14 +1010,90 @@ function UserButton({ name, email }: { name: string; email?: string | null }) {
             ) : null}
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
     </>
+  )
+}
+
+function HomeHero({
+  firstName,
+  date,
+  name,
+  email,
+  nextUp,
+  familyMembers,
+}: {
+  firstName: string
+  date: string
+  name: string
+  email?: string | null
+  nextUp: HomeNextUp | null
+  familyMembers: string[]
+}) {
+  return (
+    <header className="home-hero home-live-hero">
+      <FamilyMenuButton className="home-live-menu" />
+      <UserButton name={name} email={email} />
+      <div className="home-live-family-label">THE COAKES FAMILY</div>
+      <div className="home-hero-top home-live-welcome">
+        <div>
+          <p className="home-hero-date">{date}</p>
+          <h1>Hello, {firstName}</h1>
+          <span>Here’s what’s happening at home.</span>
+        </div>
+        <div className="home-live-avatars" aria-label="Family members">
+          {(familyMembers.length ? familyMembers : [name]).slice(0, 2).map((member, index) => <span key={member} style={{ background: index % 2 ? '#F0A25A' : '#BE6B91' }}>{member.slice(0, 1).toUpperCase()}</span>)}
+        </div>
+      </div>
+      {nextUp ? (
+        <a href={nextUp.href} className="home-live-next">
+          <span className="home-live-date"><b>{nextUp.when.getDate()}</b><small>{nextUp.when.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</small></span>
+          <span className="home-live-next-copy"><small>NEXT UP · {nextUp.allDay ? 'ALL DAY' : nextUp.when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small><strong>{nextUp.title}</strong><span>{nextUp.label}{nextUp.sub ? ` · ${nextUp.sub}` : ''}</span></span>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 3 5 5-5 5" /></svg>
+        </a>
+      ) : (
+        <a href="/calendar" className="home-live-next is-empty"><span className="home-live-date"><b>✓</b></span><span className="home-live-next-copy"><small>NEXT UP</small><strong>Nothing scheduled</strong><span>The family calendar is clear.</span></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 3 5 5-5 5" /></svg></a>
+      )}
+    </header>
+  )
+}
+
+function HomeFeatureGrid({ calendarCount, taskCount, shoppingCount, inboxCount, noteCount, enabled, order }: { calendarCount: number; taskCount: number; shoppingCount: number; inboxCount: number; noteCount: number; enabled: HomeFeatureSettings; order: HomeFeatureKey[] }) {
+  const cards = [
+    { key: 'calendar' as const, href: '/calendar', label: 'Calendar', sub: calendarCount === 1 ? '1 event coming up' : `${calendarCount} events coming up`, color: '#2787D8', soft: '#E5F3FF', icon: <><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3v4M16 3v4M4 10h16" /></> },
+    { key: 'tasks' as const, href: '/household/tasks', label: 'Tasks', sub: taskCount === 1 ? '1 task left' : `${taskCount} tasks left`, color: '#EF9B2D', soft: '#FFF2DF', icon: <><path d="m5 7 2 2 4-4" /><path d="M12 7h7M5 15l2 2 4-4M12 15h7" /></> },
+    { key: 'shopping' as const, href: '/household/shopping', label: 'Shopping', sub: shoppingCount === 1 ? '1 item' : `${shoppingCount} items`, color: '#49A96F', soft: '#E5F6EB', icon: <><path d="M5 8h14l-1 12H6L5 8Z" /><path d="M8 8a4 4 0 0 1 8 0" /></> },
+    { key: 'meals' as const, href: '/household/shopping/meals', label: 'Meals', sub: 'Plan this week', color: '#E36574', soft: '#FFE9ED', icon: <><path d="M7 3v7M4 3v4a3 3 0 0 0 6 0V3M7 10v11M16 3v18M16 3c3 2 4 5 4 8h-4" /></> },
+    { key: 'capture' as const, href: '/inbox', label: 'Capture', sub: inboxCount === 1 ? '1 to organise' : `${inboxCount} to organise`, color: '#7D73D8', soft: '#EEEBFF', icon: <><path d="M4 5h16v14H4z" /><path d="M4 15h5l1.5 2h3L15 15h5" /></> },
+    { key: 'notes' as const, href: '/notes', label: 'Notes', sub: noteCount === 1 ? '1 pinned note' : `${noteCount} pinned notes`, color: '#D5A22D', soft: '#FFF5D8', icon: <><path d="M6 3h12v18H6z" /><path d="M9 8h6M9 12h6M9 16h4" /></> },
+    { key: 'household' as const, href: '/household', label: 'Household', sub: 'Home at a glance', color: '#2EA7A0', soft: '#E2F7F5', icon: <><path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10M9 21v-7h6v7" /></> },
+    { key: 'vault' as const, href: '/life/admin', label: 'Vault', sub: 'Documents & records', color: '#6471C9', soft: '#E9EBFF', icon: <><path d="M5 3h10l4 4v14H5z" /><path d="M15 3v5h5M8 13h8M8 17h6" /></> },
+  ]
+  const cardByKey = new Map(cards.map(card => [card.key, card]))
+  const visibleCards = order.flatMap(key => {
+    const card = cardByKey.get(key)
+    return enabled[key] && card ? [card] : []
+  })
+
+  return (
+    <section className="family-home-features">
+      <div className="family-section-heading"><div><small>OUR FAMILY</small><h2>Everything together</h2></div><a href="/more">See all</a></div>
+      <div className="family-feature-grid">
+        {visibleCards.map(card => (
+          <a key={card.key} href={card.href} className="family-feature-card">
+            <span style={{ color: card.color, background: card.soft }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{card.icon}</svg></span>
+            <strong>{card.label}</strong>
+            <small>{card.sub}</small>
+          </a>
+        ))}
+      </div>
+    </section>
   )
 }
 
 function PinnedBoardLite({ pins }: { pins: Array<{ id: string; title: string; body?: string | null }> }) {
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-pins-card mx-4 mb-4">
       {pins.length === 0 ? (
         <a href="/notes" className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-surface px-4 py-3.5 active:bg-surface-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent">
@@ -956,27 +1131,12 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
 
   if (entry.kind === 'calendar') {
     const rowHref = entry.href ?? `/calendar?day=${encodeURIComponent(entry.dayKey)}&event=${encodeURIComponent(entry.eventId)}`
-    const textState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-1'
-    const subState = entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'
     return (
-      <a href={rowHref} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`} style={{ opacity: entry.estimated ? 0.78 : 1 }}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]" style={{ background: entry.finishedToday ? 'var(--surface-2)' : `color-mix(in srgb, ${entry.color} ${entry.estimated ? 8 : 15}%, var(--surface))` }}>
-          <ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className={`truncate text-[13.5px] font-semibold ${textState}`}>{entry.title}</p>
-          {entry.sub || entry.estimated ? <p className={`mt-0.5 truncate text-[11.5px] ${subState}`}>{entry.sub ?? 'Estimated'}</p> : null}
-        </div>
-        <div className={`ml-2 flex min-w-[38px] shrink-0 flex-col items-end leading-tight ${entry.finishedToday ? 'text-text-3 line-through decoration-[1.5px] decoration-current' : 'text-text-2'}`}>
-          {entry.allDay ? (
-            <span className="text-[11.5px]">{entry.timeLabel}</span>
-          ) : (
-            <>
-              <span className="text-[11.5px]">{scheduleTimeLabel(new Date(entry.sortMs))}</span>
-              <span className="mt-0.5 text-[11.5px]">{entry.endTimeLabel}</span>
-            </>
-          )}
-        </div>
+      <a href={rowHref} className={`family-timeline-row family-timeline-entry ${entry.finishedToday ? 'is-finished' : ''} ${border}`} style={{ '--timeline-color': entry.color, opacity: entry.estimated ? 0.78 : 1 } as CSSProperties}>
+        <time>{entry.allDay ? 'All day' : scheduleTimeLabel(new Date(entry.sortMs))}</time>
+        <i style={{ background: entry.color }} />
+        <span className="family-timeline-copy"><small className="family-timeline-type">{entry.cycleKind ? 'CYCLE' : entry.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? (entry.estimated ? 'Estimated' : entry.allDay ? 'Family calendar' : `Until ${entry.endTimeLabel}`)}</small></span>
+        <span className="family-timeline-kind" style={{ background: `color-mix(in srgb, ${entry.color} 13%, var(--surface))` }}><ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} /></span>
       </a>
     )
   }
@@ -984,35 +1144,32 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   if (entry.kind === 'task') {
     const done = entry.completed || doneIds.has(entry.taskId)
     return (
-      <SwipeRow onDelete={() => onDelete(entry.taskId)} className={border}>
-        <div className="flex items-center gap-3 px-4 py-3">
-          <button onClick={() => onToggle(entry.taskId)} className="flex h-8 w-8 shrink-0 items-center justify-center transition-transform active:scale-90" aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
-            <span className="flex h-[19px] w-[19px] items-center justify-center rounded-full" style={done ? { background: entry.color } : { border: `2px solid ${entry.color}` }}>
-              {done ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
+      <SwipeRow onDelete={() => onDelete(entry.taskId)} wrapClassName={border}>
+        <div className={`family-timeline-row family-timeline-entry is-task ${done ? 'is-finished' : ''}`} style={{ '--timeline-color': entry.color } as CSSProperties}>
+          <time>{scheduleTimeLabel(new Date(entry.sortMs))}</time>
+          <i style={{ background: entry.color }} />
+          <span className="family-timeline-task-content">
+            <small className="family-timeline-type">TO-DO</small>
+            <span className="family-timeline-task-copy">
+              <button onClick={() => onToggle(entry.taskId)} className="family-timeline-check" style={done ? { background: entry.color, borderColor: entry.color } : { borderColor: entry.color }} aria-label={done ? `Mark "${entry.title}" incomplete` : `Mark "${entry.title}" complete`}>
+                {done ? <svg viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l3.5 3.5L13 4.5" /></svg> : null}
+              </button>
+              <button type="button" onClick={() => navigateInApp('/household/tasks')} className="family-timeline-copy text-left active:opacity-70">
+                <strong>{entry.title}</strong><small className="family-timeline-meta">{entry.overdue && !done ? 'Overdue' : entry.assignee ? `${entry.assignee} · Shared task` : 'Shared task'}</small>
+              </button>
             </span>
-          </button>
-          <button type="button" onClick={() => { window.location.href = `/household/tasks/${entry.listId ?? 'all'}` }} className="min-w-0 flex-1 text-left active:opacity-70">
-            <p className={`truncate text-[13.5px] font-semibold ${done ? 'text-text-2 line-through' : 'text-text-1'}`}>{entry.title}</p>
-            {entry.assignee && !done ? <p className="mt-0.5 text-[11.5px] text-text-2">{entry.assignee}</p> : null}
-          </button>
-          {entry.overdue && !done ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : null}
+          </span>
         </div>
       </SwipeRow>
     )
   }
 
   return (
-    <a href={entry.href} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${border}`}>
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] ${entry.overdue ? 'bg-red-bg' : 'bg-amber-bg'}`}>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className={`h-[15px] w-[15px] ${entry.overdue ? 'text-red' : 'text-amber'}`}>
-          <circle cx="8" cy="8.5" r="5.5" /><path d="M8 6v3l1.5 1.5" /><path d="M5.5 1.5l1 1.5M10.5 1.5l-1 1.5" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13.5px] font-semibold text-text-1">{entry.title}</p>
-        {entry.sub ? <p className="mt-0.5 truncate text-[11.5px] text-text-2">{entry.sub}</p> : null}
-      </div>
-      {entry.overdue ? <span className="ml-2 shrink-0 rounded-lg bg-red-bg px-2 py-0.5 text-[11px] font-bold text-red">Overdue</span> : entry.days > 0 ? <span className={`ml-2 shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-bold ${entry.days <= 7 ? 'bg-amber-bg text-amber' : 'bg-surface-2 text-text-2'}`}>{entry.days}d</span> : null}
+    <a href={entry.href} className={`family-timeline-row family-timeline-entry ${border}`} style={{ '--timeline-color': entry.overdue ? '#FF3B30' : '#E17055' } as CSSProperties}>
+      <time>{entry.days === 0 ? 'Today' : entry.days === 1 ? 'Tomorrow' : entry.days < 0 ? 'Overdue' : `${entry.days}d`}</time>
+      <i style={{ background: entry.overdue ? '#FF3B30' : '#E17055' }} />
+      <span className="family-timeline-copy"><small className="family-timeline-type">RENEWAL</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? 'Household reminder'}</small></span>
+      <span className={`family-timeline-kind ${entry.overdue ? 'bg-red-bg text-red' : 'bg-amber-bg text-amber'}`}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7}><circle cx="8" cy="8.5" r="5.5" /><path d="M8 6v3l1.5 1.5" /></svg></span>
     </a>
   )
 }
@@ -1060,16 +1217,15 @@ function ScheduleDayWeather({ weather, prominent }: { weather: ScheduleWeatherDa
     <a
       href="/weather"
       aria-label={`Weather high ${weather.high}, low ${weather.low}`}
-      className="flex self-stretch shrink-0 items-center gap-1.5 border-l px-3 text-[11px] font-bold normal-case tracking-normal active:opacity-85"
+      className="family-timeline-weather active:opacity-85"
       style={{
         background: prominent
-          ? 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 84%, var(--surface) 16%) 0%, color-mix(in srgb, var(--accent) 66%, #000 34%) 100%)'
-          : 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--surface) 91%) 0%, color-mix(in srgb, var(--accent) 14%, var(--surface) 86%) 100%)',
-        borderColor: prominent ? 'rgba(255,255,255,0.16)' : 'color-mix(in srgb, var(--accent) 12%, var(--border) 88%)',
-        color: prominent ? '#fff' : 'color-mix(in srgb, var(--accent) 76%, var(--text-2) 24%)',
+          ? 'linear-gradient(135deg, color-mix(in srgb, var(--day-color) 84%, var(--surface) 16%) 0%, color-mix(in srgb, var(--day-color) 66%, #000 34%) 100%)'
+          : 'linear-gradient(135deg, color-mix(in srgb, var(--day-color) 9%, var(--surface) 91%) 0%, color-mix(in srgb, var(--day-color) 14%, var(--surface) 86%) 100%)',
+        color: prominent ? '#fff' : 'color-mix(in srgb, var(--day-color) 76%, var(--text-2) 24%)',
       }}
     >
-      <WeatherGlyph icon={weather.icon} className="h-5 w-5" />
+      <WeatherGlyph icon={weather.icon} className="h-4 w-4" />
       <span className="inline-flex items-center gap-0.5">
         <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={arrowClassName}><path d="M6 2.5v7" /><path d="M3.25 5.25 6 2.5l2.75 2.75" /></svg>
         {weather.high}
@@ -1085,16 +1241,11 @@ function ScheduleDayWeather({ weather, prominent }: { weather: ScheduleWeatherDa
 function GroupedTimeline({ groups, doneIds, onToggle, onDelete, weatherByDate, embedded = false }: { groups: DayGroup[]; doneIds: Set<string>; onToggle: (id: string) => void; onDelete: (id: string) => void; weatherByDate: Map<string, ScheduleWeatherDay>; embedded?: boolean }) {
   const content = groups.map((group, groupIndex) => {
     const weather = group.dateKey ? weatherByDate.get(group.dateKey) : null
+    const dayColor = group.isOverdue ? 'var(--red)' : group.isToday ? 'var(--accent)' : TIMELINE_DAY_COLORS[groupIndex % TIMELINE_DAY_COLORS.length]
     return (
       <div key={group.key}>
-        <div
-          className={`flex min-h-[36px] items-stretch overflow-hidden ${groupIndex > 0 ? 'border-t' : ''}`}
-          style={{
-            borderColor: 'color-mix(in srgb, var(--border) 55%, transparent)',
-            background: group.isOverdue ? 'color-mix(in srgb, #FF3B30 8%, var(--surface))' : group.isToday ? 'color-mix(in srgb, var(--accent) 8%, var(--surface))' : 'color-mix(in srgb, var(--border) 30%, var(--surface))',
-          }}
-        >
-          <p className={`flex min-w-0 flex-1 items-center truncate px-4 text-[10px] font-bold uppercase tracking-[0.09em] ${group.isOverdue ? 'text-red' : group.isToday ? 'text-accent' : 'text-text-3'}`}>{group.label}</p>
+        <div className={`family-timeline-day ${groupIndex > 0 ? 'is-separated' : ''} ${group.isToday ? 'is-today' : ''} ${group.isOverdue ? 'is-overdue' : ''}`} style={{ '--day-color': dayColor } as CSSProperties}>
+          <div className="family-timeline-day-copy"><small>{group.dateLabel}</small><strong>{group.label}</strong></div>
           {weather ? <ScheduleDayWeather weather={weather} prominent={group.isToday} /> : null}
         </div>
         {group.entries.map((entry, entryIndex) => <TimelineRow key={entry.id} entry={entry} doneIds={doneIds} onToggle={onToggle} onDelete={onDelete} hasBorder={entryIndex > 0} />)}
@@ -1102,35 +1253,16 @@ function GroupedTimeline({ groups, doneIds, onToggle, onDelete, weatherByDate, e
     )
   })
   return (
-    embedded ? <>{content}</> : <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>{content}</div>
+    embedded ? <div className="family-grouped-timeline">{content}</div> : <div className="family-grouped-timeline overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>{content}</div>
   )
 }
 
 function ScheduleBlock({ calendarEvents, tasks, renewals, now, weatherByDate }: { calendarEvents: CalEvent[]; tasks: Task[]; renewals: Renewal[]; now: Date; weatherByDate: Map<string, ScheduleWeatherDay> }) {
-  const [rangeDays, setRangeDaysState] = useState(7)
-  const [mode, setModeState] = useState<'combined' | 'separate'>('combined')
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     setDoneIds(new Set(tasks.filter(task => task.completed).map(task => task.id)))
   }, [tasks])
-
-  useEffect(() => {
-    const savedRange = Number(localStorage.getItem('homeos:schedule-range'))
-    if ([1, 3, 7].includes(savedRange)) setRangeDaysState(savedRange)
-    const savedMode = localStorage.getItem('homeos:schedule-mode')
-    if (savedMode === 'combined' || savedMode === 'separate') setModeState(savedMode)
-  }, [])
-
-  function setRangeDays(days: number) {
-    setRangeDaysState(days)
-    localStorage.setItem('homeos:schedule-range', String(days))
-  }
-
-  function setMode(next: 'combined' | 'separate') {
-    setModeState(next)
-    localStorage.setItem('homeos:schedule-mode', next)
-  }
 
   async function toggleTask(id: string) {
     const task = tasks.find(row => row.id === id)
@@ -1180,60 +1312,23 @@ function ScheduleBlock({ calendarEvents, tasks, renewals, now, weatherByDate }: 
     }))
   }
 
-  const cutoff = rangeCutoffMs(now, rangeDays)
+  const cutoff = rangeCutoffMs(now, 7)
   const calendarIn = calendarEvents.filter(event => event.startsAt.getTime() <= cutoff)
   const tasksIn = tasks.filter(task => task.dueDate.getTime() <= cutoff)
   const renewalsIn = renewals.filter(renewal => renewal.date.getTime() <= cutoff)
   const combinedGroups = buildTimeline(calendarIn, tasksIn, renewalsIn, now)
-  const eventGroups = buildTimeline(calendarIn, [], [], now)
-  const taskGroups = buildTimeline([], tasksIn, [], now)
-  const renewalGroups = buildTimeline([], [], renewalsIn, now)
-  const empty = mode === 'combined' ? combinedGroups.length === 0 : eventGroups.length === 0 && taskGroups.length === 0 && renewalGroups.length === 0
 
   return (
-    <section className="mx-4 mb-4">
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <p className="shrink-0 text-[14px] font-semibold text-text-1">Schedule</p>
-          <div className="no-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
-            {RANGE_OPTIONS.map(option => (
-              <button key={option.days} onClick={() => setRangeDays(option.days)} className={`whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-semibold transition-colors ${rangeDays === option.days ? 'bg-accent text-white' : 'bg-surface-2 text-text-2'}`}>
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex shrink-0 rounded-lg bg-surface-2 p-0.5">
-            <button onClick={() => setMode('combined')} aria-label="Combined view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'combined' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
-              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="h-4 w-4"><line x1="4" y1="6" x2="16" y2="6" /><line x1="4" y1="10" x2="16" y2="10" /><line x1="4" y1="14" x2="16" y2="14" /></svg>
-            </button>
-            <button onClick={() => setMode('separate')} aria-label="Separate view" className={`rounded-[7px] px-2 py-1 transition-colors ${mode === 'separate' ? 'bg-surface text-text-1 shadow-sm' : 'text-text-3'}`}>
-              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><rect x="3" y="3.5" width="14" height="5" rx="1.5" /><rect x="3" y="11.5" width="14" height="5" rx="1.5" /></svg>
-            </button>
-          </div>
-        </div>
-        {empty ? (
-          <a href="/calendar" className="flex items-center gap-3 px-4 py-3 active:bg-bg">
-            <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent/15"><div className="h-[7px] w-[7px] rounded-full bg-accent" /></div>
-            <span className="flex-1 text-[13.5px] text-text-2">Nothing scheduled in this range</span>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
-          </a>
-        ) : mode === 'combined' ? (
-          <GroupedTimeline embedded groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} />
-        ) : (
-          <div className="divide-y divide-border">
-            {eventGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Events</p><GroupedTimeline embedded groups={eventGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-            {taskGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Tasks</p><GroupedTimeline embedded groups={taskGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-            {renewalGroups.length > 0 ? <div><p className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-text-3">Renewals</p><GroupedTimeline embedded groups={renewalGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} /></div> : null}
-          </div>
-        )}
-      </div>
+    <section className="family-live-schedule">
+      <div className="family-section-heading"><div><small>NEXT 7 DAYS</small><h2>Family timeline</h2></div><a href="/calendar">See all</a></div>
+      {combinedGroups.length === 0 ? <a href="/calendar" className="family-timeline-empty"><span>Nothing scheduled this week</span><small>Open the family calendar</small></a> : <GroupedTimeline embedded groups={combinedGroups} doneIds={doneIds} onToggle={toggleTask} onDelete={deleteTask} weatherByDate={weatherByDate} />}
     </section>
   )
 }
 
 function OnTonightCard({ shows }: { shows: Array<{ title: string; channel: string; airtime: string; channelId: string; atMs: number }> }) {
   return (
-    <section className="mx-4 mb-5">
+    <section className="home-card home-tonight-card mx-4 mb-5">
       <div className="overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(ellipse at 15% 80%, rgba(139,92,246,0.55) 0%, transparent 52%), radial-gradient(ellipse at 88% 15%, rgba(6,182,212,0.38) 0%, transparent 50%), radial-gradient(ellipse at 52% 52%, rgba(99,102,241,0.22) 0%, transparent 48%), #070c1e', boxShadow: '0 2px 32px rgba(139,92,246,0.18), 0 1px 0 rgba(255,255,255,0.04) inset' }}>
         <div className="flex items-center justify-between border-b border-white/[0.10] px-4 py-3">
           <h2 className="text-[14px] font-semibold text-white">On tonight</h2>
@@ -1261,7 +1356,7 @@ function HomePeriodCard({ entry, ending, onEnd }: { entry: CycleEntry; ending: b
   const day = Math.max(1, Math.floor((cycleDate(new Date()).getTime() - start.getTime()) / 86_400_000) + 1)
 
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-status-card mx-4 mb-4">
       <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold text-white" style={{ background: '#C04A7A' }}>
           {day}
@@ -1286,7 +1381,7 @@ function HomeCycleDueCard({ dueSoon, starting, onStart }: { dueSoon: CycleDueSoo
       : `Due in ${dueSoon.daysUntil} days`
 
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-status-card mx-4 mb-4">
       <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-white" style={{ background: '#C04A7A' }}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
@@ -1307,7 +1402,7 @@ function HomeCycleDueCard({ dueSoon, starting, onStart }: { dueSoon: CycleDueSoo
 
 function HomeUlcerCard({ summary }: { summary: ActiveUlcerSummary }) {
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-status-card mx-4 mb-4">
       <a href="/ulcer-tracker" className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 active:bg-surface-2">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] text-[13px] font-bold text-white" style={{ background: '#E25555' }}>
           {summary.count}
@@ -1405,7 +1500,7 @@ function DropzoneBoardCard() {
   const visibleEntries = showAll ? entries : entries.slice(0, 1)
 
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-dropzone-card mx-4 mb-4">
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <div className="p-3">
           <div className="mb-2 flex items-center justify-between px-1">
@@ -1470,7 +1565,7 @@ function DropzoneBoardCard() {
 
 function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total: number }) {
   return (
-    <section className="mx-4 mb-4">
+    <section className="home-card home-shopping-card mx-4 mb-4">
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-[14px] font-semibold text-text-1">Shopping</h2>
@@ -1589,7 +1684,7 @@ export function DashboardPage() {
           dueDate,
           listId: item.listId ?? null,
           assignee: item.assigneeId ? state.data.users.find(user => user.id === item.assigneeId)?.name ?? null : null,
-          color: item.listId ? listColorMap.get(item.listId) ?? '#FF9500' : '#FF9500',
+          color: item.metadata?.source === 'bin_schedule' ? '#49A96F' : item.listId ? listColorMap.get(item.listId) ?? '#FF9500' : '#FF9500',
           completed: item.status === 'completed',
         }
       })
@@ -1661,22 +1756,29 @@ export function DashboardPage() {
       .filter(item => item.type === 'note' && item.pinned && item.status === 'active' && !item.deletedAt)
       .sort((a, b) => new Date(b.pinnedAt ?? b.updatedAt).getTime() - new Date(a.pinnedAt ?? a.updatedAt).getTime())
       .map(item => ({ id: item.id, title: item.title, body: item.body }))
+    const noteCount = state.data.items.filter(item => item.type === 'note' && item.status === 'active' && !item.deletedAt).length
+    const openTaskCount = state.data.items.filter(item => item.type === 'task' && item.status === 'active' && !item.deletedAt).length
 
     return {
       user: sessionUser ?? state.data.users[0],
+      familyMembers: state.data.users.map(user => user.name).filter((name): name is string => Boolean(name)),
       householdId: state.data.household[0]?.id ?? 'default',
       shoppingGroups: shoppingGroups as ShoppingGroup[],
       shoppingTotal: shoppingAll.length,
       tasks: tasks as Task[],
+      openTaskCount,
       inboxCount: inbox.length,
       inboxPreview: inbox.slice(0, 2),
       calendarEvents: [...calendarEvents, ...cycleEvents] as CalEvent[],
       renewals: renewals as Renewal[],
       bins: bins as BinWithDate[],
       pins,
+      noteCount,
       householdSettings,
       homeScreenSettings,
       homeSectionOrder: homeScreenPreferences.order,
+      homeFeatureSettings: homeScreenPreferences.featureEnabled,
+      homeFeatureOrder: homeScreenPreferences.featureOrder,
       openCycleEntry,
       cycleDueSoon,
       activeUlcerSummary,
@@ -1702,10 +1804,23 @@ export function DashboardPage() {
     return days
   }, [homeWeather.snapshot])
   const firstName = snapshot.user?.name?.split(' ')[0] ?? 'Dan'
-  const hour = now.getHours()
-  const greeting = hour < 12 ? `Good morning, ${firstName}` : hour < 17 ? `Good afternoon, ${firstName}` : `Good evening, ${firstName}`
   const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
   const hasAlerts = snapshot.bins.length > 0 || snapshot.inboxCount > 0
+  const nextUp = useMemo<HomeNextUp | null>(() => {
+    const todayStart = startOfLocalDay(now).getTime()
+    const candidates: HomeNextUp[] = [
+      ...snapshot.calendarEvents
+        .filter(event => event.allDay ? event.endsAt.getTime() >= todayStart : event.endsAt.getTime() >= now.getTime())
+        .map(event => ({ title: event.title, when: event.startsAt, label: event.allDay ? 'Family calendar' : 'Calendar', sub: event.location, color: event.color, href: event.href ?? `/calendar?day=${encodeURIComponent(calendarDayKey(event.startsAt, event.allDay))}&event=${encodeURIComponent(event.id)}`, allDay: event.allDay })),
+      ...snapshot.tasks
+        .filter(task => !task.completed && task.dueDate.getTime() >= todayStart)
+        .map(task => ({ title: task.title, when: task.dueDate, label: 'Shared task', sub: task.assignee, color: task.color, href: '/household/tasks' })),
+      ...snapshot.renewals
+        .filter(renewal => renewal.date.getTime() >= todayStart)
+        .map(renewal => ({ title: renewal.title, when: renewal.date, label: 'Reminder', sub: renewal.label, color: '#E17055', href: renewal.href, allDay: true })),
+    ]
+    return candidates.sort((a, b) => a.when.getTime() - b.when.getTime())[0] ?? null
+  }, [now, snapshot.calendarEvents, snapshot.tasks, snapshot.renewals])
 
   useEffect(() => {
     let cancelled = false
@@ -1820,6 +1935,18 @@ export function DashboardPage() {
 
   function renderHomeSection(section: HomeSectionKey) {
     switch (section) {
+      case 'features':
+        return snapshot.homeScreenSettings.features ? (
+          <HomeFeatureGrid
+            calendarCount={snapshot.calendarEvents.length}
+            taskCount={snapshot.openTaskCount}
+            shoppingCount={snapshot.shoppingTotal}
+            inboxCount={snapshot.inboxCount}
+            noteCount={snapshot.noteCount}
+            enabled={snapshot.homeFeatureSettings}
+            order={snapshot.homeFeatureOrder}
+          />
+        ) : null
       case 'ai':
         return snapshot.homeScreenSettings.ai ? <AiCapture surface="home" placeholder="Speak or type anything for the house brain" /> : null
       case 'kitBoard':
@@ -1838,7 +1965,7 @@ export function DashboardPage() {
         return snapshot.homeScreenSettings.pinned ? <PinnedBoardLite pins={snapshot.pins} /> : null
       case 'headsUp':
         return snapshot.homeScreenSettings.headsUp && hasAlerts ? (
-          <section className="mx-4 mb-4">
+          <section className="home-card home-heads-up-card mx-4 mb-4">
             <div className="overflow-hidden rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', background: 'var(--surface)' }}>
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-[14px] font-semibold text-text-1">Heads up</h2>
@@ -1883,18 +2010,28 @@ export function DashboardPage() {
   }
 
   return (
-    <ScreenShell title="Home" showHeader={false}>
-      <header className="flex items-start justify-between px-5 pt-7 pb-5">
-        <div className="min-w-0 flex-1 pr-4">
-          <p className="mb-1 min-w-0 truncate text-[12px] font-medium tracking-[0.02em] text-text-3">{dateStr}</p>
-          <h1 className="text-[30px] font-bold leading-[1.1] text-text-1" style={{ letterSpacing: '-0.025em' }}>{greeting}</h1>
+    <ScreenShell
+      title="Home"
+      showHeader={false}
+      topContent={(
+        <HomeHero
+          firstName={firstName}
+          date={dateStr}
+          name={snapshot.user?.name ?? 'Dan'}
+          email={snapshot.user?.email}
+          nextUp={nextUp}
+          familyMembers={snapshot.familyMembers}
+        />
+      )}
+      contentClassName="home-page flex-1 pb-28"
+    >
+      <>
+        <div className="home-sections">
+          {snapshot.homeSectionOrder.map(section => <Fragment key={section}>{renderHomeSection(section)}</Fragment>)}
         </div>
-        <UserButton name={snapshot.user?.name ?? 'Dan'} email={snapshot.user?.email} />
-      </header>
-
-      {snapshot.homeSectionOrder.map(section => <div key={section}>{renderHomeSection(section)}</div>)}
-
-      <div className="h-4" />
+        <a href="/inbox/capture" className="home-live-quick-add"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m12 3 1.3 4.2L17 9l-3.7 1.8L12 15l-1.3-4.2L7 9l3.7-1.8L12 3Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" /></svg></span><span><strong>Quick add</strong><small>Event, task, note or shopping item</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></svg></a>
+        <div className="h-4" />
+      </>
     </ScreenShell>
   )
 }

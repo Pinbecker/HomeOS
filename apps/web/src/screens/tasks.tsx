@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from 'react'
-import { ScreenShell } from './shell'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
+import { FamilySubHeader, ScreenShell } from './shell'
 import { ColorField } from '../components/color-control'
 import { SwipeRow } from '../components/swipe-row'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { navigateInApp } from '../lib/navigation'
 import { useSessionState } from '../lib/session-store'
 
 const DEFAULT_LIST_COLOR = '#007AFF'
@@ -17,10 +18,13 @@ type TaskItem = {
   assigneeId?: string | null
   dueDate?: string | number | Date | null
   completedAt?: string | number | Date | null
+  metadata?: Record<string, unknown> | null
   deletedAt?: string | number | Date | null
   createdAt: string | number | Date
   updatedAt: string | number | Date
 }
+
+type CalendarTaskSuggestion = { eventId: string; title: string; dueDate: string; reason: string }
 
 const AVATAR_COLORS = ['#007AFF', '#FF2D55', '#34C759', '#AF52DE']
 
@@ -85,7 +89,7 @@ function Chevron() {
   )
 }
 
-export function TasksOverviewPage() {
+function TaskListsArchivePage() {
   const { lists, items } = useAppState(state => ({
     lists: state.data.lists.filter(list => list.type === 'tasks' && !list.archived).sort((a, b) => a.sortOrder - b.sortOrder),
     items: state.data.items.filter(item => item.type === 'task' && item.status === 'active' && !item.deletedAt),
@@ -141,6 +145,11 @@ export function TasksOverviewPage() {
 
   return (
     <ScreenShell title="Tasks">
+      <div className="family-summary-card family-summary-tasks">
+        <div><small>SHARED TO-DO</small><strong>{items.length} {items.length === 1 ? 'task' : 'tasks'} left</strong><span>Keep the household moving together.</span></div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m4 7 2 2 4-4" /><path d="M12 7h8M4 15l2 2 4-4M12 15h8" /></svg>
+      </div>
+      <div className="family-content-label"><small>QUICK VIEWS</small><h2>Find a task</h2></div>
       <div className="mx-4 mb-5 bg-surface rounded-2xl overflow-hidden">
         <a href="/household/tasks/all" className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
           <div className="w-8 h-8 rounded-full bg-text-2 flex items-center justify-center shrink-0">
@@ -165,7 +174,7 @@ export function TasksOverviewPage() {
         </a>
       </div>
 
-      <p className="px-5 mb-2 text-[12px] font-bold uppercase tracking-wide text-text-3">My Lists</p>
+      <div className="family-content-label"><small>SHARED LISTS</small><h2>My lists</h2></div>
 
       {lists.length > 0 && (
         <div className="mx-4 bg-surface rounded-2xl overflow-hidden">
@@ -217,16 +226,21 @@ export function TasksOverviewPage() {
   )
 }
 
-export function TaskDetailPage() {
+export function TasksOverviewPage() {
+  return <TaskDetailPage unified />
+}
+
+export function TaskDetailPage({ unified = false }: { unified?: boolean } = {}) {
   const currentUser = useSessionState(state => state.user)
   const pathname = typeof window === 'undefined' ? '' : window.location.pathname
-  const listId = pathname.split('/').pop() ?? 'all'
+  const listId = unified ? 'all' : pathname.split('/').pop() ?? 'all'
   const { list, lists, items, users } = useAppState(state => {
     const lists = state.data.lists.filter(row => row.type === 'tasks' && !row.archived)
+    const taskListIds = new Set(lists.map(row => row.id))
     const target = listId === 'all' || listId === 'inbox' ? null : lists.find(row => row.id === listId) ?? null
     const filtered = state.data.items
       .filter(row => row.type === 'task' && !row.deletedAt)
-      .filter(row => listId === 'all' ? true : listId === 'inbox' ? !row.listId : row.listId === listId)
+      .filter(row => listId === 'all' ? !row.listId || taskListIds.has(row.listId) : listId === 'inbox' ? !row.listId : row.listId === listId)
     return {
       list: target,
       lists: lists.sort((a, b) => a.sortOrder - b.sortOrder),
@@ -239,6 +253,7 @@ export function TaskDetailPage() {
   const newTitleRef = useRef('')
   const inputRef = useRef<HTMLInputElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
+  const renameCancelledRef = useRef(false)
   const [editing, setEditing] = useState(false)
   const [listName, setListName] = useState(list?.name ?? '')
   const [listColor, setListColor] = useState(list?.color ?? DEFAULT_LIST_COLOR)
@@ -246,14 +261,29 @@ export function TaskDetailPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [calendarSuggestions, setCalendarSuggestions] = useState<CalendarTaskSuggestion[]>([])
+  const [extractingCalendar, setExtractingCalendar] = useState(false)
+  const [calendarMessage, setCalendarMessage] = useState<string | null>(null)
 
-  const active = useMemo(() => items.filter(item => item.status === 'active'), [items])
+  const active = useMemo(() => items.filter(item => item.status === 'active').sort((a, b) => {
+    const aDue = toDate(a.dueDate)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    const bDue = toDate(b.dueDate)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    return aDue === bDue ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : aDue - bDue
+  }), [items])
   const completed = useMemo(() => items.filter(item => item.status !== 'active'), [items])
-  const title = listId === 'all' ? 'All' : listId === 'inbox' ? 'Inbox' : list?.name ?? 'Tasks'
-  const color = list?.color ?? DEFAULT_LIST_COLOR
+  const title = unified ? 'Tasks' : listId === 'all' ? 'All' : listId === 'inbox' ? 'Inbox' : list?.name ?? 'Tasks'
+  const color = unified ? '#EF9B2D' : list?.color ?? DEFAULT_LIST_COLOR
   const isAll = listId === 'all'
   const isInbox = listId === 'inbox'
   const canEditList = Boolean(list && !isAll && !isInbox)
+  const weekStart = useMemo(() => {
+    const date = new Date()
+    const offset = (date.getDay() + 6) % 7
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset).getTime()
+  }, [])
+  const completedThisWeek = completed.filter(task => (toDate(task.completedAt)?.getTime() ?? 0) >= weekStart).length
+  const progressTotal = active.length + completedThisWeek
+  const progress = progressTotal ? Math.round((completedThisWeek / progressTotal) * 100) : 100
 
   function userColor(id: string | null | undefined) {
     if (!id) return '#8E8E93'
@@ -266,9 +296,14 @@ export function TaskDetailPage() {
     return user ? user.name.charAt(0).toUpperCase() : ''
   }
 
+  function taskColor(task: TaskItem) {
+    if (task.metadata?.source === 'bin_schedule') return '#49A96F'
+    return lists.find(row => row.id === task.listId)?.color ?? color
+  }
+
   async function addTask(refocus = false) {
     const trimmed = newTitleRef.current.trim()
-    if (!trimmed || isAll) return
+    if (!trimmed || (isAll && !unified)) return
     newTitleRef.current = ''
     const id = makeId('task')
     const householdId = getCurrentState().data.household[0]?.id ?? 'default'
@@ -280,7 +315,7 @@ export function TaskDetailPage() {
       type: 'task',
       title: trimmed,
       status: 'active',
-      listId: isInbox ? null : listId,
+      listId: isInbox || unified ? null : listId,
       assigneeId: null,
       dueDate: null,
       completedAt: null,
@@ -305,6 +340,56 @@ export function TaskDetailPage() {
 
     setNewTitle('')
     if (refocus) inputRef.current?.focus()
+  }
+
+  async function findCalendarTasks() {
+    if (extractingCalendar) return
+    setExtractingCalendar(true)
+    setCalendarMessage(null)
+    try {
+      const response = await fetch('/api/ai/calendar/tasks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 14 }),
+      })
+      const payload = await response.json().catch(() => null) as { tasks?: CalendarTaskSuggestion[]; eventCount?: number; error?: string } | null
+      if (!response.ok) throw new Error(payload?.error ?? 'Could not scan the calendar.')
+      const existingTitles = new Set(items.map(item => item.title.trim().toLocaleLowerCase()))
+      const suggestions = (payload?.tasks ?? []).filter(task => !existingTitles.has(task.title.trim().toLocaleLowerCase()))
+      setCalendarSuggestions(suggestions)
+      setCalendarMessage(suggestions.length ? null : payload?.eventCount ? 'No clear follow-up tasks found.' : 'There are no upcoming calendar events to scan.')
+    } catch (error) {
+      setCalendarMessage(error instanceof Error ? error.message : 'Could not scan the calendar.')
+    } finally {
+      setExtractingCalendar(false)
+    }
+  }
+
+  async function addCalendarSuggestion(suggestion: CalendarTaskSuggestion) {
+    const id = makeId('task')
+    const now = new Date().toISOString()
+    const payload = {
+      id,
+      householdId: getCurrentState().data.household[0]?.id ?? 'default',
+      createdById: currentUser?.id ?? 'system',
+      type: 'task',
+      title: suggestion.title,
+      body: suggestion.reason,
+      status: 'active',
+      listId: null,
+      assigneeId: null,
+      dueDate: suggestion.dueDate,
+      completedAt: null,
+      metadata: { source: 'calendar_ai', calendarEventId: suggestion.eventId },
+      createdAt: now,
+      updatedAt: now,
+    }
+    await enqueueMutation({ id: makeId('mutation'), name: 'task.upsert', entityType: 'item', entityId: id, operation: 'upsert', payload }, prev => ({
+      ...prev,
+      data: { ...prev.data, items: [...prev.data.items, payload] },
+    }))
+    setCalendarSuggestions(current => current.filter(task => task.eventId !== suggestion.eventId || task.title !== suggestion.title))
   }
 
   async function updateTask(task: TaskItem, patch: Partial<TaskItem>) {
@@ -394,6 +479,7 @@ export function TaskDetailPage() {
 
   function startRename(task: TaskItem) {
     setExpandedId(null)
+    renameCancelledRef.current = false
     setRenamingId(task.id)
     setRenameValue(task.title)
     window.setTimeout(() => renameRef.current?.focus(), 0)
@@ -401,10 +487,10 @@ export function TaskDetailPage() {
 
   async function commitRename(task: TaskItem) {
     const trimmed = renameValue.trim()
+    setRenamingId(null)
     if (trimmed && trimmed !== task.title) {
       await updateTask(task, { title: trimmed })
     }
-    setRenamingId(null)
   }
 
   function toggleEditing() {
@@ -461,17 +547,18 @@ export function TaskDetailPage() {
       },
     }))
 
-    window.location.href = '/household/tasks'
+    navigateInApp('/household/tasks')
   }
 
-  function TaskRow({ task, index, section }: { task: TaskItem; index: number; section: 'active' | 'completed' }) {
+  function renderTaskRow(task: TaskItem, index: number, section: 'active' | 'completed') {
     const isExpanded = expandedId === task.id
     const isRenaming = renamingId === task.id
     const dueDate = toDate(task.dueDate)
     const due = dueDate ? formatDue(dueDate) : null
+    const itemColor = taskColor(task)
     const borderClass = index > 0 ? 'border-t border-border' : ''
     const content = (
-      <div className="flex items-center gap-3 px-4 py-2.5">
+      <div className="task-item-row flex min-h-[52px] items-center gap-3 px-4 py-2.5">
         {editing ? (
           <button onClick={() => deleteTask(task)} className="shrink-0 active:opacity-60" aria-label="Delete">
             <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-red">
@@ -482,13 +569,14 @@ export function TaskDetailPage() {
           <button
             onClick={() => setStatus(task, 'completed')}
             className="h-[22px] w-[22px] shrink-0 rounded-full border-2 border-border transition-transform active:scale-90"
+            style={{ borderColor: itemColor }}
             aria-label="Complete"
           />
         ) : (
           <button
             onClick={() => setStatus(task, 'active')}
             className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
-            style={{ background: color }}
+            style={{ background: itemColor }}
             aria-label="Mark incomplete"
           >
             <svg viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
@@ -503,15 +591,21 @@ export function TaskDetailPage() {
               ref={renameRef}
               value={renameValue}
               onChange={event => setRenameValue(event.target.value)}
-              onBlur={() => { commitRename(task).catch(() => undefined) }}
+              enterKeyHint="done"
+              onBlur={() => {
+                if (renameCancelledRef.current) { renameCancelledRef.current = false; return }
+                commitRename(task).catch(() => undefined)
+              }}
               onKeyDown={event => {
                 if (event.key === 'Enter') {
                   event.preventDefault()
-                  commitRename(task).catch(() => undefined)
+                  event.currentTarget.blur()
                 }
                 if (event.key === 'Escape') {
                   event.preventDefault()
+                  renameCancelledRef.current = true
                   setRenamingId(null)
+                  event.currentTarget.blur()
                 }
               }}
               className="w-full bg-transparent py-0.5 text-[16px] text-text-1 outline-none"
@@ -521,7 +615,7 @@ export function TaskDetailPage() {
               onClick={() => { if (!editing && section === 'active') startRename(task) }}
               className="w-full min-w-0 text-left"
             >
-              <p className={`truncate text-[16px] ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
+              <p className={`line-clamp-2 break-words text-[16px] leading-5 ${section === 'completed' ? 'text-text-2 line-through' : 'text-text-1'}`}>{task.title}</p>
               {due ? (
                 <p className={`mt-0.5 text-[12.5px] ${due.overdue ? 'text-red' : 'text-text-2'}`}>{due.label}</p>
               ) : null}
@@ -553,12 +647,12 @@ export function TaskDetailPage() {
     )
 
     return (
-      <div className={editing ? borderClass : ''}>
-        {editing ? content : <SwipeRow onDelete={() => deleteTask(task)} className={borderClass}>{content}</SwipeRow>}
+      <div key={task.id} className="task-item-shell">
+        {editing ? <div className={borderClass}>{content}</div> : <SwipeRow onDelete={() => deleteTask(task)} wrapClassName={borderClass}>{content}</SwipeRow>}
 
         {isExpanded && !editing ? (
-          <div className="px-3 pb-3">
-            <div className="overflow-hidden rounded-2xl bg-surface-2">
+          <div className="task-item-details px-3 pb-3 pt-2.5">
+            <div className="overflow-hidden rounded-xl border border-border bg-surface-2">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <span className="shrink-0 text-[13px] text-text-2">Due Date</span>
                 <div className="flex items-center gap-2">
@@ -630,7 +724,7 @@ export function TaskDetailPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
+              {!unified ? <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
                 <span className="shrink-0 text-[13px] text-text-2">List</span>
                 <select
                   value={task.listId ?? ''}
@@ -640,7 +734,7 @@ export function TaskDetailPage() {
                   <option value="">Inbox</option>
                   {lists.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
                 </select>
-              </div>
+              </div> : null}
             </div>
           </div>
         ) : null}
@@ -649,20 +743,29 @@ export function TaskDetailPage() {
   }
 
   return (
-    <ScreenShell title={title} showHeader={false}>
-      <div className="safe-top flex flex-col">
-        <div className="flex items-center justify-between px-3 pt-3 pb-1">
-          <a href="/household/tasks" className="-ml-1 flex items-center gap-1 text-accent active:opacity-60">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-              <path d="M10 3L5 8l5 5" />
-            </svg>
-            <span className="text-[16px]">Lists</span>
-          </a>
-          <button onClick={toggleEditing} className="px-1 text-[16px] font-medium text-accent active:opacity-60">
-            {editing ? 'Done' : 'Edit'}
-          </button>
-        </div>
-
+    <ScreenShell
+      title={title}
+      showHeader={unified}
+      topContent={!unified ? <FamilySubHeader title={title} backHref="/household/tasks" backLabel="Tasks" action={<button onClick={toggleEditing}>{editing ? 'Done' : 'Edit'}</button>} /> : undefined}
+    >
+      <div className="task-detail-page flex flex-col">
+        {unified ? (
+          <>
+            <div className="task-up-next-summary mx-4 mt-4">
+              <div><small>THIS WEEK</small><strong>{active.length} {active.length === 1 ? 'task' : 'tasks'} left</strong><span>You&apos;ve completed {completedThisWeek} together</span></div>
+              <div className="task-progress-ring" style={{ '--task-progress': `${progress * 3.6}deg` } as CSSProperties}><span>{progress}%</span></div>
+            </div>
+            <div className="task-related-links mx-4 mt-3">
+              <a href="/household/shopping"><span className="shopping"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 8h14l-1 12H6L5 8Z" /><path d="M8 8a4 4 0 0 1 8 0" /></svg></span><div><strong>Shopping</strong><small>Open the shared shop</small></div><Chevron /></a>
+              <a href="/household/plans"><span className="plans"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10M9 21v-7h6v7" /></svg></span><div><strong>House projects</strong><small>Plans and improvements</small></div><Chevron /></a>
+            </div>
+            <div className="task-up-next-heading mx-5 mt-5">
+              <div><small>SHARED TO-DO</small><h2>Up next</h2></div>
+              <button type="button" onClick={() => { void findCalendarTasks() }} disabled={extractingCalendar}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m12 3 1.3 4.2L17 9l-3.7 1.8L12 15l-1.3-4.2L7 9l3.7-1.8L12 3Z" /><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" /></svg>{extractingCalendar ? 'Scanning…' : 'Find tasks'}</button>
+            </div>
+            {calendarSuggestions.length ? <div className="task-ai-suggestions mx-4 mb-3"><div><strong>From your calendar</strong><small>Suggested only — add the useful ones.</small></div>{calendarSuggestions.map(suggestion => <div key={`${suggestion.eventId}-${suggestion.title}`}><span><strong>{suggestion.title}</strong><small>{formatDue(new Date(suggestion.dueDate)).label} · {suggestion.reason}</small></span><button type="button" onClick={() => { void addCalendarSuggestion(suggestion) }}>Add</button></div>)}</div> : calendarMessage ? <p className="mx-5 mb-3 text-[12px] text-text-2">{calendarMessage}</p> : null}
+          </>
+        ) : null}
         {editing && canEditList ? (
           <div className="mx-4 mt-2 rounded-2xl bg-surface p-4">
             <div className="mb-4 flex items-center gap-3">
@@ -688,20 +791,20 @@ export function TaskDetailPage() {
           </div>
         ) : (
           <>
-            <header className="px-5 pt-1 pb-3">
+            {!unified ? <header className="px-5 pt-1 pb-3">
               <h1 className="text-[28px] font-bold tracking-tight" style={{ color }}>{title}</h1>
-            </header>
+            </header> : null}
 
-            <div className="mx-4 overflow-hidden rounded-2xl bg-surface">
+            <div className="task-list-card mx-4 overflow-hidden rounded-2xl bg-surface">
               {active.length === 0 && completed.length === 0 ? (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-[14px] text-text-2">No reminders</p>
+                  <p className="text-[14px] text-text-2">Nothing to do</p>
                 </div>
               ) : null}
-              {active.map((task, index) => <TaskRow key={task.id} task={task} index={index} section="active" />)}
+              {active.map((task, index) => renderTaskRow(task, index, 'active'))}
             </div>
 
-            {!isAll ? (
+            {(!isAll || unified) ? (
               <div className="mx-4 mt-2 flex items-center gap-3 rounded-2xl bg-surface px-4 py-2.5">
                 <div className="h-[22px] w-[22px] shrink-0 rounded-full border-2 border-border opacity-40" />
                 <input
@@ -713,7 +816,7 @@ export function TaskDetailPage() {
                   }}
                   onKeyDown={event => { if (event.key === 'Enter') addTask(true) }}
                   onBlur={() => { addTask(false).catch(() => undefined) }}
-                  placeholder={isInbox ? 'Add a task to inbox' : 'Add a reminder'}
+                  placeholder={unified ? 'Add a task' : isInbox ? 'Add a task to inbox' : 'Add a reminder'}
                   className="flex-1 bg-transparent text-[16px] text-text-1 placeholder:text-text-3 outline-none"
                 />
               </div>
@@ -728,8 +831,8 @@ export function TaskDetailPage() {
                   <span className="text-[14px] font-medium">{completed.length} Completed</span>
                 </button>
                 {showCompleted ? (
-                  <div className="mx-4 overflow-hidden rounded-2xl bg-surface">
-                    {completed.map((task, index) => <TaskRow key={task.id} task={task} index={index} section="completed" />)}
+                  <div className="task-list-card mx-4 overflow-hidden rounded-2xl bg-surface">
+                    {completed.map((task, index) => renderTaskRow(task, index, 'completed'))}
                   </div>
                 ) : null}
               </div>

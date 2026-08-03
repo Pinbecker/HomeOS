@@ -220,7 +220,7 @@ export function AiCapture({ surface, placeholder, onInboxItem }: Props) {
   }
 
   return (
-    <section className="mx-4 mb-4">
+    <section className={`mx-4 mb-4 ${surface === 'home' ? 'home-ai-capture' : ''}`}>
       <div className="rounded-2xl border border-border bg-surface px-3 py-3">
         <form onSubmit={submitText}>
           <div className="flex items-center gap-2">

@@ -12,6 +12,10 @@ services:
     container_name: homeapp
     restart: unless-stopped
     env_file: .env
+    environment:
+      TV_EPG_URLS: file:///data/files/tv-guide/freeview.xml,https://epgshare01.online/epgshare01/epg_ripper_UK1.xml.gz
+      TV_EPG_REQUIRED_DAYS: "7"
+      TV_EPG_IMPORT_MIN_LOOKAHEAD_MS: "86400000"
     volumes:
       - db_data:/data/db
       - file_data:/data/files
@@ -29,6 +33,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  epg:
+    build:
+      context: .
+      dockerfile: Dockerfile.epg
+    container_name: homeapp_epg
+    restart: unless-stopped
+    volumes:
+      - file_data:/data/files
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-c",
+          "test -s /data/files/tv-guide/freeview.xml && find /data/files/tv-guide/freeview.xml -mmin -720 | grep -q .",
+        ]
+      interval: 15m
+      timeout: 10s
+      retries: 2
+      start_period: 10m
 
   caddy:
     image: caddy:2-alpine

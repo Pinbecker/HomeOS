@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
 import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
+import { SheetGrabber } from '../components/sheet-grabber'
 
 type NoteDraft = {
   id?: string
@@ -66,12 +67,11 @@ function NoteModal({
       }}
     >
       <div
+        data-swipe-sheet
         className="w-full max-w-lg rounded-t-3xl bg-surface pb-[env(safe-area-inset-bottom)]"
         style={{ maxHeight: '80dvh', display: 'flex', flexDirection: 'column' }}
       >
-        <div className="shrink-0 pb-1 pt-3 flex justify-center">
-          <div className="h-1 w-9 rounded-full bg-border" />
-        </div>
+        <SheetGrabber onDismiss={onClose} className="flex h-9 shrink-0 items-center justify-center" barClassName="h-1 w-9 rounded-full bg-border" />
 
         <div className="flex items-center justify-between border-b border-border px-5 py-3 shrink-0">
           <button onClick={onClose} className="text-[15px] text-text-2 active:opacity-60">Cancel</button>
@@ -234,11 +234,12 @@ export function NotesPanel() {
 
   return (
     <>
-      <div className="mx-auto flex max-w-lg flex-col">
-        <div className="flex items-center justify-end px-5 pb-3">
+      <div className="family-notes-page mx-auto flex max-w-lg flex-col">
+        <div className="family-notes-heading">
+          <div><small>SHARED WITH THE FAMILY</small><h2>Recent notes</h2></div>
           <button
             onClick={() => setModal({})}
-            className="flex h-8 w-8 items-center justify-center text-accent active:opacity-60 transition-opacity"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-white active:opacity-60 transition-opacity"
             aria-label="New note"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
@@ -254,16 +255,16 @@ export function NotesPanel() {
             <p className="text-[13px] text-text-2">Tap + to write your first note</p>
           </div>
         ) : (
-          <div className="mx-4 overflow-hidden rounded-2xl bg-surface">
-            {orderedNotes.map((note, index) => (
-              <div key={note.id} className={index > 0 ? 'border-t border-border' : ''}>
+          <div className="family-note-grid mx-4">
+            {orderedNotes.map(note => (
+              <div key={note.id} className="family-note-card">
                 <button
                   onClick={() => setModal(note)}
                   className="w-full px-4 py-3.5 text-left active:bg-surface-2 transition-colors"
                 >
                   <div className="flex items-center gap-1.5">
                     {note.pinned ? <PinGlyph /> : null}
-                    <p className="truncate text-[14px] font-semibold leading-snug text-text-1">{note.title}</p>
+                    <p className="line-clamp-2 break-words text-[14px] font-semibold leading-snug text-text-1">{note.title}</p>
                   </div>
                   {note.body ? (
                     <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-text-2">{note.body}</p>

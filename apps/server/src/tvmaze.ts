@@ -22,6 +22,7 @@ type TvmazeEpisode = {
 
 export type FollowedTvShow = {
   title: string
+  followKey?: string | null
   channel: string | null
   tvmazeId?: number | null
   matchMode?: string | null
@@ -83,7 +84,7 @@ function normalizeTitle(value: string) {
 }
 
 function normalizeComparableTitle(value: string) {
-  return normalizeTitle(value).replace(/^(new|brand new)\s+/, '').trim()
+  return normalizeTvFollowTitle(value)
 }
 
 function titleMatchesFollow(followTitle: string, programmeTitle: string) {
@@ -213,7 +214,7 @@ async function resolvedFollowId(follow: FollowedTvShow) {
 }
 
 function followAllowsProgramme(follow: FollowedTvShow, programme: ProgrammeLike, channelName: (channelId: string) => string) {
-  if (!titleMatchesFollow(follow.title, programme.title)) return false
+  if (!titleMatchesFollow(follow.followKey || follow.title, programme.title)) return false
   const preferred = follow.channel?.trim()
   return !preferred || preferred === channelName(programme.channelId)
 }
@@ -280,3 +281,4 @@ export async function filterFollowedProgrammesWithTvmaze<T extends ProgrammeLike
 
   return accepted
 }
+import { normalizeTvFollowTitle } from './tv-follow'

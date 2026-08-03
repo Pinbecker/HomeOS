@@ -32,6 +32,7 @@ import {
   users,
 } from '@homeos/db/schema'
 import { createGoogleEvent, deleteGoogleEvent, updateGoogleEvent } from './google-calendar'
+import { queueShoppingCategorization } from './shopping-categories'
 
 const stream = new EventEmitter()
 
@@ -443,6 +444,11 @@ async function applyDomainMutation(userId: string, mutation: SyncMutation) {
       break
     case 'shopping.upsert':
       await upsertShoppingItem(userId, mutation)
+      {
+        const item = await db.query.listItems.findFirst({ where: eq(listItems.id, mutation.entityId) })
+        const list = item ? await db.query.lists.findFirst({ where: eq(lists.id, item.listId) }) : null
+        if (item && list?.type === 'shopping') await queueShoppingCategorization(item.listId, list.householdId)
+      }
       break
     case 'shopping.delete':
       await db.update(listItems).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(listItems.id, mutation.entityId))
@@ -1081,7 +1087,11 @@ async function upsertInboxItem(userId: string, mutation: SyncMutation) {
       status: (payload.status as 'active' | 'completed' | 'archived' | 'snoozed' | undefined) ?? existing.status,
       metadata: payload.metadata === undefined ? existing.metadata : (payload.metadata as Record<string, unknown> | null),
       updatedAt: now,
-      deletedAt: payload.deletedAt ? new Date(payload.deletedAt as string | number) : existing.deletedAt,
+      deletedAt: payload.deletedAt === null
+        ? null
+        : payload.deletedAt === undefined
+          ? existing.deletedAt
+          : new Date(payload.deletedAt as string | number),
     }).where(eq(items.id, mutation.entityId))
   } else {
     await db.insert(items).values({
@@ -1186,6 +1196,8 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
       checkedById: nextChecked
         ? ((payload.checkedById as string | undefined) ?? existing.checkedById ?? userId)
         : null,
+      source: payload.source === undefined ? existing.source : (payload.source as string | null),
+      sourceDetail: payload.sourceDetail === undefined ? existing.sourceDetail : (payload.sourceDetail as string | null),
       updatedAt: now,
       deletedAt: existing.deletedAt ?? (payload.deletedAt ? new Date(payload.deletedAt as string | number) : null),
     }).where(eq(listItems.id, mutation.entityId))
@@ -1200,6 +1212,8 @@ async function upsertShoppingItem(userId: string, mutation: SyncMutation) {
       checked: (payload.checked as boolean | undefined) ?? false,
       checkedAt: payload.checkedAt ? new Date(payload.checkedAt as string | number) : null,
       checkedById: (payload.checkedById as string | undefined) ?? ((payload.checked as boolean | undefined) ? userId : null),
+      source: (payload.source as string | null | undefined) ?? null,
+      sourceDetail: (payload.sourceDetail as string | null | undefined) ?? null,
       createdAt: now,
       updatedAt: now,
       deletedAt: payload.deletedAt ? new Date(payload.deletedAt as string | number) : null,

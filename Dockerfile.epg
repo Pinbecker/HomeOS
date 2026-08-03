@@ -1,0 +1,12 @@
+FROM debian:trixie-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates xmltv-util \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY config/tv_grab_uk_freeview.conf /etc/homeos/tv_grab_uk_freeview.conf
+COPY scripts/refresh-tv-guide.sh /usr/local/bin/refresh-tv-guide
+
+RUN chmod +x /usr/local/bin/refresh-tv-guide
+
+ENTRYPOINT ["/usr/local/bin/refresh-tv-guide"]

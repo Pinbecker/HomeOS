@@ -1,10 +1,13 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
+import { SheetGrabber } from '../components/sheet-grabber'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
 import { cycleCalendarItems, readCycleTrackerSettings } from '../lib/cycle-tracker'
+import { navigateInApp } from '../lib/navigation'
 import { useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings, settingObject } from '../lib/user-preferences'
-import { ScreenShell } from './shell'
+import { FamilyMenuButton, ScreenShell } from './shell'
 
 type CalEvent = {
   id: string
@@ -30,6 +33,7 @@ type CalTask = {
   completed: boolean
   color: string
 }
+type NextAgendaItem = { kind: 'event'; event: CalEvent; sort: number } | { kind: 'task'; task: CalTask; sort: number }
 type CalFeed = {
   id: string
   householdId: string
@@ -62,6 +66,17 @@ const MAX_PILL_H = 46
 
 function localDayKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+function localDateFromKey(key: string) {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, month, day)
+}
+
+function mondayOf(date: Date) {
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+  return monday
 }
 
 function parseCalendarDayKey(value: string | null) {
@@ -453,7 +468,7 @@ function CalendarPageInner() {
         due: new Date(item.dueDate as string | number | Date).getTime(),
         listId: item.listId ?? null,
         completed: item.status === 'completed',
-        color: item.listId ? listColors.get(item.listId) ?? '#FF9500' : '#FF9500',
+        color: item.metadata?.source === 'bin_schedule' ? '#49A96F' : item.listId ? listColors.get(item.listId) ?? '#FF9500' : '#FF9500',
       }))
     return {
       householdId: state.data.household[0]?.id ?? 'default',
@@ -467,6 +482,8 @@ function CalendarPageInner() {
   const [rowHeight, setRowHeight] = useState(() => readStoredRowHeight(sessionUser?.id))
   const rowHeightRef = useRef(rowHeight)
   const [selectedKey, setSelectedKey] = useState(initialTarget.dayKey)
+  const [dayRangeStart, setDayRangeStart] = useState(() => mondayOf(localDateFromKey(initialTarget.dayKey)))
+  const [viewMode, setViewMode] = useState<'day' | 'month'>('day')
   const [visibleMonthKey, setVisibleMonthKey] = useState(initialTarget.monthKey)
   const [detail, setDetail] = useState<CalEvent | null>(null)
   const [sheetTask, setSheetTask] = useState<CalTask | null>(null)
@@ -584,8 +601,22 @@ function CalendarPageInner() {
   const [vmYear, vmMonth] = visibleMonthKey.split('-').map(Number)
   const [selectedYear, selectedMonth, selectedDay] = selectedKey.split('-').map(Number)
   const selectedDate = new Date(selectedYear, selectedMonth, selectedDay)
+  const selectedFortnightDays = useMemo(() => Array.from({ length: 14 }, (_, index) => new Date(dayRangeStart.getFullYear(), dayRangeStart.getMonth(), dayRangeStart.getDate() + index)), [dayRangeStart])
   const selectedEvents = eventsByDay.get(selectedKey) ?? []
   const selectedTasks = tasksByDay.get(selectedKey) ?? []
+  const nextAgenda = useMemo(() => {
+    if (selectedKey !== todayKey || selectedEvents.length > 0 || selectedTasks.length > 0) return null
+    for (let offset = 1; offset <= 90; offset++) {
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset)
+      const key = localDayKey(date)
+      const items: NextAgendaItem[] = [
+        ...(eventsByDay.get(key) ?? []).map(event => ({ kind: 'event' as const, event, sort: event.allDay ? date.getTime() : event.start })),
+        ...(tasksByDay.get(key) ?? []).map(task => ({ kind: 'task' as const, task, sort: task.due })),
+      ].sort((a, b) => a.sort - b.sort)
+      if (items.length > 0) return { date, items: items.slice(0, 4) }
+    }
+    return null
+  }, [eventsByDay, selectedEvents.length, selectedKey, selectedTasks.length, tasksByDay, today, todayKey])
   const avail = rowHeight - DATE_H
   const showBars = avail >= MIN_BAR_H
   const mLaneH = MULTI_DAY_BAR_H + BAR_GAP
@@ -598,13 +629,44 @@ function CalendarPageInner() {
   }, [sessionUser?.id])
 
   useEffect(() => {
+    const selected = localDateFromKey(selectedKey)
+    const start = dayRangeStart.getTime()
+    const end = new Date(dayRangeStart.getFullYear(), dayRangeStart.getMonth(), dayRangeStart.getDate() + 14).getTime()
+    if (selected.getTime() < start || selected.getTime() >= end) setDayRangeStart(mondayOf(selected))
+  }, [dayRangeStart, selectedKey])
+
+  useEffect(() => {
     const container = scrollRef.current
     if (!container) return
-    const target = container.querySelector<HTMLElement>(`[data-daykey="${initialTarget.dayKey}"]`)
+    const targetMonth = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const target = targetMonth?.querySelector<HTMLElement>(`[data-daykey="${initialTarget.dayKey}"]`)
       ?? document.getElementById('cal-today')
-      ?? document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+      ?? targetMonth
     if (target) container.scrollTop = Math.max(0, scrollOffsetWithin(container, target) - rowHeightRef.current)
   }, [today, initialTarget.dayKey])
+
+  // The month scroller is hidden while the day view is active, so its first
+  // positioning pass has no usable layout. Reposition it once it is visible.
+  useEffect(() => {
+    if (viewMode !== 'month') return undefined
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const container = scrollRef.current
+        if (!container) return
+        const [targetYear, targetMonthIndex] = selectedKey.split('-').map(Number)
+        const targetMonth = document.getElementById(`cal-month-${targetYear}-${targetMonthIndex}`)
+        const target = targetMonth?.querySelector<HTMLElement>(`[data-daykey="${selectedKey}"]`)
+          ?? document.getElementById('cal-today')
+          ?? targetMonth
+        if (target) container.scrollTop = Math.max(0, scrollOffsetWithin(container, target) - rowHeightRef.current)
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
+    }
+  }, [viewMode])
 
   useEffect(() => {
     if (!initialTarget.eventId) return
@@ -690,8 +752,11 @@ function CalendarPageInner() {
 
   function goToday() {
     setSelectedKey(todayKey)
+    setDayRangeStart(mondayOf(today))
+    setViewMode('day')
     const container = scrollRef.current
-    const target = document.getElementById('cal-today') ?? document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const targetMonth = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
+    const target = targetMonth?.querySelector<HTMLElement>(`[data-daykey="${todayKey}"]`) ?? targetMonth
     if (container && target) {
       container.scrollTo({ top: Math.max(0, scrollOffsetWithin(container, target) - rowHeight), behavior: 'smooth' })
     }
@@ -706,7 +771,7 @@ function CalendarPageInner() {
 
   function openEvent(event: CalEvent) {
     if (event.cycle) {
-      window.location.href = '/cycle-tracker'
+      navigateInApp('/cycle-tracker')
       return
     }
     openDetail(event)
@@ -769,31 +834,37 @@ function CalendarPageInner() {
   }
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col" style={{ height: 'calc(100dvh - calc(96px + env(safe-area-inset-bottom)))' }}>
-      <div className="flex shrink-0 items-center justify-between bg-bg px-3 pt-3 pb-2">
-        <a href="/" className="-ml-1 flex items-center gap-1 text-accent active:opacity-60">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M10 3L5 8l5 5" /></svg>
-          <span className="text-[16px]">Home</span>
-        </a>
-        <span className="text-[17px] font-bold text-text-1" style={{ letterSpacing: '-0.01em' }}>
-          {MONTHS[vmMonth]} <span className="text-[15px] font-normal text-text-2">{vmYear}</span>
-        </span>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setCalendarsOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-accent active:bg-surface-2" aria-label="Manage calendars">
+    <div className="calendar-live mx-auto flex h-full max-w-lg flex-col">
+      <div className="calendar-family-header">
+        <div className="calendar-family-topline">
+          <FamilyMenuButton className="calendar-header-icon" />
+          <div className="calendar-family-title">
+            <small>FAMILY CALENDAR</small>
+            <strong>{MONTHS[vmMonth]} <span>{vmYear}</span></strong>
+          </div>
+          <div className="calendar-family-actions">
+          <button onClick={() => setCalendarsOpen(true)} className="calendar-header-icon family-header-control" aria-label="Manage calendars">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[22px] w-[22px]"><circle cx="12" cy="12" r="2" /><circle cx="12" cy="5" r="2" /><circle cx="12" cy="19" r="2" /></svg>
           </button>
-          <button onClick={goToday} className="px-1 text-[16px] font-medium text-accent active:opacity-60">Today</button>
-          <button onClick={openCreate} aria-label="Add event" className="flex h-9 w-9 items-center justify-center rounded-full text-accent active:bg-surface-2">
+          <button onClick={openCreate} aria-label="Add event" className="calendar-header-icon family-header-control">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           </button>
+          </div>
+        </div>
+        <div className="calendar-view-row">
+          <div className="calendar-view-switch" aria-label="Calendar view">
+            <button type="button" className={viewMode === 'day' ? 'is-active' : ''} onClick={() => setViewMode('day')}>Day</button>
+            <button type="button" className={viewMode === 'month' ? 'is-active' : ''} onClick={() => setViewMode('month')}>Month</button>
+          </div>
+          <button type="button" className="calendar-today-button" onClick={goToday}>Today</button>
         </div>
       </div>
 
-      <div className="grid shrink-0 grid-cols-7 border-b border-border bg-bg px-2">
+      <div className={`${viewMode === 'month' ? 'grid' : 'hidden'} shrink-0 grid-cols-7 border-b border-border bg-bg px-2`}>
         {WEEKDAYS.map((day, index) => <div key={`${day}-${index}`} className={`py-1 text-center text-[12px] font-semibold ${index >= 5 ? 'text-text-3' : 'text-text-2'}`}>{day}</div>)}
       </div>
 
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain bg-bg" style={{ overflowAnchor: 'none' }}>
+      <div ref={scrollRef} className={`${viewMode === 'month' ? 'block' : 'hidden'} relative flex-1 overflow-y-auto overscroll-auto bg-bg`} style={{ overflowAnchor: 'none' }}>
         {monthList.map(({ year, month, grid }) => (
           <section key={`${year}-${month}`} id={`cal-month-${year}-${month}`} data-monthkey={`${year}-${month}`}>
             <div className="px-3 pt-4 pb-1">
@@ -1045,7 +1116,53 @@ function CalendarPageInner() {
         <div className="h-3" />
       </div>
 
-      <div className="flex max-h-[35vh] shrink-0 flex-col rounded-t-3xl bg-surface" style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
+      <div className={`${viewMode === 'day' ? 'flex' : 'hidden'} calendar-day-view min-h-0 flex-1 flex-col`}>
+        <div className="calendar-day-week">
+          {selectedFortnightDays.map((date, index) => {
+            const key = localDayKey(date)
+            const dotColors = [...new Set([...(eventsByDay.get(key) ?? []).map(getEventColor), ...(tasksByDay.get(key) ?? []).map(task => task.color)])].slice(0, 3)
+            return (
+              <button key={key} type="button" className={key === selectedKey ? 'is-selected' : ''} onClick={() => setSelectedKey(key)}>
+                <span className="calendar-day-weekday">{WEEKDAYS[index % 7]}</span><b>{date.getDate()}</b>{dotColors.length ? <span className="calendar-day-dots">{dotColors.map((dotColor, dotIndex) => <i key={`${dotColor}-${dotIndex}`} style={{ background: dotColor }} />)}</span> : null}
+              </button>
+            )
+          })}
+        </div>
+        <div className="calendar-day-heading">
+          <button type="button" onClick={() => { const next = new Date(selectedDate); next.setDate(next.getDate() - 1); setSelectedKey(localDayKey(next)) }} aria-label="Previous day"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m10 3-5 5 5 5" /></svg></button>
+          <div><small>{selectedDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</small><h2>{selectedKey === todayKey ? 'Today' : selectedDate.toLocaleDateString('en-GB', { weekday: 'long' })}</h2></div>
+          <button type="button" onClick={() => { const next = new Date(selectedDate); next.setDate(next.getDate() + 1); setSelectedKey(localDayKey(next)) }} aria-label="Next day"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 3 5 5-5 5" /></svg></button>
+        </div>
+        <div className="calendar-day-agenda">
+          {selectedEvents.length === 0 && selectedTasks.length === 0 ? (
+            <>
+              <div className={`calendar-day-empty ${nextAgenda ? 'is-compact' : ''}`}><span>Nothing planned</span><p>A clear day for the family.</p><button type="button" onClick={openCreate}>Add an event</button></div>
+              {nextAgenda ? <section className="calendar-day-up-next"><header><div><small>UP NEXT</small><strong>{nextAgenda.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div><span>{nextAgenda.items.length} {nextAgenda.items.length === 1 ? 'item' : 'items'}</span></header>{nextAgenda.items.map(item => item.kind === 'event' ? <button key={`next-event-${item.event.id}`} type="button" onClick={() => openEvent(item.event)} className="calendar-agenda-item" style={{ '--event-color': getEventColor(item.event) } as CSSProperties}><time>{item.event.allDay ? 'All day' : formatTime(item.event.start)}</time><span className="calendar-agenda-bar" /><span className="calendar-agenda-copy"><small>{item.event.cycle ? 'CYCLE' : item.event.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{item.event.title}</strong><span className="calendar-agenda-meta">{item.event.location ?? 'Family calendar'}</span></span></button> : (() => { const completed = taskOverrides[item.task.id] ?? item.task.completed; return <button key={`next-task-${item.task.id}`} type="button" onClick={() => openTask(item.task)} className={`calendar-agenda-item is-task ${completed ? 'is-complete' : ''}`} style={{ '--event-color': item.task.color } as CSSProperties}><time>{formatTime(item.task.due)}</time><span className="calendar-agenda-copy"><small>TO-DO</small><span className="calendar-task-title"><span className="calendar-agenda-check" onClick={event => { event.stopPropagation(); void toggleCalTask(item.task.id, completed) }}>{completed ? <svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-7" /></svg> : null}</span><strong>{item.task.title}</strong></span><span className="calendar-agenda-meta">{completed ? 'Completed' : 'Shared family task'}</span></span></button> })())}</section> : null}
+            </>
+          ) : (
+            <>
+              {selectedEvents.map(event => (
+                <button key={event.id} type="button" onClick={() => openEvent(event)} className="calendar-agenda-item" style={{ '--event-color': getEventColor(event) } as CSSProperties}>
+                  <time>{event.allDay ? 'All day' : formatTime(event.start)}</time>
+                  <span className="calendar-agenda-bar" />
+                  <span className="calendar-agenda-copy"><small>{event.cycle ? 'CYCLE' : event.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{event.title}</strong><span className="calendar-agenda-meta">{event.location ?? (event.allDay ? 'Family calendar' : `${formatTime(event.start)} – ${formatTime(event.end > event.start ? event.end : event.start)}`)}</span></span>
+                </button>
+              ))}
+              {selectedTasks.map(task => {
+                const completed = taskOverrides[task.id] ?? task.completed
+                return (
+                  <button key={task.id} type="button" onClick={() => openTask(task)} className={`calendar-agenda-item is-task ${completed ? 'is-complete' : ''}`} style={{ '--event-color': task.color } as CSSProperties}>
+                    <time>{formatTime(task.due)}</time><span className="calendar-agenda-copy"><small>TO-DO</small><span className="calendar-task-title"><span className="calendar-agenda-check" onClick={event => { event.stopPropagation(); void toggleCalTask(task.id, completed) }}>{completed ? <svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-7" /></svg> : null}</span><strong>{task.title}</strong></span><span className="calendar-agenda-meta">{completed ? 'Completed' : 'Shared family task'}</span></span>
+                  </button>
+                )
+              })}
+            </>
+          )}
+          <button type="button" className="calendar-pinch-hint" onClick={() => setViewMode('month')}><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 11V7a2 2 0 0 1 4 0v4-6a2 2 0 0 1 4 0v8-4a2 2 0 0 1 4 0v7c0 4-3 6-7 6h-1c-3 0-5-1-7-4l-2-3a2 2 0 0 1 3-2l2 2v-4Z" /></svg></span><div><strong>Expandable month view</strong><small>Scroll through months and pinch to expand or contract.</small></div><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 3 5 5-5 5" /></svg></button>
+        </div>
+      </div>
+
+      <div className={`${viewMode === 'month' ? 'flex' : 'hidden'} calendar-month-summary max-h-[35vh] shrink-0 flex-col rounded-t-3xl bg-surface`} style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
         <div className="flex shrink-0 items-center justify-between px-4 pt-3 pb-0.5">
           <p className="text-[13px] font-semibold text-text-2">{fullDate(selectedDate)}</p>
           <button onClick={openCreate} className="text-[14px] font-medium text-accent active:opacity-60">+ Add</button>
@@ -1130,7 +1247,6 @@ function CalendarPageInner() {
         />
       ) : null}
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 bg-surface" style={{ height: 'calc(96px + env(safe-area-inset-bottom))', zIndex: 1 }} />
     </div>
   )
 }
@@ -1187,17 +1303,18 @@ function CalendarSheet({
           <div
             className="flex shrink-0 items-center justify-center"
             style={{ touchAction: 'none', height: 44, paddingBottom: 4 }}
-            onTouchStart={event => {
-              dragRef.current = { startY: event.touches[0].clientY, startTime: Date.now() }
+            onPointerDown={event => {
+              event.currentTarget.setPointerCapture(event.pointerId)
+              dragRef.current = { startY: event.clientY, startTime: Date.now() }
               setDragging(true)
             }}
-            onTouchMove={event => {
+            onPointerMove={event => {
               if (!dragRef.current) return
-              const delta = Math.max(0, event.touches[0].clientY - dragRef.current.startY)
+              const delta = Math.max(0, event.clientY - dragRef.current.startY)
               latestDragY.current = delta
               setDragY(delta)
             }}
-            onTouchEnd={() => {
+            onPointerUp={() => {
               if (!dragRef.current) return
               const { startTime } = dragRef.current
               dragRef.current = null
@@ -1210,6 +1327,12 @@ function CalendarSheet({
                 setDragging(false)
                 setDragY(0)
               }
+            }}
+            onPointerCancel={() => {
+              dragRef.current = null
+              latestDragY.current = 0
+              setDragging(false)
+              setDragY(0)
             }}
           >
             <div className="h-[5px] w-10 rounded-full" style={{ background: 'color-mix(in srgb, var(--text-3) 40%, transparent)' }} />
@@ -1243,7 +1366,7 @@ function CalendarSheet({
                   <div className="mt-[5px] h-[14px] w-[14px] shrink-0 rounded-full" style={{ background: task.color }} />
                   <h2 className="text-[22px] font-bold leading-tight text-text-1">{task.title}</h2>
                 </div>
-                {task.listId ? <a href={`/household/tasks/${task.listId}`} onClick={onClose} className="shrink-0 text-[15px] font-semibold text-accent active:opacity-60">Open</a> : null}
+                <a href="/household/tasks" onClick={onClose} className="shrink-0 text-[15px] font-semibold text-accent active:opacity-60">Open</a>
               </div>
               <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-2">
                 <div className="rounded-2xl bg-surface px-4 py-3"><p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-3">Due</p><p className="text-[15px] text-text-1">{fullDate(new Date(task.due))}</p></div>
@@ -1521,14 +1644,15 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
     }
   }
 
-  return (
+  return createPortal((
     <div className="fixed inset-0 z-[70] flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={onClose}>
-      <div className="mx-auto max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-t-[22px] bg-surface" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 24px)' }} onClick={event => event.stopPropagation()}>
-        <div className="flex justify-center pt-3 pb-1"><div className="h-1 w-9 rounded-full bg-border opacity-50" /></div>
-        <div className="flex items-center justify-between px-5 pt-2 pb-4">
+      <div data-swipe-sheet className="mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-t-[22px] bg-surface" style={{ height: 'min(76dvh, 680px)', maxHeight: 'calc(100dvh - 20px)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }} onClick={event => event.stopPropagation()}>
+        <SheetGrabber onDismiss={onClose} className="flex h-9 shrink-0 items-center justify-center" barClassName="h-1 w-9 rounded-full bg-border opacity-60" />
+        <div className="flex shrink-0 items-center justify-between px-5 pb-4">
           <h2 className="text-[19px] font-bold text-text-1" style={{ letterSpacing: '-0.01em' }}>Calendars</h2>
           <button onClick={onClose} className="text-[16px] font-semibold text-accent active:opacity-60">Done</button>
         </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
         <div className="mb-4 px-5">
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-text-3">Google Calendar</p>
           <div className="overflow-hidden rounded-2xl bg-bg">
@@ -1586,8 +1710,9 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
             </div>
           </div>
         ) : null}
+        </div>
         {!addOpen ? (
-          <div className="px-5">
+          <div className="shrink-0 border-t border-border bg-surface px-5 pt-3 pb-2">
             <button onClick={() => { setAddOpen(true); setPickerFor(null) }} className="flex w-full items-center gap-3 rounded-2xl bg-bg px-4 py-3 text-left active:bg-surface-2">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ background: 'color-mix(in srgb, var(--accent) 12%, var(--bg))' }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" className="h-4 w-4 text-accent"><line x1="8" y1="3" x2="8" y2="13" /><line x1="3" y1="8" x2="13" y2="8" /></svg>
@@ -1598,12 +1723,12 @@ function CalendarsSheet({ calColor, onCalColorChange, feeds, householdId, userId
         ) : null}
       </div>
     </div>
-  )
+  ), document.body)
 }
 
 export function CalendarPage() {
   return (
-    <ScreenShell title="Calendar" showHeader={false}>
+    <ScreenShell title="Calendar" showHeader={false} contentClassName="min-h-0 flex-1 overflow-hidden">
       <CalendarPageInner />
     </ScreenShell>
   )

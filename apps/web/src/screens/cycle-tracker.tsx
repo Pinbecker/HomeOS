@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { Heart, Settings, Trash2 } from 'lucide-react'
 import { SwipeRow } from '../components/swipe-row'
+import { SheetGrabber } from '../components/sheet-grabber'
 import { enqueueMutation, getCurrentState, makeId, type CycleEntry, type CycleSexLog, useAppState } from '../lib/app-store'
 import {
   addCycleDays,
@@ -235,10 +236,9 @@ export function CycleTrackerPage() {
 
   return (
     <ScreenShell title="Cycle Tracker" showHeader={false}>
-      <header className="safe-top flex items-end justify-between px-5 pt-6 pb-4">
+      <header className="family-specialty-header flex items-end justify-between px-5 pt-3 pb-3">
         <div>
-          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text-2">HomeOS</p>
-          <h1 className="mt-1 text-[32px] font-bold text-text-1">Cycle Tracker</h1>
+          <h1 className="text-[32px] font-bold text-text-1">Cycle Tracker</h1>
         </div>
         <button type="button" onClick={() => setSettingsOpen(true)} className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-surface text-text-2 active:bg-surface-2" aria-label="Cycle settings">
           <Settings className="h-[20px] w-[20px]" strokeWidth={2} />
@@ -395,9 +395,9 @@ function SexLogSheet({ open, logs, onClose, onDelete }: { open: boolean; logs: C
     <>
       <button type="button" aria-label="Close sex log" onClick={onClose} className="fixed inset-0 z-[58] bg-black/40" />
       <div className="fixed inset-x-0 bottom-0 z-[60]">
-        <div className="mx-auto max-w-lg overflow-hidden rounded-t-[26px] border-t border-border bg-surface shadow-[0_-10px_40px_rgba(0,0,0,0.18)]" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+        <div data-swipe-sheet className="mx-auto max-w-lg overflow-hidden rounded-t-[26px] border-t border-border bg-surface shadow-[0_-10px_40px_rgba(0,0,0,0.18)]" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
           <div className="px-4 pb-2 pt-3">
-            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-text-3/35" />
+            <SheetGrabber onDismiss={onClose} className="-mx-4 -mt-3 mb-1 flex h-9 items-center justify-center" barClassName="h-1.5 w-10 rounded-full bg-text-3/35" />
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-[19px] font-bold text-text-1">Sex log</h2>
@@ -602,9 +602,9 @@ function CycleSettingsSheet({ open, entries, insights, settings, onSettingsChang
     <>
       <button type="button" aria-label="Close cycle settings" onClick={onClose} className="fixed inset-0 z-[58] bg-black/40" />
       <div className="fixed inset-x-0 bottom-0 z-[60]">
-        <div className="mx-auto max-w-lg overflow-hidden rounded-t-[26px] border-t border-border bg-surface shadow-[0_-10px_40px_rgba(0,0,0,0.18)]" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+        <div data-swipe-sheet className="mx-auto max-w-lg overflow-hidden rounded-t-[26px] border-t border-border bg-surface shadow-[0_-10px_40px_rgba(0,0,0,0.18)]" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
           <div className="px-4 pb-2 pt-3">
-            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-text-3/35" />
+            <SheetGrabber onDismiss={onClose} className="-mx-4 -mt-3 mb-1 flex h-9 items-center justify-center" barClassName="h-1.5 w-10 rounded-full bg-text-3/35" />
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-[19px] font-bold text-text-1">Cycle settings</h2>

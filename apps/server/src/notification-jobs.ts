@@ -4,6 +4,8 @@ import { db } from '@homeos/db'
 import { household, items, notifications, reminders, tvProgrammes, users } from '@homeos/db/schema'
 import { sendPushToUser, type PushPayload } from './push'
 import { filterFollowedProgrammesWithTvmaze, type FollowedTvShow } from './tvmaze'
+import { londonDateKey, londonDayBounds } from './tv-guide-time'
+import { tvFollowChannel, tvFollowKey, tvFollowMetadata } from './tv-follow'
 
 type ChangeRecorder = (change: { entityType: string; entityId: string; operation: 'upsert' | 'delete'; payload: Record<string, unknown> | null }) => Promise<unknown>
 type NotificationPreferences = {
@@ -138,6 +140,55 @@ function daysUntil(date: Date) {
   return Math.round((startOfDay(date).getTime() - today.getTime()) / 86_400_000)
 }
 
+function binTaskTitle(binId: string, name: string) {
+  if (binId === 'recycling-food') return 'Put recycling out'
+  if (binId === 'black-bin') return 'Put the black bin out'
+  if (binId === 'green-bin') return 'Put the green bin out'
+  return `Put ${name.toLowerCase()} out`
+}
+
+function dateId(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+export async function ensureScheduledBinTasks(recordChange: ChangeRecorder) {
+  const now = new Date()
+  const today = startOfDay(now)
+  const horizon = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7, 23, 59, 59)
+  const creator = await db.query.users.findFirst({ columns: { id: true } })
+  if (!creator) return
+
+  for (const bin of BIN_SCHEDULES) {
+    const collection = getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks)
+    const dueDate = new Date(collection)
+    dueDate.setDate(dueDate.getDate() - 1)
+    dueDate.setHours(20, 0, 0, 0)
+    if (dueDate < today || dueDate > horizon) continue
+
+    const taskId = `scheduled-bin-${bin.id}-${dateId(collection)}`
+    const existing = await db.query.items.findFirst({ where: eq(items.id, taskId), columns: { id: true } })
+    if (existing) continue
+    const timestamp = new Date()
+    await db.insert(items).values({
+      id: taskId,
+      householdId: HOUSEHOLD_ID,
+      createdById: creator.id,
+      assigneeId: null,
+      type: 'task',
+      title: binTaskTitle(bin.id, bin.name),
+      body: `${bin.name} collection is ${collection.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}.`,
+      status: 'active',
+      listId: null,
+      dueDate,
+      metadata: { source: 'bin_schedule', binId: bin.id, collectionDate: dateId(collection), colour: bin.colour },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+    const row = await db.query.items.findFirst({ where: eq(items.id, taskId) })
+    if (row) await recordChange({ entityType: 'item', entityId: taskId, operation: 'upsert', payload: row })
+  }
+}
+
 function hasExplicitTime(date: Date) {
   return date.getHours() !== 0 || date.getMinutes() !== 0
 }
@@ -214,7 +265,7 @@ export async function dispatchReminders(recordChange: ChangeRecorder) {
     if (!prefs.reminders.enabled) continue
     const entityTitle = recordMap.get(reminder.entityId) ?? null
     const kindLabel = reminderKindLabel(reminder.kind)
-    const title = reminder.message || (entityTitle ? `${kindLabel}: ${entityTitle}` : `HomeOS ${kindLabel}`)
+    const title = reminder.message || (entityTitle ? `${kindLabel}: ${entityTitle}` : `HOME•OS ${kindLabel}`)
     const body = entityTitle && reminder.message ? `${kindLabel} - ${entityTitle}` : undefined
     const url = reminder.entityType === 'record' ? `/life/admin/${reminder.entityId}` : '/'
 
@@ -257,7 +308,7 @@ export async function dispatchDailyTaskNotifications() {
     if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) continue
     const body = titles.length === 1 ? titles[0] : `${titles.length} tasks due today`
     const shouldSend = await recordNotificationForUser(userId, 'Tasks due today', body, 'tasks_due_today', `${todayKey}:${userId}`)
-    if (shouldSend) await sendPushToUser(userId, { title: 'Tasks due today', body, url: '/household/tasks/all' })
+    if (shouldSend) await sendPushToUser(userId, { title: 'Tasks due today', body, url: '/household/tasks' })
   }
 
   if (unassigned.length > 0) {
@@ -267,7 +318,7 @@ export async function dispatchDailyTaskNotifications() {
       const prefs = await notificationPreferences(user.id)
       if (!prefs.tasksDaily.enabled || !isAtOrAfterLocalTime(prefs.tasksDaily.time)) continue
       const shouldSend = await recordNotificationForUser(user.id, 'Tasks due today', body, 'tasks_due_today', `${todayKey}:all:${user.id}`)
-      if (shouldSend) await sendPushToUser(user.id, { title: 'Tasks due today', body, url: '/household/tasks/all' })
+      if (shouldSend) await sendPushToUser(user.id, { title: 'Tasks due today', body, url: '/household/tasks' })
     }
   }
 }
@@ -289,7 +340,7 @@ export async function dispatchTaskDueNotifications(recordChange: ChangeRecorder)
   const pending = dueTasks.filter(task => task.dueDate && hasExplicitTime(task.dueDate) && !sentForDueDate(task.metadata, task.dueDate))
   for (const task of pending) {
     if (!task.dueDate) continue
-    const payload: PushPayload = { title: 'Task due', body: task.title, url: `/household/tasks/${task.listId ?? 'all'}` }
+    const payload: PushPayload = { title: 'Task due', body: task.title, url: '/household/tasks' }
     if (task.assigneeId) {
       const prefs = await notificationPreferences(task.assigneeId)
       if (!prefs.taskDue.enabled) continue
@@ -336,7 +387,7 @@ export async function dispatchTvNotifications() {
   if (followed.length === 0) return
 
   const now = new Date()
-  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+  const { end: dayEnd } = londonDayBounds(londonDateKey(now))
   const programmes = await db.query.tvProgrammes.findMany({
     where: and(gte(tvProgrammes.startsAt, now), lte(tvProgrammes.startsAt, dayEnd)),
     orderBy: (table, { asc }) => [asc(table.startsAt)],
@@ -374,11 +425,12 @@ export async function dispatchTvNotifications() {
 }
 
 function watchFollowFromItem(show: { title: string; metadata?: Record<string, unknown> | null }): FollowedTvShow {
-  const metadata = show.metadata ?? {}
+  const metadata = tvFollowMetadata(show.metadata)
   const tvmazeId = Number(metadata.tvmazeId)
   return {
     title: show.title,
-    channel: typeof metadata.channel === 'string' ? metadata.channel : null,
+    followKey: tvFollowKey(show),
+    channel: tvFollowChannel(show),
     tvmazeId: Number.isFinite(tvmazeId) && tvmazeId > 0 ? tvmazeId : null,
     matchMode: typeof metadata.matchMode === 'string' ? metadata.matchMode : null,
   }

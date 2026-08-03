@@ -51,6 +51,8 @@ type ListItem = {
   checked: boolean
   checkedAt?: string | number | Date | null
   checkedById?: string | null
+  source?: string | null
+  sourceDetail?: string | null
   createdAt: string | number | Date
   updatedAt?: string | number | Date | null
   deletedAt?: string | number | Date | null
