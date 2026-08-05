@@ -450,7 +450,6 @@ export function LifeOverviewPage() {
               return (
                 <a key={category.key} href={`/life/${category.key}`} className="vault-category-card" style={{ '--vault-color': category.color } as CSSProperties}>
                   <span className="vault-category-card-top"><i>{category.icon}</i><b>{count}</b></span>
-                  <small>VAULT CATEGORY</small>
                   <strong>{category.label}</strong>
                   <span className="vault-category-desc">{category.desc}</span>
                 </a>
@@ -538,68 +537,73 @@ export function LifeCategoryPage() {
             <button type="button" onClick={() => setAdding(true)} className="text-[15px] font-medium text-accent active:opacity-60">Add the first one</button>
           </div>
         ) : (
-          <div className="vault-record-list">
-            {snapshot.records.map(record => {
-              const valuedFields = (record.fields ?? []).filter(field => field.value)
-              const typedDates = snapshot.reminders
-                .filter(reminder => reminder.entityId === record.id && (reminder.kind ?? 'general') !== 'general')
-                .sort((a, b) => dateValue(a) - dateValue(b))
-              const legacyDate = typedDates.length === 0 && record.renewalDate
-                ? { label: record.renewalLabel ?? 'Renewal', dueAt: record.renewalDate }
-                : null
-              const nextDate = typedDates[0]
-                ? { label: kindMeta(typedDates[0].kind).label, dueAt: typedDates[0].dueAt ?? typedDates[0].triggerAt }
-                : legacyDate
-              return (
-                <article
-                  key={record.id}
-                  role={reordering ? undefined : 'link'}
-                  tabIndex={reordering ? undefined : 0}
-                  onClick={() => { if (!reordering) navigateInApp(`/life/admin/${record.id}`) }}
-                  onKeyDown={event => {
-                    if (!reordering && (event.key === 'Enter' || event.key === ' ')) {
-                      event.preventDefault()
-                      navigateInApp(`/life/admin/${record.id}`)
-                    }
-                  }}
-                  className={`vault-record-card ${reordering ? '' : 'cursor-pointer active:bg-surface-2'}`}
-                >
-                  <div className="flex h-full min-w-0 flex-col">
-                    <div className="vault-record-card-heading">
-                      <div className="min-w-0">
-                        <small>RECORD</small><p>{record.title}</p><span>{record.subtitle || snapshot.category.label}</span>
-                      </div>
-                      {reordering ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                          <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, -1) }} disabled={moving || snapshot.records[0]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item up" title="Move item up"><ArrowUp className="h-4 w-4" /></button>
-                          <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, 1) }} disabled={moving || snapshot.records[snapshot.records.length - 1]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item down" title="Move item down"><ArrowDown className="h-4 w-4" /></button>
+          <>
+            <div className="vault-category-list-label"><div><small>SAVED RECORDS</small><strong>{snapshot.records.length} {snapshot.records.length === 1 ? 'entry' : 'entries'}</strong></div><span>Tap to open</span></div>
+            <div className="vault-record-list">
+              {snapshot.records.map(record => {
+                const valuedFields = (record.fields ?? []).filter(field => field.value)
+                const previewFields = valuedFields.slice(0, 4)
+                const typedDates = snapshot.reminders
+                  .filter(reminder => reminder.entityId === record.id && (reminder.kind ?? 'general') !== 'general')
+                  .sort((a, b) => dateValue(a) - dateValue(b))
+                const legacyDate = typedDates.length === 0 && record.renewalDate
+                  ? { label: record.renewalLabel ?? 'Renewal', dueAt: record.renewalDate }
+                  : null
+                const nextDate = typedDates[0]
+                  ? { label: kindMeta(typedDates[0].kind).label, dueAt: typedDates[0].dueAt ?? typedDates[0].triggerAt }
+                  : legacyDate
+                return (
+                  <article
+                    key={record.id}
+                    role={reordering ? undefined : 'link'}
+                    tabIndex={reordering ? undefined : 0}
+                    onClick={() => { if (!reordering) navigateInApp(`/life/admin/${record.id}`) }}
+                    onKeyDown={event => {
+                      if (!reordering && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault()
+                        navigateInApp(`/life/admin/${record.id}`)
+                      }
+                    }}
+                    className={`vault-record-card ${reordering ? '' : 'cursor-pointer active:bg-surface-2'}`}
+                  >
+                    <div className="flex h-full min-w-0 flex-col">
+                      <div className="vault-record-card-heading">
+                        <div className="vault-record-card-copy">
+                          <p>{record.title}</p>{record.subtitle ? <span>{record.subtitle}</span> : null}
                         </div>
-                      ) : <Chevron />}
-                    </div>
-
-                    {valuedFields.length > 0 ? (
-                      <div className="vault-record-card-facts">
-                        {valuedFields.map(field => (
-                          <div key={`${record.id}-${field.label}-${field.value}`} className="min-w-0">
-                            <small>{field.label || 'Detail'}</small><span>{field.value}</span>
+                        {reordering ? (
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, -1) }} disabled={moving || snapshot.records[0]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item up" title="Move item up"><ArrowUp className="h-4 w-4" /></button>
+                            <button type="button" onClick={event => { event.stopPropagation(); void moveRecord(record.id, 1) }} disabled={moving || snapshot.records[snapshot.records.length - 1]?.id === record.id} className="flex h-8 w-8 items-center justify-center rounded-full text-text-2 active:bg-surface-2 disabled:opacity-25" aria-label="Move item down" title="Move item down"><ArrowDown className="h-4 w-4" /></button>
                           </div>
-                        ))}
+                        ) : <Chevron />}
                       </div>
-                    ) : null}
 
-                    {nextDate ? (
-                      <div className="vault-record-card-date">
-                        <i />
-                        <div className="min-w-0 flex-1">
-                          <small>NEXT IMPORTANT DATE</small><span>{nextDate.label} due {formatRelativeDue(nextDate.dueAt)}</span>
+                      {valuedFields.length > 0 ? (
+                        <div className="vault-record-card-facts">
+                          {previewFields.map(field => (
+                            <div key={`${record.id}-${field.label}-${field.value}`} className="min-w-0">
+                              <small>{field.label || 'Detail'}</small><span>{field.value}</span>
+                            </div>
+                          ))}
+                          {valuedFields.length > previewFields.length ? <p className="vault-record-more">+{valuedFields.length - previewFields.length} more {valuedFields.length - previewFields.length === 1 ? 'detail' : 'details'}</p> : null}
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
+                      ) : null}
+
+                      {nextDate ? (
+                        <div className="vault-record-card-date">
+                          <i />
+                          <div className="min-w-0 flex-1">
+                            <small>NEXT IMPORTANT DATE</small><span>{nextDate.label} due {formatRelativeDue(nextDate.dueAt)}</span>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </>
         )}
       </div>
     </ScreenShell>

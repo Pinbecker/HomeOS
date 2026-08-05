@@ -19,7 +19,7 @@ type ShoppingGroup = { id: string; name: string; color: string; count: number; p
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
 type CycleScheduleKind = 'logged' | 'predicted' | 'fertile' | 'ovulation'
-type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
+type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; audience?: 'FAMILY' | 'WORK'; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
@@ -48,7 +48,7 @@ type DropTextEntry = {
   createdAt: string
 }
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; audience?: 'FAMILY' | 'WORK'; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 type DayGroup = { key: string; label: string; dateLabel: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
@@ -269,6 +269,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       endTimeLabel: scheduleTimeLabel(event.endsAt.getTime() > event.startsAt.getTime() ? event.endsAt : event.startsAt),
       sub: event.location,
       color: event.color,
+      audience: event.audience,
       finishedToday: !event.allDay && event.endsAt.getTime() <= now.getTime() && startOfLocalDay(event.startsAt).getTime() === startOfLocalDay(now).getTime(),
       href: event.href,
       estimated: event.estimated,
@@ -1135,7 +1136,7 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
       <a href={rowHref} className={`family-timeline-row family-timeline-entry ${entry.finishedToday ? 'is-finished' : ''} ${border}`} style={{ '--timeline-color': entry.color, opacity: entry.estimated ? 0.78 : 1 } as CSSProperties}>
         <time>{entry.allDay ? 'All day' : scheduleTimeLabel(new Date(entry.sortMs))}</time>
         <i style={{ background: entry.color }} />
-        <span className="family-timeline-copy"><small className="family-timeline-type">{entry.cycleKind ? 'CYCLE' : entry.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? (entry.estimated ? 'Estimated' : entry.allDay ? 'Family calendar' : `Until ${entry.endTimeLabel}`)}</small></span>
+        <span className="family-timeline-copy"><small className="family-timeline-type">{entry.cycleKind ? 'CYCLE' : entry.allDay ? 'ALL DAY' : `EVENT - ${entry.audience ?? 'FAMILY'}`}</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? (entry.estimated ? 'Estimated' : entry.allDay ? 'Family calendar' : `Until ${entry.endTimeLabel}`)}</small></span>
         <span className="family-timeline-kind" style={{ background: `color-mix(in srgb, ${entry.color} 13%, var(--surface))` }}><ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} /></span>
       </a>
     )
@@ -1566,31 +1567,36 @@ function DropzoneBoardCard() {
 function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total: number }) {
   return (
     <section className="home-card home-shopping-card mx-4 mb-4">
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-[14px] font-semibold text-text-1">Shopping</h2>
-          <a href="/household/shopping" className="text-[12px] font-semibold text-accent">Full list</a>
+      <div className="home-shopping-shell">
+        <div className="home-shopping-heading">
+          <span className="home-shopping-heading-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 8h14l-1 12H6L5 8Z" /><path d="M8 8a4 4 0 0 1 8 0" /></svg>
+          </span>
+          <div className="home-shopping-heading-copy">
+            <small>SHOPPING LISTS</small>
+            <h2>{total === 0 ? 'Nothing to pick up' : `${total} ${total === 1 ? 'item' : 'items'} to pick up`}</h2>
+            <p>{total === 0 ? 'Your lists are clear for now.' : `Across ${groups.length} ${groups.length === 1 ? 'shop' : 'shops'}`}</p>
+          </div>
+          <a href="/household/shopping" className="home-shopping-open" aria-label="Open shopping lists">
+            <span>Open</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l4 4-4 4" /></svg>
+          </a>
         </div>
         {total === 0 ? (
-          <a href="/household/shopping" className="flex items-center gap-3 px-4 py-3 active:bg-bg">
-            <div className="h-5 w-5 shrink-0 rounded-[6px] border-[1.5px] border-border opacity-40" />
-            <span className="text-[13.5px] text-text-3">Add shopping items</span>
+          <a href="/household/shopping" className="home-shopping-empty">
+            <span>+</span><div><strong>Add a shopping item</strong><small>Start a list for the next shop</small></div>
           </a>
         ) : (
-          <div>
-          {groups.map((group, index) => (
-            <a key={group.id} href={group.href} className={`flex items-center gap-3 px-4 py-3 active:bg-bg ${index > 0 ? 'border-t border-border' : ''}`}>
-              <div className="h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/20" style={{ background: group.color }} />
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate text-[13.5px] font-semibold text-text-1">{group.name}</p>
-                  <span className="shrink-0 rounded-lg bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-text-2">{group.count}</span>
+          <div className="home-shopping-groups">
+            {groups.map(group => (
+              <a key={group.id} href={group.href} className="home-shopping-group" style={{ '--home-shop-color': group.color } as CSSProperties}>
+                <div className="home-shopping-group-copy">
+                  <small>{group.count} {group.count === 1 ? 'item' : 'items'}</small>
+                  <strong>{group.name}</strong>
+                  {group.preview.length > 0 ? <p>{group.preview.join(' · ')}</p> : null}
                 </div>
-                {group.preview.length > 0 ? <p className="mt-0.5 truncate text-[11.5px] text-text-2">{group.preview.join(', ')}</p> : null}
-              </div>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-text-3"><path d="M6 4l4 4-4 4" /></svg>
-            </a>
-          ))}
+                <span className="home-shopping-group-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l4 4-4 4" /></svg></span>
+              </a>
+            ))}
           </div>
         )}
       </div>
@@ -1645,6 +1651,7 @@ export function DashboardPage() {
       ?? '#007AFF'
     const userFeeds = state.data.calendarFeeds.filter(feed => feed.userId === sessionUser?.id)
     const feedColorMap = new Map(userFeeds.map(feed => [feed.id, feed.color ?? defaultCalendarColor]))
+    const feedAudienceMap = new Map(userFeeds.map(feed => [feed.id, /\bwork\b/i.test(feed.name) ? 'WORK' as const : 'FAMILY' as const]))
     const shoppingLists = lists.filter(list => list.type === 'shopping' && !list.archived).sort((a, b) => a.sortOrder - b.sortOrder)
     const shopMap = new Map(shoppingLists.map(list => [list.id, { name: list.icon === 'general-shopping' ? 'General' : list.name, color: list.color ?? '#34C759' }]))
     const shoppingAll = state.data.listItems
@@ -1708,6 +1715,9 @@ export function DashboardPage() {
         color: event.calendarId?.startsWith('ics:')
           ? feedColorMap.get(event.calendarId.slice(4)) ?? defaultCalendarColor
           : defaultCalendarColor,
+        audience: event.calendarId?.startsWith('ics:')
+          ? feedAudienceMap.get(event.calendarId.slice(4)) ?? 'FAMILY'
+          : /\bwork\b/i.test(event.calendarId ?? '') ? 'WORK' : 'FAMILY',
       }))
     const cycleEvents = cycleCalendarItems(state.data.cycleEntries, { includePrediction: true, includeKnownOvulation: true, includeOvulation: cycleSettings.showOvulationWindows }).items
       .map(item => ({

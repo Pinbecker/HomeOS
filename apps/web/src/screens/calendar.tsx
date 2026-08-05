@@ -545,6 +545,11 @@ function CalendarPageInner() {
     if (event.calendarId?.startsWith('ics:')) return feedMap.get(event.calendarId.slice(4))?.color ?? calColor
     return calColor
   }
+  const getEventAudience = (event: CalEvent) => {
+    const feedName = event.calendarId?.startsWith('ics:') ? feedMap.get(event.calendarId.slice(4))?.name : null
+    return /\bwork\b/i.test(feedName ?? event.calendarId ?? '') ? 'WORK' : 'FAMILY'
+  }
+  const getEventTypeLabel = (event: CalEvent) => event.cycle ? 'CYCLE' : event.allDay ? 'ALL DAY' : `EVENT - ${getEventAudience(event)}`
 
   const monthList = useMemo(() => {
     const months: Array<{ year: number; month: number; grid: Date[] }> = []
@@ -1137,7 +1142,7 @@ function CalendarPageInner() {
           {selectedEvents.length === 0 && selectedTasks.length === 0 ? (
             <>
               <div className={`calendar-day-empty ${nextAgenda ? 'is-compact' : ''}`}><span>Nothing planned</span><p>A clear day for the family.</p><button type="button" onClick={openCreate}>Add an event</button></div>
-              {nextAgenda ? <section className="calendar-day-up-next"><header><div><small>UP NEXT</small><strong>{nextAgenda.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div><span>{nextAgenda.items.length} {nextAgenda.items.length === 1 ? 'item' : 'items'}</span></header>{nextAgenda.items.map(item => item.kind === 'event' ? <button key={`next-event-${item.event.id}`} type="button" onClick={() => openEvent(item.event)} className="calendar-agenda-item" style={{ '--event-color': getEventColor(item.event) } as CSSProperties}><time>{item.event.allDay ? 'All day' : formatTime(item.event.start)}</time><span className="calendar-agenda-bar" /><span className="calendar-agenda-copy"><small>{item.event.cycle ? 'CYCLE' : item.event.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{item.event.title}</strong><span className="calendar-agenda-meta">{item.event.location ?? 'Family calendar'}</span></span></button> : (() => { const completed = taskOverrides[item.task.id] ?? item.task.completed; return <button key={`next-task-${item.task.id}`} type="button" onClick={() => openTask(item.task)} className={`calendar-agenda-item is-task ${completed ? 'is-complete' : ''}`} style={{ '--event-color': item.task.color } as CSSProperties}><time>{formatTime(item.task.due)}</time><span className="calendar-agenda-copy"><small>TO-DO</small><span className="calendar-task-title"><span className="calendar-agenda-check" onClick={event => { event.stopPropagation(); void toggleCalTask(item.task.id, completed) }}>{completed ? <svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-7" /></svg> : null}</span><strong>{item.task.title}</strong></span><span className="calendar-agenda-meta">{completed ? 'Completed' : 'Shared family task'}</span></span></button> })())}</section> : null}
+              {nextAgenda ? <section className="calendar-day-up-next"><header><div><small>UP NEXT</small><strong>{nextAgenda.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div><span>{nextAgenda.items.length} {nextAgenda.items.length === 1 ? 'item' : 'items'}</span></header>{nextAgenda.items.map(item => item.kind === 'event' ? <button key={`next-event-${item.event.id}`} type="button" onClick={() => openEvent(item.event)} className="calendar-agenda-item" style={{ '--event-color': getEventColor(item.event) } as CSSProperties}><time>{item.event.allDay ? 'All day' : formatTime(item.event.start)}</time><span className="calendar-agenda-bar" /><span className="calendar-agenda-copy"><small>{getEventTypeLabel(item.event)}</small><strong>{item.event.title}</strong><span className="calendar-agenda-meta">{item.event.location ?? 'Family calendar'}</span></span></button> : (() => { const completed = taskOverrides[item.task.id] ?? item.task.completed; return <button key={`next-task-${item.task.id}`} type="button" onClick={() => openTask(item.task)} className={`calendar-agenda-item is-task ${completed ? 'is-complete' : ''}`} style={{ '--event-color': item.task.color } as CSSProperties}><time>{formatTime(item.task.due)}</time><span className="calendar-agenda-copy"><small>TO-DO</small><span className="calendar-task-title"><span className="calendar-agenda-check" onClick={event => { event.stopPropagation(); void toggleCalTask(item.task.id, completed) }}>{completed ? <svg viewBox="0 0 16 16"><path d="m3 8 3 3 7-7" /></svg> : null}</span><strong>{item.task.title}</strong></span><span className="calendar-agenda-meta">{completed ? 'Completed' : 'Shared family task'}</span></span></button> })())}</section> : null}
             </>
           ) : (
             <>
@@ -1145,7 +1150,7 @@ function CalendarPageInner() {
                 <button key={event.id} type="button" onClick={() => openEvent(event)} className="calendar-agenda-item" style={{ '--event-color': getEventColor(event) } as CSSProperties}>
                   <time>{event.allDay ? 'All day' : formatTime(event.start)}</time>
                   <span className="calendar-agenda-bar" />
-                  <span className="calendar-agenda-copy"><small>{event.cycle ? 'CYCLE' : event.allDay ? 'ALL DAY' : 'EVENT'}</small><strong>{event.title}</strong><span className="calendar-agenda-meta">{event.location ?? (event.allDay ? 'Family calendar' : `${formatTime(event.start)} – ${formatTime(event.end > event.start ? event.end : event.start)}`)}</span></span>
+                  <span className="calendar-agenda-copy"><small>{getEventTypeLabel(event)}</small><strong>{event.title}</strong><span className="calendar-agenda-meta">{event.location ?? (event.allDay ? 'Family calendar' : `${formatTime(event.start)} – ${formatTime(event.end > event.start ? event.end : event.start)}`)}</span></span>
                 </button>
               ))}
               {selectedTasks.map(task => {

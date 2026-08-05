@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { FamilySubHeader, ScreenShell } from './shell'
 import { ColorField } from '../components/color-control'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
@@ -130,13 +131,8 @@ export function ShoppingOverviewPage() {
         <div className="shopping-overview-shops mx-4 bg-surface rounded-2xl overflow-hidden">
           {shopSpecific.map((shop, i) => (
             <a key={shop.id} href={`/household/shopping/${shop.id}`} className={`flex items-center gap-3 px-4 py-3 active:bg-surface-2 ${i > 0 ? 'border-t border-border' : ''}`}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: shop.color ?? '#34C759' }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="w-[14px] h-[14px]">
-                  <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
-                  <path d="M2.5 3h2l2.2 11.2a2 2 0 0 0 2 1.6h8.4a2 2 0 0 0 2-1.6L21 6H6" />
-                </svg>
-              </div>
-              <span className="shopping-overview-copy"><small style={{ color: shop.color ?? '#34C759' }}>SHOP LIST</small><strong>{shop.name}</strong></span>
+              <span className="shopping-shop-rail" style={{ background: shop.color ?? '#34C759' }} />
+              <span className="shopping-overview-copy"><strong>{shop.name}</strong></span>
               <span className="shopping-count-badge" style={{ '--shop-color': shop.color ?? '#34C759' } as CSSProperties}>{countFor(shop.id)}</span>
               <Chevron />
             </a>
@@ -768,7 +764,7 @@ export function ShoppingDetailPage() {
                   const groupedUnchecked = Object.keys(categories).length ? groupedShoppingRows(shopUnchecked, categories) : null
                   const groupedChecked = Object.keys(categories).length ? groupedShoppingRows(shopChecked, categories) : null
                   return (
-                    <CollapsibleSection key={shop.id} id={`shop:${shop.id}`} variant="shop" sectionColor={shop.color ?? DEFAULT_LIST_COLOR} className="shopping-shop-section mx-4 mb-3" label={<span className="shopping-shop-label"><i style={{ background: shop.color ?? DEFAULT_LIST_COLOR }} /><span><small>SHOP LIST</small><strong>{shop.icon === GENERAL_SHOPPING_ICON ? 'General' : shop.name}</strong></span><b>{shopUnchecked.length + shopChecked.length}</b></span>}>
+                    <CollapsibleSection key={shop.id} id={`shop:${shop.id}`} variant="shop" sectionColor={shop.color ?? DEFAULT_LIST_COLOR} className="shopping-shop-section mx-4 mb-3" label={<span className="shopping-shop-label"><i style={{ background: shop.color ?? DEFAULT_LIST_COLOR }} /><span>{shop.icon === GENERAL_SHOPPING_ICON ? <small>SHARED LIST</small> : null}<strong>{shop.icon === GENERAL_SHOPPING_ICON ? 'General' : shop.name}</strong></span><b>{shopUnchecked.length + shopChecked.length}</b></span>}>
                       <div className="pt-1">
                         {shopUnchecked.length ? groupedUnchecked ? groupedUnchecked.map(group => <CollapsibleSection key={group.category} id={`shop:${shop.id}:to-get:${group.category}`} className="mb-3" label={<span className="shopping-category-label"><span>{group.category}</span><b>{group.items.length}</b></span>}><div className="pt-1"><div className="shopping-list-card overflow-hidden rounded-2xl border border-border bg-surface">{group.items.map((item, index) => <ItemRow key={item.id} item={item} checkedRow={false} index={index} />)}</div></div></CollapsibleSection>) : <div className="mb-3 shopping-list-card overflow-hidden rounded-2xl border border-border bg-surface">{shopUnchecked.map((item, index) => <ItemRow key={item.id} item={item} checkedRow={false} index={index} />)}</div> : null}
                         {shopChecked.length ? groupedChecked ? groupedChecked.map(group => <CollapsibleSection key={`done-${group.category}`} id={`shop:${shop.id}:done:${group.category}`} className="mb-3" label={<span className="shopping-category-label is-done"><span>{group.category} · got it</span><b>{group.items.length}</b></span>}><div className="pt-1"><div className="shopping-list-card shopping-list-card--done overflow-hidden rounded-2xl border border-border bg-surface">{group.items.map((item, index) => <ItemRow key={item.id} item={item} checkedRow index={index} />)}</div></div></CollapsibleSection>) : <div className="shopping-list-card shopping-list-card--done overflow-hidden rounded-2xl border border-border bg-surface">{shopChecked.map((item, index) => <ItemRow key={item.id} item={item} checkedRow index={index} />)}</div> : null}
@@ -816,19 +812,19 @@ export function ShoppingDetailPage() {
 
         <div className="h-4" />
 
-        {movingItemId ? (
+        {movingItemId && typeof document !== 'undefined' ? createPortal((
           <div
-            className="fixed inset-0 z-[60] mx-auto flex max-w-lg flex-col justify-end bg-black/40"
+            className="fixed inset-0 z-[80] flex flex-col items-center justify-end bg-black/40"
             onClick={() => setMovingItemId(null)}
           >
             <div
               data-swipe-sheet
-              className="flex max-h-[75vh] flex-col rounded-t-2xl bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-xl"
+              className="flex min-h-0 max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-xl"
               onClick={event => event.stopPropagation()}
             >
               <SheetGrabber onDismiss={() => setMovingItemId(null)} className="flex h-9 shrink-0 items-center justify-center" barClassName="h-1 w-10 rounded-full bg-border" />
               <p className="shrink-0 px-5 pt-2 pb-1 text-[13px] font-semibold text-text-3">Move to</p>
-              <div className="flex flex-col overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {otherShops.map((shop, index) => (
                   <button
                     key={shop.id}
@@ -842,11 +838,11 @@ export function ShoppingDetailPage() {
               </div>
             </div>
           </div>
-        ) : null}
-        {clearConfirmOpen ? (
-          <div className="shopping-clear-dialog fixed inset-0 z-[80] mx-auto flex max-w-lg flex-col justify-end" role="dialog" aria-modal="true" aria-labelledby="clear-completed-title">
+        ), document.body) : null}
+        {clearConfirmOpen && typeof document !== 'undefined' ? createPortal((
+          <div className="shopping-clear-dialog fixed inset-0 z-[80] flex flex-col items-center justify-end" role="dialog" aria-modal="true" aria-labelledby="clear-completed-title">
             <button className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" aria-label="Keep completed items" onClick={() => !clearingChecked && setClearConfirmOpen(false)} />
-            <div data-swipe-sheet className="shopping-clear-sheet relative rounded-t-[28px] bg-surface px-5 pt-0 pb-[calc(env(safe-area-inset-bottom)+18px)]">
+            <div data-swipe-sheet className="shopping-clear-sheet relative max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-[28px] bg-surface px-5 pt-0 pb-[calc(env(safe-area-inset-bottom)+18px)]">
               <SheetGrabber disabled={clearingChecked} onDismiss={() => setClearConfirmOpen(false)} className="-mx-5 flex h-10 items-center justify-center" barClassName="h-1.5 w-10 rounded-full bg-border" />
               <div className="shopping-clear-icon">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h14M8 3h4M6.3 6l.7 10h6l.7-10M8.5 9v4M11.5 9v4" /></svg>
@@ -859,7 +855,7 @@ export function ShoppingDetailPage() {
               </div>
             </div>
           </div>
-        ) : null}
+        ), document.body) : null}
       </div>
     </ScreenShell>
   )
