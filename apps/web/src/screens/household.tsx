@@ -1,23 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { CloudSun } from 'lucide-react'
 import { enqueueMutation, getCurrentState, makeId, useAppState } from '../lib/app-store'
+import { BIN_SCHEDULES, nextBinCollectionDate } from '../lib/bin-schedule'
 import { useSessionState } from '../lib/session-store'
 import { ScreenShell } from './shell'
-
-type StaticBinSchedule = {
-  id: string
-  name: string
-  colour: string
-  firstCollectionDate: string
-  intervalWeeks: number
-}
-
-const STATIC_BIN_SCHEDULES: StaticBinSchedule[] = [
-  { id: 'black-bin', name: 'Black bin', colour: 'black', firstCollectionDate: '2026-05-27', intervalWeeks: 3 },
-  { id: 'recycling-food', name: 'Recycling containers and food bin', colour: 'blue', firstCollectionDate: '2026-05-27', intervalWeeks: 1 },
-  { id: 'green-bin', name: 'Green bin', colour: 'green', firstCollectionDate: '2026-06-02', intervalWeeks: 2 },
-  { id: 'hygiene-nappy', name: 'Hygiene and nappy waste bag', colour: 'pink', firstCollectionDate: '2026-06-03', intervalWeeks: 2 },
-]
 
 const BIN_COLOURS: Record<string, { bg: string; text: string; label: string }> = {
   grey: { bg: '#6B7280', text: '#fff', label: 'Grey bin' },
@@ -37,11 +23,6 @@ function Chevron() {
   )
 }
 
-function dateFromIsoDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day)
-}
-
 function todayAtMidnight() {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -51,18 +32,6 @@ function daysUntil(date: Date) {
   const today = todayAtMidnight()
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   return Math.round((target.getTime() - today.getTime()) / 86_400_000)
-}
-
-function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number) {
-  const today = todayAtMidnight()
-  const next = dateFromIsoDate(firstCollectionDate)
-  const intervalDays = intervalWeeks * 7
-
-  while (next < today) {
-    next.setDate(next.getDate() + intervalDays)
-  }
-
-  return next
 }
 
 function getBinReminderDate(collectionDate: Date) {
@@ -168,8 +137,8 @@ export function HouseholdPage() {
 }
 
 export function BinsPage() {
-  const bins = STATIC_BIN_SCHEDULES
-    .map(bin => ({ ...bin, next: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks) }))
+  const bins = BIN_SCHEDULES
+    .map(bin => ({ ...bin, next: nextBinCollectionDate(bin) }))
     .sort((a, b) => a.next.getTime() - b.next.getTime())
 
   return (

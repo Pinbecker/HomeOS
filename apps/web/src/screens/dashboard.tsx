@@ -7,6 +7,7 @@ import { SwipeRow } from '../components/swipe-row'
 import { WeatherGlyph } from '../components/weather-glyph'
 import { actualThemeIsDark, applyAccent, applyThemeMode, currentAccent, currentThemeMode, type ThemeMode, watchAutoTheme } from '../lib/appearance'
 import { enqueueMutation, makeId, type CycleEntry, useAppState } from '../lib/app-store'
+import { binScheduleColor, upcomingBinCollectionItems } from '../lib/bin-schedule'
 import { navigateInApp } from '../lib/navigation'
 import { resetSession, useSessionState } from '../lib/session-store'
 import { readUserSettings, saveUserSettings } from '../lib/user-preferences'
@@ -19,7 +20,7 @@ type ShoppingGroup = { id: string; name: string; color: string; count: number; p
 type Task = { id: string; title: string; dueDate: Date; listId: string | null; assignee: string | null; color: string; completed: boolean }
 type Renewal = { id: string; title: string; label: string | null; date: Date; href: string }
 type CycleScheduleKind = 'logged' | 'predicted' | 'fertile' | 'ovulation'
-type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; audience?: 'FAMILY' | 'WORK'; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
+type CalEvent = { id: string; title: string; startsAt: Date; endsAt: Date; allDay: boolean; location: string | null; timeLabel: string; color: string; audience?: 'FAMILY' | 'WORK'; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind; binCollection?: boolean }
 type BinWithDate = { id: string; name: string; colour: string; nextCollection: Date }
 type TonightShow = { title: string; channel: string; airtime: string; channelId: string; atMs: number }
 type ScheduleWeatherDay = { icon: string; high: string; low: string }
@@ -48,7 +49,7 @@ type DropTextEntry = {
   createdAt: string
 }
 type TimelineEntry =
-  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; audience?: 'FAMILY' | 'WORK'; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind }
+  | { kind: 'calendar'; id: string; eventId: string; title: string; sortMs: number; endMs: number; dayKey: string; allDay: boolean; timeLabel: string; endTimeLabel: string; sub: string | null; color: string; audience?: 'FAMILY' | 'WORK'; finishedToday: boolean; href?: string; estimated?: boolean; cycleKind?: CycleScheduleKind; binCollection?: boolean }
   | { kind: 'task'; id: string; title: string; sortMs: number; taskId: string; listId: string | null; assignee: string | null; overdue: boolean; color: string; completed: boolean }
   | { kind: 'renewal'; id: string; title: string; sortMs: number; sub: string | null; href: string; overdue: boolean; days: number }
 type DayGroup = { key: string; label: string; dateLabel: string; dateKey: string | null; isToday: boolean; isOverdue: boolean; entries: TimelineEntry[] }
@@ -62,12 +63,6 @@ const BIN_DOT: Record<string, string> = {
   pink: '#EC4899',
 }
 const TIMELINE_DAY_COLORS = ['#4F9D76', '#5B8FC7', '#9A76C4', '#DF8C4A', '#D76F7B', '#4F9FA2']
-const STATIC_BIN_SCHEDULES = [
-  { id: 'black-bin', name: 'Black bin', colour: 'black', firstCollectionDate: '2026-05-27', intervalWeeks: 3 },
-  { id: 'recycling-food', name: 'Recycling containers and food bin', colour: 'blue', firstCollectionDate: '2026-05-27', intervalWeeks: 1 },
-  { id: 'green-bin', name: 'Green bin', colour: 'green', firstCollectionDate: '2026-06-02', intervalWeeks: 2 },
-  { id: 'hygiene-nappy', name: 'Hygiene and nappy waste bag', colour: 'pink', firstCollectionDate: '2026-06-03', intervalWeeks: 2 },
-]
 const TONIGHT_CACHE_KEY = 'homeos:dashboard-tonight:v1'
 const HOME_SECTIONS: Array<{ key: HomeSectionKey; label: string; sub: string }> = [
   { key: 'features', label: 'Everything together', sub: 'Family app shortcuts' },
@@ -153,14 +148,6 @@ function eventTimeLabel(date: Date, allDay: boolean) {
 
 function scheduleTimeLabel(date: Date) {
   return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/London' })
-}
-
-function getNextRecurringDate(firstCollectionDate: string, intervalWeeks: number) {
-  const today = startOfLocalDay(new Date())
-  const next = new Date(`${firstCollectionDate}T00:00:00`)
-  const intervalDays = intervalWeeks * 7
-  while (next < today) next.setDate(next.getDate() + intervalDays)
-  return next
 }
 
 function loadTonightCache(): TonightShow[] {
@@ -274,6 +261,7 @@ function buildTimeline(calendarEvents: CalEvent[], tasks: Task[], renewals: Rene
       href: event.href,
       estimated: event.estimated,
       cycleKind: event.cycleKind,
+      binCollection: event.binCollection,
     })
   }
 
@@ -1136,8 +1124,8 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
       <a href={rowHref} className={`family-timeline-row family-timeline-entry ${entry.finishedToday ? 'is-finished' : ''} ${border}`} style={{ '--timeline-color': entry.color, opacity: entry.estimated ? 0.78 : 1 } as CSSProperties}>
         <time>{entry.allDay ? 'All day' : scheduleTimeLabel(new Date(entry.sortMs))}</time>
         <i style={{ background: entry.color }} />
-        <span className="family-timeline-copy"><small className="family-timeline-type">{entry.cycleKind ? 'CYCLE' : entry.allDay ? 'ALL DAY' : `EVENT - ${entry.audience ?? 'FAMILY'}`}</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? (entry.estimated ? 'Estimated' : entry.allDay ? 'Family calendar' : `Until ${entry.endTimeLabel}`)}</small></span>
-        <span className="family-timeline-kind" style={{ background: `color-mix(in srgb, ${entry.color} 13%, var(--surface))` }}><ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} /></span>
+        <span className="family-timeline-copy"><small className="family-timeline-type">{entry.binCollection ? 'BIN COLLECTION' : entry.cycleKind ? 'CYCLE' : entry.allDay ? 'ALL DAY' : `EVENT - ${entry.audience ?? 'FAMILY'}`}</small><strong>{entry.title}</strong><small className="family-timeline-meta">{entry.sub ?? (entry.estimated ? 'Estimated' : entry.allDay ? 'Family calendar' : `Until ${entry.endTimeLabel}`)}</small></span>
+        <span className="family-timeline-kind" style={{ background: `color-mix(in srgb, ${entry.color} 13%, var(--surface))` }}><ScheduleCalendarIcon color={entry.color} cycleKind={entry.cycleKind} binCollection={entry.binCollection} /></span>
       </a>
     )
   }
@@ -1175,7 +1163,10 @@ function TimelineRow({ entry, doneIds, onToggle, onDelete, hasBorder }: { entry:
   )
 }
 
-function ScheduleCalendarIcon({ color, cycleKind }: { color: string; cycleKind?: CycleScheduleKind }) {
+function ScheduleCalendarIcon({ color, cycleKind, binCollection }: { color: string; cycleKind?: CycleScheduleKind; binCollection?: boolean }) {
+  if (binCollection) {
+    return <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}><path d="M2.5 4.5h11M6 4.5V3.2h4v1.3M12.3 4.5l-.7 8.1H4.4l-.7-8.1M6.4 7v3.2M9.6 7v3.2" /></svg>
+  }
   if (cycleKind === 'logged' || cycleKind === 'predicted') {
     return (
       <svg viewBox="0 0 16 16" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" style={{ stroke: color }}>
@@ -1588,13 +1579,13 @@ function ShoppingSummaryCard({ groups, total }: { groups: ShoppingGroup[]; total
         ) : (
           <div className="home-shopping-groups">
             {groups.map(group => (
-              <a key={group.id} href={group.href} className="home-shopping-group" style={{ '--home-shop-color': group.color } as CSSProperties}>
-                <div className="home-shopping-group-copy">
-                  <small>{group.count} {group.count === 1 ? 'item' : 'items'}</small>
-                  <strong>{group.name}</strong>
-                  {group.preview.length > 0 ? <p>{group.preview.join(' · ')}</p> : null}
-                </div>
-                <span className="home-shopping-group-arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l4 4-4 4" /></svg></span>
+              <a key={group.id} href={group.href} className="home-shopping-group" style={{ '--shop-color': group.color } as CSSProperties}>
+                <span className="home-shopping-group-label">
+                  <i style={{ background: group.color }} />
+                  <span><small>SHOP</small><strong>{group.name}</strong>{group.preview.length > 0 ? <p>{group.preview.join(' · ')}</p> : null}</span>
+                  <b>{group.count}</b>
+                </span>
+                <svg className="home-shopping-group-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l4 4-4 4" /></svg>
               </a>
             ))}
           </div>
@@ -1678,6 +1669,7 @@ export function DashboardPage() {
     const tasks = state.data.items
       .filter(item => {
         if (item.type !== 'task' || item.deletedAt || !item.dueDate) return false
+        if (item.metadata?.source === 'bin_schedule') return false
         if (item.status === 'active') return true
         if (item.status !== 'completed') return false
         const completedAt = toDate(item.completedAt)
@@ -1734,6 +1726,18 @@ export function DashboardPage() {
         cycleKind: item.kind,
       }))
       .filter(event => event.startsAt >= startToday && event.startsAt <= scheduleWindow)
+    const binCollectionEvents = upcomingBinCollectionItems(now).map(item => ({
+      id: item.id,
+      title: item.title,
+      startsAt: item.reminderAt,
+      endsAt: new Date(item.reminderAt.getTime() + 60 * 60 * 1000),
+      allDay: false,
+      location: `${item.binName} collection tomorrow`,
+      timeLabel: eventTimeLabel(item.reminderAt, false),
+      color: binScheduleColor(item.colour),
+      href: '/household/bins',
+      binCollection: true,
+    })).filter(event => event.startsAt >= startToday && event.startsAt <= scheduleWindow)
     const recordById = new Map(state.data.records.map(record => [record.id, record]))
     const typedRenewals = state.data.reminders
       .flatMap(reminder => {
@@ -1756,12 +1760,9 @@ export function DashboardPage() {
       }),
     ]
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-    const bins = STATIC_BIN_SCHEDULES.map(bin => ({
-      id: bin.id,
-      name: bin.name,
-      colour: bin.colour,
-      nextCollection: getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks),
-    })).filter(bin => dayDiffFrom(bin.nextCollection.getTime(), now) === 1)
+    const bins = upcomingBinCollectionItems(now)
+      .filter(item => dayDiffFrom(item.collectionDate.getTime(), now) === 1)
+      .map(item => ({ id: item.binId, name: item.binName, colour: item.colour, nextCollection: item.collectionDate }))
     const pins = state.data.items
       .filter(item => item.type === 'note' && item.pinned && item.status === 'active' && !item.deletedAt)
       .sort((a, b) => new Date(b.pinnedAt ?? b.updatedAt).getTime() - new Date(a.pinnedAt ?? a.updatedAt).getTime())
@@ -1779,7 +1780,7 @@ export function DashboardPage() {
       openTaskCount,
       inboxCount: inbox.length,
       inboxPreview: inbox.slice(0, 2),
-      calendarEvents: [...calendarEvents, ...cycleEvents] as CalEvent[],
+      calendarEvents: [...calendarEvents, ...cycleEvents, ...binCollectionEvents] as CalEvent[],
       renewals: renewals as Renewal[],
       bins: bins as BinWithDate[],
       pins,

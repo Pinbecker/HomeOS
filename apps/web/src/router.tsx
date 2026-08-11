@@ -19,7 +19,6 @@ import { MediaPage } from './screens/media'
 import { MemberProfilePage } from './screens/member'
 import { MorePage } from './screens/more'
 import { NotesPage } from './screens/notes'
-import { RemindersPage } from './screens/reminders'
 import { BigShopPage, MealsPage, ShoppingDetailPage, ShoppingOverviewPage } from './screens/shopping'
 import { LoginPage } from './screens/shared'
 import { TaskDetailPage, TasksOverviewPage } from './screens/tasks'
@@ -309,6 +308,11 @@ const lifeAdminRoute = createRoute({
   path: '/life/admin',
   component: LifeOverviewPage,
 })
+const lifeDueRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/life/admin/due',
+  component: () => <LifeOverviewPage initialTab="due" />,
+})
 const lifeAdminEntityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/life/admin/$entityId',
@@ -332,7 +336,7 @@ const mediaCardDesignsRoute = createRoute({
 const remindersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/reminders',
-  component: RemindersPage,
+  component: () => <LifeOverviewPage initialTab="due" />,
 })
 
 const moreRoute = createRoute({
@@ -406,6 +410,7 @@ const routeTree = rootRoute.addChildren([
   lifeRoute,
   lifeCategoryRoute,
   lifeAdminRoute,
+  lifeDueRoute,
   lifeAdminEntityRoute,
   watchRoute,
   mediaRoute,

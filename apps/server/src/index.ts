@@ -13,7 +13,7 @@ import { syncAllIcsFeeds, syncIcsFeed } from './ics-sync'
 import { applyMutations, buildBootstrap, compactSyncHistory, getCheckpoint, getSession, pullChanges, recordExternalChange, subscribe, sweepOrphanedRecordReminders, type SyncMutation } from './sync'
 import { categorizeShoppingItems, extractCalendarTasks, transcribeAudio } from './ai-planner'
 import { appendConversationUserMessage, confirmAiJob, conversationMessages, getActiveInboxItem, recentAiJobs, runAiCapture } from './ai-service'
-import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications, ensureScheduledBinTasks } from './notification-jobs'
+import { dispatchBinNotifications, dispatchDailyTaskNotifications, dispatchReminders, dispatchTaskDueNotifications, dispatchTvNotifications, removeScheduledBinTasks } from './notification-jobs'
 import { registerWeatherRoutes } from './weather'
 import { registerMediaRoutes } from './media'
 import { registerDropzoneRoutes } from './dropzone'
@@ -609,7 +609,7 @@ setInterval(() => {
 }, 60_000)
 
 setInterval(() => {
-  ensureScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
+  removeScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))
@@ -626,7 +626,7 @@ setTimeout(() => {
   refreshTvGuideIfNeeded().catch(error => app.log.error(error))
   dispatchReminders(recordExternalChange).catch(error => app.log.error(error))
   dispatchTaskDueNotifications(recordExternalChange).catch(error => app.log.error(error))
-  ensureScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
+  removeScheduledBinTasks(recordExternalChange).catch(error => app.log.error(error))
   dispatchBinNotifications().catch(error => app.log.error(error))
   dispatchDailyTaskNotifications().catch(error => app.log.error(error))
   dispatchTvNotifications().catch(error => app.log.error(error))

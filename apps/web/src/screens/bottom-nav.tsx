@@ -43,7 +43,7 @@ const drawerGroups: Array<{ label: string; items: LinkItem[] }> = [
     items: [
       { href: '/household', label: 'Household', color: '#2EA7A0', icon: Users },
       { href: '/life/admin', label: 'Vault', color: '#6471C9', icon: FileText },
-      { href: '/reminders', label: 'Reminders', color: '#E17055', icon: Bell },
+      { href: '/life/admin/due', label: 'Due', color: '#E17055', icon: Bell },
       { href: '/household/bins', label: 'Bins', color: '#4D8E74', icon: Trash2 },
       { href: '/household/plans', label: 'House plans', color: '#A26D45', icon: PackageCheck },
       { href: '/more', label: 'More', color: '#2EA7A0', icon: Grid2X2 },

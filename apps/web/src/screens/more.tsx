@@ -40,7 +40,7 @@ export function MorePage() {
     { href: '/household', label: 'Household', sub: 'Home at a glance', color: '#2EA7A0', soft: '#E2F7F5', icon: Home },
     { href: '/life/admin', label: 'Vault', sub: `${snapshot.recordCount} records`, color: '#6471C9', soft: '#E9EBFF', icon: FileText },
     { href: '/weather', label: 'Weather', sub: 'Forecasts & places', color: '#47A5D9', soft: '#E5F5FF', icon: CloudSun },
-    { href: '/reminders', label: 'Reminders', sub: `${snapshot.reminderCount} coming up`, color: '#E17055', soft: '#FFEBE5', icon: Bell },
+    { href: '/life/admin/due', label: 'Due', sub: `${snapshot.reminderCount} coming up`, color: '#E17055', soft: '#FFEBE5', icon: Bell },
     { href: '/household/bins', label: 'Bins', sub: 'Collection schedule', color: '#4D8E74', soft: '#E4F2EC', icon: Trash2 },
     { href: '/household/plans', label: 'House plans', sub: 'Projects & ideas', color: '#A26D45', soft: '#F7ECE2', icon: PackageCheck },
   ]
@@ -52,7 +52,7 @@ export function MorePage() {
 
         <div className="more-status-row">
           <a href="/household/bins"><span className="bins"><Trash2 /></span><div><small>COLLECTIONS</small><strong>Bins</strong><p>View the next collection</p></div><ChevronRight /></a>
-          <a href="/reminders"><span className="reminders"><Bell /></span><div><small>COMING UP</small><strong>{snapshot.reminderCount} reminders</strong><p>Renewals and important dates</p></div><ChevronRight /></a>
+          <a href="/life/admin/due"><span className="reminders"><Bell /></span><div><small>COMING UP</small><strong>{snapshot.reminderCount} due</strong><p>Renewals and important dates</p></div><ChevronRight /></a>
         </div>
 
         <div className="family-section-heading more-heading"><div><small>EVERYTHING TOGETHER</small><h2>Family tools</h2></div></div>

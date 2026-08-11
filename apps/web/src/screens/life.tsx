@@ -408,7 +408,7 @@ async function saveCategorySettings(household: HouseholdRow, next: StoredCategor
   }))
 }
 
-export function LifeOverviewPage() {
+export function LifeOverviewPage({ initialTab = 'records' }: { initialTab?: 'records' | 'due' } = {}) {
   const snapshot = useAppState(state => {
     const household = state.data.household[0] as HouseholdRow | undefined
     const categories = buildCategories(household?.settings ?? null)
@@ -416,7 +416,7 @@ export function LifeOverviewPage() {
     return { household: household ?? null, categories, records }
   })
   const [adminOpen, setAdminOpen] = useState(false)
-  const [tab, setTab] = useState<'records' | 'due'>('records')
+  const [tab, setTab] = useState<'records' | 'due'>(initialTab)
 
   return (
     <ScreenShell title="Vault">

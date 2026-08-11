@@ -140,52 +140,17 @@ function daysUntil(date: Date) {
   return Math.round((startOfDay(date).getTime() - today.getTime()) / 86_400_000)
 }
 
-function binTaskTitle(binId: string, name: string) {
-  if (binId === 'recycling-food') return 'Put recycling out'
-  if (binId === 'black-bin') return 'Put the black bin out'
-  if (binId === 'green-bin') return 'Put the green bin out'
-  return `Put ${name.toLowerCase()} out`
-}
-
-function dateId(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-export async function ensureScheduledBinTasks(recordChange: ChangeRecorder) {
-  const now = new Date()
-  const today = startOfDay(now)
-  const horizon = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7, 23, 59, 59)
-  const creator = await db.query.users.findFirst({ columns: { id: true } })
-  if (!creator) return
-
-  for (const bin of BIN_SCHEDULES) {
-    const collection = getNextRecurringDate(bin.firstCollectionDate, bin.intervalWeeks)
-    const dueDate = new Date(collection)
-    dueDate.setDate(dueDate.getDate() - 1)
-    dueDate.setHours(20, 0, 0, 0)
-    if (dueDate < today || dueDate > horizon) continue
-
-    const taskId = `scheduled-bin-${bin.id}-${dateId(collection)}`
-    const existing = await db.query.items.findFirst({ where: eq(items.id, taskId), columns: { id: true } })
-    if (existing) continue
-    const timestamp = new Date()
-    await db.insert(items).values({
-      id: taskId,
-      householdId: HOUSEHOLD_ID,
-      createdById: creator.id,
-      assigneeId: null,
-      type: 'task',
-      title: binTaskTitle(bin.id, bin.name),
-      body: `${bin.name} collection is ${collection.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}.`,
-      status: 'active',
-      listId: null,
-      dueDate,
-      metadata: { source: 'bin_schedule', binId: bin.id, collectionDate: dateId(collection), colour: bin.colour },
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })
-    const row = await db.query.items.findFirst({ where: eq(items.id, taskId) })
-    if (row) await recordChange({ entityType: 'item', entityId: taskId, operation: 'upsert', payload: row })
+// Bin collections are derived in the client calendar/timeline. Remove the old
+// generated task records so they cannot appear or be treated as to-dos.
+export async function removeScheduledBinTasks(recordChange: ChangeRecorder) {
+  const scheduledTasks = await db.query.items.findMany({
+    where: eq(items.type, 'task'),
+    columns: { id: true, metadata: true },
+  })
+  for (const task of scheduledTasks) {
+    if (task.metadata?.source !== 'bin_schedule') continue
+    await db.delete(items).where(eq(items.id, task.id))
+    await recordChange({ entityType: 'item', entityId: task.id, operation: 'delete', payload: null })
   }
 }
 

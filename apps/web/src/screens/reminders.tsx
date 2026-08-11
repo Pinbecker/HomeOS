@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { Bell, CalendarClock, CircleDollarSign, Clock3, ShieldAlert, Wrench, type LucideIcon } from 'lucide-react'
-import { ScreenShell } from './shell'
 import { useAppState } from '../lib/app-store'
 
 function startOfToday() {
@@ -161,18 +160,5 @@ export function VaultDueContent({ inset = true }: { inset?: boolean } = {}) {
         </section>
       )}
     </div>
-  )
-}
-
-export function RemindersPage() {
-  return (
-    <ScreenShell title="Reminders">
-      <div className="family-summary-card family-summary-reminders">
-        <div><small>COMING UP</small><strong>Important dates</strong><span>Renewals, services and follow-ups.</span></div>
-        <Bell />
-      </div>
-      <div className="family-content-label"><small>YOUR TIMELINE</small><h2>Upcoming</h2></div>
-      <VaultDueContent />
-    </ScreenShell>
   )
 }

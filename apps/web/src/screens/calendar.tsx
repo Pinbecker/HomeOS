@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ColorPickerPanel, ColorWheelButton, DEFAULT_COLORS, normalizeHex } from '../components/color-control'
 import { SheetGrabber } from '../components/sheet-grabber'
 import { enqueueMutation, getCurrentState, makeId, refreshAppState, useAppState } from '../lib/app-store'
+import { binScheduleColor, upcomingBinCollectionItems } from '../lib/bin-schedule'
 import { cycleCalendarItems, readCycleTrackerSettings } from '../lib/cycle-tracker'
 import { navigateInApp } from '../lib/navigation'
 import { useSessionState } from '../lib/session-store'
@@ -23,6 +24,10 @@ type CalEvent = {
   cycle?: {
     kind: 'logged' | 'predicted' | 'fertile' | 'ovulation'
     estimated: boolean
+  }
+  binCollection?: {
+    binName: string
+    collectionDate: number
   }
 }
 type CalTask = {
@@ -460,8 +465,24 @@ function CalendarPageInner() {
         estimated: item.estimated,
       },
     }))
+    const binCollectionEvents: CalEvent[] = upcomingBinCollectionItems().map(item => ({
+      id: item.id,
+      householdId: state.data.household[0]?.id ?? 'default',
+      title: item.title,
+      start: item.reminderAt.getTime(),
+      end: item.reminderAt.getTime() + 60 * 60 * 1000,
+      allDay: false,
+      location: `${item.binName} collection tomorrow`,
+      description: null,
+      calendarId: 'bin-collection',
+      color: binScheduleColor(item.colour),
+      binCollection: {
+        binName: item.binName,
+        collectionDate: item.collectionDate.getTime(),
+      },
+    }))
     const tasks: CalTask[] = state.data.items
-      .filter(item => item.type === 'task' && item.dueDate && !item.deletedAt)
+      .filter(item => item.type === 'task' && item.dueDate && !item.deletedAt && item.metadata?.source !== 'bin_schedule')
       .map(item => ({
         id: item.id,
         title: item.title,
@@ -474,7 +495,7 @@ function CalendarPageInner() {
       householdId: state.data.household[0]?.id ?? 'default',
       userId: sessionUser?.id ?? 'system',
       calendarColor: typeof savedCalendarColor === 'string' ? savedCalendarColor : null,
-      events: [...events, ...cycleEvents],
+      events: [...events, ...cycleEvents, ...binCollectionEvents],
       tasks,
       feeds: userFeeds as CalFeed[],
     }
@@ -541,6 +562,7 @@ function CalendarPageInner() {
 
   const feedMap = useMemo(() => new Map(snapshot.feeds.map(feed => [feed.id, feed])), [snapshot.feeds])
   const getEventColor = (event: CalEvent) => {
+    if (event.binCollection) return event.color ?? '#49A96F'
     if (event.cycle) return event.color ?? '#C04A7A'
     if (event.calendarId?.startsWith('ics:')) return feedMap.get(event.calendarId.slice(4))?.color ?? calColor
     return calColor
@@ -549,7 +571,7 @@ function CalendarPageInner() {
     const feedName = event.calendarId?.startsWith('ics:') ? feedMap.get(event.calendarId.slice(4))?.name : null
     return /\bwork\b/i.test(feedName ?? event.calendarId ?? '') ? 'WORK' : 'FAMILY'
   }
-  const getEventTypeLabel = (event: CalEvent) => event.cycle ? 'CYCLE' : event.allDay ? 'ALL DAY' : `EVENT - ${getEventAudience(event)}`
+  const getEventTypeLabel = (event: CalEvent) => event.binCollection ? 'BIN COLLECTION' : event.cycle ? 'CYCLE' : event.allDay ? 'ALL DAY' : `EVENT - ${getEventAudience(event)}`
 
   const monthList = useMemo(() => {
     const months: Array<{ year: number; month: number; grid: Date[] }> = []
@@ -758,7 +780,6 @@ function CalendarPageInner() {
   function goToday() {
     setSelectedKey(todayKey)
     setDayRangeStart(mondayOf(today))
-    setViewMode('day')
     const container = scrollRef.current
     const targetMonth = document.getElementById(`cal-month-${today.getFullYear()}-${today.getMonth()}`)
     const target = targetMonth?.querySelector<HTMLElement>(`[data-daykey="${todayKey}"]`) ?? targetMonth
@@ -775,6 +796,10 @@ function CalendarPageInner() {
   }
 
   function openEvent(event: CalEvent) {
+    if (event.binCollection) {
+      navigateInApp('/household/bins')
+      return
+    }
     if (event.cycle) {
       navigateInApp('/cycle-tracker')
       return
@@ -1163,7 +1188,6 @@ function CalendarPageInner() {
               })}
             </>
           )}
-          <button type="button" className="calendar-pinch-hint" onClick={() => setViewMode('month')}><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 11V7a2 2 0 0 1 4 0v4-6a2 2 0 0 1 4 0v8-4a2 2 0 0 1 4 0v7c0 4-3 6-7 6h-1c-3 0-5-1-7-4l-2-3a2 2 0 0 1 3-2l2 2v-4Z" /></svg></span><div><strong>Expandable month view</strong><small>Scroll through months and pinch to expand or contract.</small></div><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 3 5 5-5 5" /></svg></button>
         </div>
       </div>
 
